@@ -10,9 +10,8 @@ pub struct window_pane {
     /// Nonowning parent; final window teardown provides a scoped fallback.
     pub(super) window: WindowWeak,
     pub(super) options: Option<Box<options>>,
-    /// Nonowning cell identities; resolve only under the owning Window tree guard.
+    /// Nonowning cell identity; resolve only under the owning Window tree guard.
     pub(super) layout_cell: Option<*mut layout_cell>,
-    pub(super) saved_layout_cell: Option<*mut layout_cell>,
     pub(super) sx: u_int,
     pub(super) sy: u_int,
     pub(super) xoff: ::core::ffi::c_int,
@@ -92,7 +91,6 @@ impl Default for window_pane {
             window: Default::default(),
             options: Default::default(),
             layout_cell: Default::default(),
-            saved_layout_cell: Default::default(),
             sx: Default::default(),
             sy: Default::default(),
             xoff: Default::default(),

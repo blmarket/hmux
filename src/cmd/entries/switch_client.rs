@@ -84,8 +84,6 @@ unsafe fn cmd_switch_client_exec(
         args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
     let mut type_0: cmd_find_type = CMD_FIND_PANE;
     let mut flags: ::core::ffi::c_int = 0;
-    let mut visible: ::core::ffi::c_int = 0;
-    let mut Zflag: ::core::ffi::c_int = args_has(args, 'Z' as i32 as u_char);
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: Option<ClientRef> = c_owner.clone();
     let tc_owner = cmdq_get_target_client((item).as_ref());
@@ -220,15 +218,8 @@ unsafe fn cmd_switch_client_exec(
                 .window_handle()
                 .cloned()
                 .expect("switch window");
-            visible = wp.as_ref().expect("target pane").is_visible() as i32;
-            if visible == 0 && window_owner.push_zoom(false, (Zflag) != 0) != 0 {
-                server_redraw_window(&window_owner);
-            }
             window_owner.redraw_active_switch(wp.as_ref());
             window_owner.select_pane(wp.as_ref().expect("target pane"), true);
-            if visible == 0 && window_owner.pop_zoom() != 0 {
-                server_redraw_window(&window_owner);
-            }
             window_owner.release(c"switch client pane");
         }
         if wl.is_alive() {

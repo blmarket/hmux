@@ -45,8 +45,6 @@ pub struct window {
     pub(super) creation_time: SystemTime,
     /// Current pane identity; the pane index owns the allocation.
     pub(super) active: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    /// Saved zoom target observes its pane without extending its lifetime.
-    pub(super) was_zoomed: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     pub(super) last_panes: window_pane_history,
     pub(super) panes: window_panes,
     pub(super) lastlayout: ::core::ffi::c_int,
@@ -54,7 +52,6 @@ pub struct window {
     /// writes it.
     pub(super) sticky: bool,
     pub(super) layout_root: Option<Box<layout_cell>>,
-    pub(super) saved_layout_root: Option<Box<layout_cell>>,
     pub(super) old_layout: Option<std::ffi::CString>,
     pub(super) sx: u_int,
     pub(super) sy: u_int,
@@ -95,13 +92,11 @@ impl Default for window {
             activity_time: UNIX_EPOCH,
             creation_time: UNIX_EPOCH,
             active: Default::default(),
-            was_zoomed: Default::default(),
             last_panes: Default::default(),
             panes: Default::default(),
             lastlayout: Default::default(),
             sticky: Default::default(),
             layout_root: Default::default(),
-            saved_layout_root: Default::default(),
             old_layout: Default::default(),
             sx: Default::default(),
             sy: Default::default(),
@@ -155,9 +150,5 @@ impl window {
 
     pub(super) fn layout_root_ptr(&mut self) -> Option<&mut layout_cell> {
         self.layout_root.as_deref_mut()
-    }
-
-    pub(super) fn saved_layout_root_ptr(&mut self) -> Option<&mut layout_cell> {
-        self.saved_layout_root.as_deref_mut()
     }
 }

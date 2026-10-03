@@ -162,9 +162,6 @@ unsafe fn cmd_select_pane_marked_pane(
     let pane = target.pane_handle().expect("marked target pane");
     let link = target.winlink_handle();
     let session = target.session_handle();
-    if args_has(arguments, b'm') != 0 && !pane.is_visible() {
-        return CMD_RETURN_NORMAL;
-    }
     let previous = if server_check_marked() != 0 {
         marked_pane.pane_handle()
     } else {
@@ -227,7 +224,6 @@ unsafe fn cmd_select_pane_exec(
     let original_pane = target.pane_handle().expect("select target pane");
     let window = target.w.upgrade().expect("select target window");
     let result = (|| {
-        let zoom = args_has(arguments, b'Z');
         if std::ptr::eq(entry, &cmd_last_pane_entry) || args_has(arguments, b'l') != 0 {
             let mut last = window.last_active_pane();
             if last.is_none() && window.pane_snapshot().len() == 2 {
@@ -247,17 +243,10 @@ unsafe fn cmd_select_pane_exec(
                 server_redraw_window_borders(&window);
                 server_status_window(&window);
             } else {
-                let visible = last.is_visible();
-                if !visible && window.push_zoom(false, (zoom) != 0) != 0 {
-                    server_redraw_window(&window);
-                }
                 window.redraw_active_switch(Some(&last));
                 if window.select_pane(&last, true) != 0 {
                     cmd_find_from_winlink(&mut *current.current.borrow_mut(), link.clone(), 0);
                     cmd_select_pane_redraw(&window);
-                }
-                if !visible && window.pop_zoom() != 0 {
-                    server_redraw_window(&window);
                 }
             }
             return CMD_RETURN_NORMAL;
@@ -305,7 +294,6 @@ unsafe fn cmd_select_pane_exec(
             None
         };
         let pane = if let Some(direction) = direction {
-            window.push_zoom(false, true);
             let selected = match direction {
                 b'L' => original_pane.neighbor_left(),
                 b'R' => original_pane.neighbor_right(),
@@ -313,7 +301,6 @@ unsafe fn cmd_select_pane_exec(
                 b'D' => original_pane.neighbor_down(),
                 _ => unreachable!(),
             };
-            window.pop_zoom();
             let Some(selected) = selected else {
                 return CMD_RETURN_NORMAL;
             };
@@ -354,10 +341,6 @@ unsafe fn cmd_select_pane_exec(
         {
             return CMD_RETURN_NORMAL;
         }
-        let visible = pane.is_visible();
-        if !visible && window.push_zoom(false, (zoom) != 0) != 0 {
-            server_redraw_window(&window);
-        }
         window.redraw_active_switch(Some(&pane));
         if window.select_pane(&pane, true) != 0 {
             cmd_find_from_winlink_pane(&mut *current.current.borrow_mut(), link.clone(), &pane, 0);
@@ -369,9 +352,6 @@ unsafe fn cmd_select_pane_exec(
             |out| out.write_all(b"after-select-pane"),
         );
         cmd_select_pane_redraw(&window);
-        if !visible && window.pop_zoom() != 0 {
-            server_redraw_window(&window);
-        }
         CMD_RETURN_NORMAL
     })();
     window.release(c"select pane target");

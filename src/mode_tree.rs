@@ -26,7 +26,7 @@ use crate::src::screen_write::{
     screen_write_stop,
 };
 use crate::src::server_client::Client as _;
-use crate::src::server_fn::{server_redraw_window, server_unzoom_window};
+use crate::src::server_fn::server_redraw_window;
 use crate::src::session::Session as _;
 use crate::src::shared::abi::__int32_t;
 use crate::src::shared::abi::*;
@@ -65,7 +65,7 @@ use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::style::*;
-use crate::src::shared::window::WINDOW_ZOOMED;
+
 use crate::src::shared::window::{window, winlink};
 use crate::src::sort::{sort_next_order, sort_order_from_string, sort_order_to_string};
 use crate::src::status::status_message_set;
@@ -589,28 +589,6 @@ pub unsafe fn mode_tree_start(
     (**s).mode &= !MODE_CURSOR;
     owner
 }
-pub unsafe fn mode_tree_zoom(
-    tree_owner: &std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>>,
-    mut args: *mut args,
-) {
-    let mtd = tree_owner.get();
-    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*mtd).wp) else {
-        return;
-    };
-    if args_has(args, 'Z' as i32 as u_char) != 0 {
-        let window = mode_pane_owner
-            .window_observer()
-            .upgrade()
-            .expect("mode window");
-        (*mtd).zoomed = if window.is_zoomed() { WINDOW_ZOOMED } else { 0 };
-        if (*mtd).zoomed == 0 && window.zoom(&mode_pane_owner) == 0 as ::core::ffi::c_int {
-            server_redraw_window(&window);
-        }
-        window.release(c"mode tree zoom");
-    } else {
-        (*mtd).zoomed = -(1 as ::core::ffi::c_int);
-    };
-}
 unsafe fn mode_tree_set_height(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     let callback = (&mut *tree_owner.get()).heightcb.take();
     if let Some(mut callback) = callback {
@@ -746,16 +724,6 @@ pub unsafe fn mode_tree_build(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
 }
 
 pub unsafe fn mode_tree_free(owner: std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>>) {
-    let mtd = &*owner.get();
-    // Pane destruction closes modes before releasing the pane's initial owner.
-    // Unlike normal access, cleanup must allow a logically destroyed pane.
-    if mtd.zoomed == 0 {
-        if let Some(pane) = mtd.wp.upgrade() {
-            let window = pane.window_observer().upgrade().expect("live window");
-            server_unzoom_window(&window);
-            window.release(c"mode tree unzoom");
-        }
-    }
     mode_tree_clear_prompt(&owner);
     let mtd = &mut *owner.get();
     mode_tree_free_items(&mut mtd.children);
@@ -2782,13 +2750,15 @@ mod queued_prompt_accept_tests {
 
     #[test]
     fn observed_prompt_callbacks_retain_only_during_live_dispatch() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static CALLS: AtomicU32 = AtomicU32::new(0);
         unsafe fn callback(
             tree: &Rc<UnsafeCell<mode_tree_data>>,
             _: Option<&CStr>,
             _: prompt_key_result,
         ) -> prompt_result {
             assert_eq!(Rc::strong_count(tree), 2);
-            (*tree.get()).zoomed += 1;
+            CALLS.fetch_add(1, Ordering::Relaxed);
             PROMPT_CONTINUE
         }
         unsafe {
@@ -2800,13 +2770,13 @@ mod queued_prompt_accept_tests {
                 input(None, None, PROMPT_KEY_HANDLED) as u32,
                 PROMPT_CONTINUE as u32
             );
-            assert_eq!((*tree.get()).zoomed, 1);
+            assert_eq!(CALLS.load(Ordering::Relaxed), 1);
             (*tree.get()).dead = 1;
             assert_eq!(
                 input(None, None, PROMPT_KEY_HANDLED) as u32,
                 PROMPT_CLOSE as u32
             );
-            assert_eq!((*tree.get()).zoomed, 1);
+            assert_eq!(CALLS.load(Ordering::Relaxed), 1);
             drop(tree);
             assert!(observer.upgrade().is_none());
             assert_eq!(
@@ -2828,7 +2798,6 @@ mod row_owner_tests {
             let tree_owner = mode_tree_alloc_data();
             let tree = crate::src::shared::rc::as_ptr(&tree_owner);
             let observer = Rc::downgrade(&tree_owner);
-            (*tree).zoomed = 1;
             let parent = mode_tree_add(
                 &mut *tree,
                 None,
@@ -2957,7 +2926,6 @@ mod row_owner_tests {
         unsafe {
             let tree_owner = mode_tree_alloc_data();
             let tree = crate::src::shared::rc::as_ptr(&tree_owner);
-            (*tree).zoomed = 1;
             let observer = Rc::downgrade(&tree_owner);
             let first = mode_tree_add(
                 &mut *tree,
@@ -2994,7 +2962,6 @@ mod row_owner_tests {
             let owner = mode_tree_alloc_data();
             let observer = Rc::downgrade(&owner);
             let tree = owner.get();
-            (*tree).zoomed = 1;
             let calls = Rc::new(std::cell::Cell::new(0));
             let callback_calls = calls.clone();
             let mut callback_owner = Some(owner);
@@ -3013,7 +2980,6 @@ mod row_owner_tests {
     fn height_callback_can_close_tree_without_accessing_freed_screen() {
         unsafe {
             let tree = mode_tree_alloc_data();
-            (*tree.get()).zoomed = 1;
             (*tree.get()).screen.grid = Some(crate::src::grid::grid_create(80, 24, 0));
             let observer = Rc::downgrade(&tree);
             (*tree.get()).heightcb = Some(Box::new(move |height| {
@@ -3120,7 +3086,6 @@ mod payload_owner_tests {
         unsafe {
             let tree_owner = mode_tree_alloc_data();
             let tree = crate::src::shared::rc::as_ptr(&tree_owner);
-            (*tree).zoomed = 1;
             let owner = payload(c"original");
             let original = ModeTreeItemData::Buffer(owner.downgrade());
             let row = mode_tree_add(&mut *tree, None, original.clone(), 1, c"row", None, 1);

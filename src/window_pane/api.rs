@@ -26,14 +26,11 @@ pub trait WindowPane {
 
     /// Visible geometry including the reserved scrollbar area, copied for hit testing.
     unsafe fn outer_geometry(&self) -> (i32, i32, u32, u32);
-    unsafe fn is_visible(&self) -> bool;
     unsafe fn pane_lines(&self) -> pane_lines;
     unsafe fn border_status(&self) -> i32;
     /// Minimum width for splitting this pane into two, using the caller's
     /// already-read scrollbar mode and this pane's own scrollbar dimensions.
     unsafe fn split_minimum_width(&self, reserve_scrollbar: bool) -> u32;
-    unsafe fn unzoomed_width(&self) -> Option<u32>;
-    unsafe fn unzoomed_height(&self) -> Option<u32>;
     unsafe fn has_pending_change(&self) -> bool;
     unsafe fn acknowledge_change(&self);
     /// Derive an owned default Window name from this pane's command or shell.
@@ -136,14 +133,10 @@ pub trait WindowPane {
     unsafe fn update_scrollbar_hover(&self, x: i32, y: i32);
 
     /// Stable, nonowning identity resolved only under the Window layout guard.
-    unsafe fn layout_identity(&self, saved: bool) -> Option<*mut layout_cell>;
+    unsafe fn layout_identity(&self) -> Option<*mut layout_cell>;
     unsafe fn place_in_layout(&self, cell: *mut layout_cell);
     /// Clear placement only if this is still the cell that owns the pane.
     unsafe fn detach_layout(&self, cell: *mut layout_cell);
-    unsafe fn save_layout_for_zoom(&self);
-    unsafe fn restore_layout_after_zoom(&self);
-    unsafe fn mark_zoomed(&self);
-    unsafe fn is_zoomed(&self) -> bool;
     unsafe fn minimum_layout_width(&self, reserve_scrollbar: bool) -> u32;
     /// Apply copied Window geometry, including pane border and scrollbar policy.
     /// Returns whether the visible geometry changed; resize callbacks run after
@@ -530,12 +523,10 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         super::mouse::mouse_location(self, x, y, slider)
     }
     unsafe fn update_scrollbar_hover(&self, x: i32, y: i32) {
-        if self.is_visible() {
-            if self.in_scrollbar_area(x, y) {
-                window_pane_scrollbar_show(self);
-            } else {
-                window_pane_scrollbar_start_timer(self);
-            }
+        if self.in_scrollbar_area(x, y) {
+            window_pane_scrollbar_show(self);
+        } else {
+            window_pane_scrollbar_start_timer(self);
         }
     }
 
@@ -855,12 +846,8 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     unsafe fn start_input(&self, item: &Rc<UnsafeCell<cmdq_item>>) -> Result<i32, CString> {
         window_pane_start_input(self, item)
     }
-    unsafe fn layout_identity(&self, saved: bool) -> Option<*mut layout_cell> {
-        if saved {
-            (*self.get()).saved_layout_cell
-        } else {
-            (*self.get()).layout_cell
-        }
+    unsafe fn layout_identity(&self) -> Option<*mut layout_cell> {
+        (*self.get()).layout_cell
     }
     unsafe fn place_in_layout(&self, cell: *mut layout_cell) {
         (*self.get()).layout_cell = Some(cell);
@@ -869,21 +856,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         if (*self.get()).layout_cell == Some(cell) {
             (*self.get()).layout_cell = None;
         }
-    }
-    unsafe fn save_layout_for_zoom(&self) {
-        let pane = &mut *self.get();
-        pane.saved_layout_cell = pane.layout_cell.take();
-    }
-    unsafe fn restore_layout_after_zoom(&self) {
-        let pane = &mut *self.get();
-        pane.layout_cell = pane.saved_layout_cell.take();
-        pane.flags &= !PANE_ZOOMED;
-    }
-    unsafe fn mark_zoomed(&self) {
-        (*self.get()).flags |= PANE_ZOOMED;
-    }
-    unsafe fn is_zoomed(&self) -> bool {
-        (*self.get()).flags & PANE_ZOOMED != 0
     }
     unsafe fn minimum_layout_width(&self, reserve_scrollbar: bool) -> u32 {
         if reserve_scrollbar {
@@ -965,9 +937,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     unsafe fn outer_geometry(&self) -> (i32, i32, u32, u32) {
         window_pane_full_size_offset(self)
     }
-    unsafe fn is_visible(&self) -> bool {
-        window_pane_is_visible(self) != 0
-    }
     unsafe fn pane_lines(&self) -> pane_lines {
         window_pane_get_pane_lines(&*self.get())
     }
@@ -981,69 +950,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         } else {
             (PANE_MINIMUM * 2 + 1) as u32
         }
-    }
-    unsafe fn unzoomed_width(&self) -> Option<u32> {
-        let window = self.window_observer().upgrade().expect("pane window");
-        let geometry = window.pane_layout_cell(
-            &Rc::downgrade(self),
-            crate::src::window::LayoutView::Unzoomed,
-        );
-        let Some(geometry) = geometry else {
-            window.release(c"unzoomed pane width");
-            return None;
-        };
-        let reserve = if geometry.is_saved() {
-            let main_screen = (*self.get()).base.saved_grid.is_none();
-            main_screen && window.scrollbar_mode() == PANE_SCROLLBARS_ALWAYS
-        } else {
-            window_pane_scrollbar_reserve(&*self.get()) != 0
-        };
-        let mut width = geometry.g.sx;
-        if reserve {
-            let (bar, pad) = {
-                let state = &*self.get();
-                (
-                    state.scrollbar_style.width.max(1),
-                    state.scrollbar_style.pad.max(0),
-                )
-            };
-            width = if width as i32 - bar - pad < PANE_MINIMUM {
-                PANE_MINIMUM as u32
-            } else {
-                width.wrapping_sub((bar + pad) as u32)
-            };
-        }
-        window.release(c"unzoomed pane width");
-        Some(width)
-    }
-    unsafe fn unzoomed_height(&self) -> Option<u32> {
-        let window = self.window_observer().upgrade().expect("pane window");
-        let geometry = window.pane_layout_cell(
-            &Rc::downgrade(self),
-            crate::src::window::LayoutView::Unzoomed,
-        );
-        let Some(geometry) = geometry else {
-            window.release(c"unzoomed pane height");
-            return None;
-        };
-        let status = if geometry.is_saved() {
-            window.pane_border_status()
-        } else {
-            self.border_status()
-        };
-        let border = match status {
-            PANE_STATUS_TOP => geometry.has_border(PANE_STATUS_TOP),
-            PANE_STATUS_BOTTOM => geometry.has_border(PANE_STATUS_BOTTOM),
-            _ => false,
-        };
-        let height = geometry.g.sy;
-        let height = if border && height > 1 {
-            height - 1
-        } else {
-            height
-        };
-        window.release(c"unzoomed pane height");
-        Some(height)
     }
     unsafe fn has_pending_change(&self) -> bool {
         (*self.get()).flags & PANE_CHANGED != 0

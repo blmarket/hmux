@@ -378,8 +378,7 @@ pub unsafe fn layout_parse(
                     pctx.cctxs.clear();
                     recalculate_sizes();
                     {
-                        let tree =
-                            w_owner.borrow_layout_root(crate::src::window::LayoutView::Visible);
+                        let tree = w_owner.borrow_layout_root();
                         if let Some(root) = tree {
                             layout_print_cell(
                                 (root as *const layout_cell).cast_mut(),
@@ -427,7 +426,7 @@ unsafe fn layout_assign_fallback_tiled(
     }
     match (*lc).type_0 as ::core::ffi::c_uint {
         2 => {
-            if let Some(owner) = panes.find(|owner| owner.layout_identity(false).is_none()) {
+            if let Some(owner) = panes.find(|owner| owner.layout_identity().is_none()) {
                 layout_make_leaf(lc, &owner);
             }
         }

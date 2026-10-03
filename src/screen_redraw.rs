@@ -271,9 +271,9 @@ unsafe fn redraw_check_two_pane_colours(w: &WindowRef) -> Option<layout_type> {
     let cells: Vec<_> = w
         .pane_snapshot()
         .into_iter()
-        .filter_map(|pane| pane.layout_identity(false))
+        .filter_map(|pane| pane.layout_identity())
         .collect();
-    let tree = w.borrow_layout_root(crate::src::window::LayoutView::Visible)?;
+    let tree = w.borrow_layout_root()?;
     let mut count = 0;
     let mut direction = None;
     for id in cells {
@@ -704,9 +704,6 @@ unsafe fn redraw_mark_pane(
     let mut sb_w: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut sb_left: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut overlay: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if !wp_owner.is_visible() {
-        return;
-    }
     if wp.scrollbar_visible() {
         overlay = wp.scrollbar_overlay() as i32;
         if overlay != 0 {
@@ -1697,10 +1694,8 @@ unsafe fn redraw_draw_scene(
             pane.clear_sync_dirty();
         } else {
             for pane in window_owner.pane_snapshot() {
-                if pane.is_visible() {
-                    pane.stop_sync();
-                    pane.clear_sync_dirty();
-                }
+                pane.stop_sync();
+                pane.clear_sync_dirty();
             }
         }
     }
@@ -1726,9 +1721,7 @@ unsafe fn redraw_draw_scene(
             redraw_draw_pane_prompt(&mut dctx, wp);
         } else {
             for pane_owner in window_owner.pane_snapshot() {
-                if pane_owner.is_visible() {
-                    redraw_draw_pane_prompt(&mut dctx, &pane_owner);
-                }
+                redraw_draw_pane_prompt(&mut dctx, &pane_owner);
             }
         }
     }

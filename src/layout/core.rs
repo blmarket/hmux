@@ -19,7 +19,7 @@ pub use crate::src::shared::pane::{
     PANE_MINIMUM, PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_LEFT,
     PANE_STATUS_BOTTOM, PANE_STATUS_TOP,
 };
-pub use crate::src::shared::spawn::{SPAWN_BEFORE, SPAWN_FULLSIZE, SPAWN_HORIZONTAL, SPAWN_ZOOM};
+pub use crate::src::shared::spawn::{SPAWN_BEFORE, SPAWN_FULLSIZE, SPAWN_HORIZONTAL};
 use crate::src::shared::style::*;
 pub use crate::src::shared::tty::tty_term;
 pub use crate::src::shared::window::window;
@@ -288,24 +288,16 @@ pub unsafe fn layout_add_horizontal_border(
     0 as ::core::ffi::c_int
 }
 /// Apply cell geometry to the panes; returns whether any pane changed.
-pub unsafe fn layout_fix_panes(
-    window: &WindowRef,
-    skip: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
-) -> bool {
+pub unsafe fn layout_fix_panes(window: &WindowRef) -> bool {
     let mut changed = false;
     let mut cursor = window.next_pane(None);
     while let Some(pane) = cursor {
-        if pane.layout_identity(false).is_some()
-            && !skip.is_some_and(|skip| std::rc::Rc::ptr_eq(&pane, skip))
-        {
+        if pane.layout_identity().is_some() {
             // Read placement before resizing; a callback may replace the tree
             // before the next pane is visited.
             let geometry = window
-                .pane_layout_cell(
-                    &std::rc::Rc::downgrade(&pane),
-                    crate::src::window::LayoutView::Visible,
-                )
-                .expect("placed pane belongs to visible layout");
+                .pane_layout_cell(&std::rc::Rc::downgrade(&pane))
+                .expect("placed pane belongs to layout");
             changed |= pane.apply_layout(geometry, window);
         }
         cursor = window.next_pane(Some(&pane));
@@ -564,7 +556,7 @@ unsafe fn layout_destroy_cell_with_limits(
 /// window size and the visible tiled root. Clients clip and pan across it.
 pub unsafe fn logical_size(w_owner: &WindowRef) -> (u32, u32) {
     let (sx, sy) = w_owner.size();
-    let Some(root) = w_owner.borrow_layout_root(crate::src::window::LayoutView::Visible) else {
+    let Some(root) = w_owner.borrow_layout_root() else {
         return (sx, sy);
     };
     (sx.max(root.g.sx), sy.max(root.g.sy))
@@ -582,7 +574,7 @@ pub unsafe fn layout_init(
         layout_set_size(root, sx, sy, 0, 0);
         layout_make_leaf(root, wp_owner);
     }
-    layout_fix_panes(w_owner, None);
+    layout_fix_panes(w_owner);
 }
 pub unsafe fn layout_free(w_owner: &WindowRef) {
     let detached = w_owner.borrow_layout_root_mut().take();
@@ -593,7 +585,7 @@ pub unsafe fn layout_free(w_owner: &WindowRef) {
 /// whether the tree or any pane moved.
 pub unsafe fn layout_resize(w_owner: &WindowRef, mut sx: u_int, mut sy: u_int) -> bool {
     if super::set::layout_set_arrange_sticky(w_owner, sx, sy) {
-        return layout_fix_panes(w_owner, None);
+        return layout_fix_panes(w_owner);
     }
     let (pane_status, horizontal_minimum) = layout_resize_limits(w_owner);
     let adjusted;
@@ -663,7 +655,7 @@ pub unsafe fn layout_resize(w_owner: &WindowRef, mut sx: u_int, mut sy: u_int) -
         adjusted = xchange != 0 || ychange != 0;
     }
     layout_fix_offsets(w_owner);
-    layout_fix_panes(w_owner, None) || adjusted
+    layout_fix_panes(w_owner) || adjusted
 }
 pub unsafe fn layout_resize_pane_to(
     pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
@@ -674,7 +666,7 @@ pub unsafe fn layout_resize_pane_to(
         .window_observer()
         .upgrade()
         .expect("resized pane window");
-    let id = pane.layout_identity(false).expect("resized pane layout");
+    let id = pane.layout_identity().expect("resized pane layout");
     let change = (|| {
         let mut guard = window
             .borrow_layout_cell_mut(id)
@@ -776,7 +768,7 @@ pub unsafe fn layout_resize_layout(
     opposite: i32,
 ) -> bool {
     let exists = {
-        let tree = window.borrow_layout_root(crate::src::window::LayoutView::Visible);
+        let tree = window.borrow_layout_root();
         tree.is_some_and(|root| root.find(id).is_some())
     };
     if !exists {
@@ -829,7 +821,7 @@ pub unsafe fn layout_resize_layout(
         }
     }
     layout_fix_offsets(window);
-    layout_fix_panes(window, None);
+    layout_fix_panes(window);
     events_fire_window(c"window-layout-changed".as_ptr(), window.clone());
     true
 }
@@ -996,7 +988,6 @@ pub unsafe fn layout_assign_pane(
     window: &WindowRef,
     id: *mut layout_cell,
     pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    do_not_resize: i32,
 ) {
     {
         let mut cell = window
@@ -1006,7 +997,7 @@ pub unsafe fn layout_assign_pane(
     }
     let (sx, sy) = window.size();
     super::set::layout_set_arrange_sticky(window, sx, sy);
-    layout_fix_panes(window, if do_not_resize != 0 { Some(pane) } else { None });
+    layout_fix_panes(window);
 }
 unsafe fn layout_new_pane_size(
     root: *mut layout_cell,
@@ -1541,7 +1532,7 @@ pub unsafe fn layout_split_pane(
 pub unsafe fn layout_close_pane(pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
     // A logically destroyed pane may already have lost its parent Window. Keep
     // the legacy early return for a cleared Pane cell link.
-    if pane.layout_identity(false).is_none() {
+    if pane.layout_identity().is_none() {
         return;
     }
     let window = pane
@@ -1577,7 +1568,7 @@ pub unsafe fn layout_close_pane(pane: &std::rc::Rc<std::cell::UnsafeCell<window_
         let (sx, sy) = window.size();
         super::set::layout_set_arrange_sticky(&window, sx, sy);
         layout_fix_offsets(&window);
-        layout_fix_panes(&window, None);
+        layout_fix_panes(&window);
     }
     // Resize callbacks can reparent the pane. Preserve the original notification
     // target lookup, which occurs after resizing rather than at function entry.
@@ -1727,7 +1718,7 @@ pub unsafe fn layout_spread_out(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<win
         // Resizing panes can reenter the Window and replace its layout.
         if changed {
             layout_fix_offsets(&window);
-            layout_fix_panes(&window, None);
+            layout_fix_panes(&window);
         }
     }
     window.release(c"spread layout");
@@ -1796,7 +1787,6 @@ pub unsafe fn layout_get_tiled_cell(
             }
         };
     }
-    w_owner.push_zoom(true, (flags & SPAWN_ZOOM) != 0);
     layout_split_pane(wp_owner, type_0, size, flags)
         .ok_or_else(|| c"no space for a new pane".to_owned())
 }

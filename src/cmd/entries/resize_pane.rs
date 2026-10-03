@@ -9,7 +9,7 @@ use crate::src::layout::{
     layout_resize_pane_to, layout_search_by_border,
 };
 use crate::src::server_client::Client as _;
-use crate::src::server_fn::{server_redraw_window, server_unzoom_window};
+use crate::src::server_fn::server_redraw_window;
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -27,7 +27,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{PANE_MAXIMUM, PANE_STATUS_BOTTOM, PANE_STATUS_TOP};
 use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::WINDOW_ZOOMED;
+
 use crate::src::shared::window::{window, winlink};
 use crate::src::window::Window as _;
 
@@ -96,18 +96,8 @@ unsafe fn cmd_resize_pane_exec(
         if args_has(args, 'M' as i32 as u_char) != 0 {
             return cmd_resize_pane_mouse_update(item_handle);
         }
+        // Windows no longer zoom; the flag is accepted and does nothing.
         if args_has(args, 'Z' as i32 as u_char) != 0 {
-            if wl
-                .get_unchecked()
-                .window_handle()
-                .expect("resize window")
-                .is_zoomed()
-            {
-                (wl.get_unchecked().window_handle().expect("resize window")).unzoom(true);
-            } else {
-                crate::src::shared::window::WindowRef::zoom_pane(&pane_owner);
-            }
-            server_redraw_window(wl.get_unchecked().window_handle().expect("resize window"));
             return CMD_RETURN_NORMAL;
         }
         // The next arrangement would undo a manual size.
@@ -117,10 +107,7 @@ unsafe fn cmd_resize_pane_exec(
             cmdq_error(item_handle, |out| out.write_all(b"layout is sticky"));
             return CMD_RETURN_ERROR;
         }
-        server_unzoom_window(wl.get_unchecked().window_handle().expect("resize window"));
-        let cell_id = pane_owner
-            .layout_identity(false)
-            .expect("resized pane layout");
+        let cell_id = pane_owner.layout_identity().expect("resized pane layout");
         layout_owner = Some(
             pane_owner
                 .window_observer()
@@ -250,10 +237,7 @@ unsafe fn cmd_resize_pane_exec(
         if has_parent {
             layout_fix_offsets(wl.get_unchecked().window_handle().expect("resize window"));
         }
-        layout_fix_panes(
-            wl.get_unchecked().window_handle().expect("resize window"),
-            None,
-        );
+        layout_fix_panes(wl.get_unchecked().window_handle().expect("resize window"));
         events_fire_window(
             c"window-layout-changed".as_ptr(),
             wl.get_unchecked()
@@ -368,7 +352,7 @@ unsafe fn cmd_resize_pane_mouse_resize_tiled(client_owner: &ClientRef, mut m: *m
             ly = ((*m).statusat - 1 as ::core::ffi::c_int) as u_int;
         }
         let cells = {
-            let tree = window_owner.borrow_layout_root(crate::src::window::LayoutView::Visible);
+            let tree = window_owner.borrow_layout_root();
             let Some(root) = tree else {
                 return;
             };
@@ -388,7 +372,7 @@ unsafe fn cmd_resize_pane_mouse_resize_tiled(client_owner: &ClientRef, mut m: *m
         };
         for id in cells {
             let direction = {
-                let tree = window_owner.borrow_layout_root(crate::src::window::LayoutView::Visible);
+                let tree = window_owner.borrow_layout_root();
                 tree.and_then(|root| root.find(id))
                     .and_then(|cell| cell.parent.as_ref())
                     .map(|parent| parent.type_0)

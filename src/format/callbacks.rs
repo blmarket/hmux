@@ -233,18 +233,8 @@ unsafe fn format_cb_window_layout(ft: *mut format_tree) -> Option<CString> {
     let legacy = client_handle(&(*ft).client)
         .as_ref()
         .is_some_and(|client| client.uses_legacy_layout_format());
-    let value = window.layout_string(crate::src::window::LayoutView::Unzoomed, legacy);
+    let value = window.layout_string(legacy);
     window.release(c"format window layout");
-    value
-}
-
-unsafe fn format_cb_window_visible_layout(ft: *mut format_tree) -> Option<CString> {
-    let window = (*ft).w.upgrade()?;
-    let legacy = client_handle(&(*ft).client)
-        .as_ref()
-        .is_some_and(|client| client.uses_legacy_layout_format());
-    let value = window.layout_string(crate::src::window::LayoutView::Visible, legacy);
-    window.release(c"format visible window layout");
     value
 }
 
@@ -964,14 +954,6 @@ unsafe fn format_cb_pane_top(ft: *mut format_tree) -> Option<CString> {
 unsafe fn format_cb_pane_tty(ft: *mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_tty", ft)
 }
-unsafe fn format_cb_pane_unzoomed_height(ft: *mut format_tree) -> Option<CString> {
-    pane_format_string(c"pane_unzoomed_height", ft)
-}
-
-unsafe fn format_cb_pane_unzoomed_width(ft: *mut format_tree) -> Option<CString> {
-    pane_format_string(c"pane_unzoomed_width", ft)
-}
-
 unsafe fn format_cb_pane_width(ft: *mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_width", ft)
 }
@@ -1483,11 +1465,11 @@ unsafe fn format_cb_window_manual_width(ft: *mut format_tree) -> Option<CString>
     window.release(c"format manual window width");
     Some(value)
 }
+// Windows no longer zoom; the flag remains for configurations that test it.
 unsafe fn format_cb_window_zoomed_flag(ft: *mut format_tree) -> Option<CString> {
     let window = (*ft).w.upgrade()?;
-    let value = if window.is_zoomed() { c"1" } else { c"0" }.to_owned();
     window.release(c"format window zoom flag");
-    Some(value)
+    Some(c"0".to_owned())
 }
 
 unsafe fn format_cb_wrap_flag(ft: *mut format_tree) -> Option<CString> {
@@ -1671,7 +1653,7 @@ pub(crate) unsafe fn window_format_value(
     format_table_get(key)?.evaluate(context)
 }
 
-pub(super) static FORMAT_TABLE: [FormatTableEntry; 212] = [
+pub(super) static FORMAT_TABLE: [FormatTableEntry; 210] = [
     FormatTableEntry {
         key: c"active_window_index",
         callback: FormatCallback::String(format_cb_active_window_index),
@@ -2197,14 +2179,6 @@ pub(super) static FORMAT_TABLE: [FormatTableEntry; 212] = [
         callback: FormatCallback::String(format_cb_pane_unseen_changes),
     },
     FormatTableEntry {
-        key: c"pane_unzoomed_height",
-        callback: FormatCallback::String(format_cb_pane_unzoomed_height),
-    },
-    FormatTableEntry {
-        key: c"pane_unzoomed_width",
-        callback: FormatCallback::String(format_cb_pane_unzoomed_width),
-    },
-    FormatTableEntry {
         key: c"pane_width",
         callback: FormatCallback::String(format_cb_pane_width),
     },
@@ -2506,7 +2480,7 @@ pub(super) static FORMAT_TABLE: [FormatTableEntry; 212] = [
     },
     FormatTableEntry {
         key: c"window_visible_layout",
-        callback: FormatCallback::String(format_cb_window_visible_layout),
+        callback: FormatCallback::String(format_cb_window_layout),
     },
     FormatTableEntry {
         key: c"window_width",

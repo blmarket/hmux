@@ -33,7 +33,7 @@ use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::spawn::{
-    SPAWN_BEFORE, SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_FULLSIZE, SPAWN_HORIZONTAL, SPAWN_ZOOM,
+    SPAWN_BEFORE, SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_FULLSIZE, SPAWN_HORIZONTAL,
 };
 use crate::src::shared::window::winlink;
 use crate::src::window::Window;
@@ -142,9 +142,6 @@ unsafe fn cmd_split_window_exec(
         let mut style: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut cause: Option<std::ffi::CString> = None;
         let mut count: u_int = args_count(args);
-        if !std::ptr::eq(cmd_get_entry(self_0.get_unchecked()), &cmd_new_pane_entry) {
-            original_window.unzoom(true);
-        }
         if args_has(args, 'h' as i32 as u_char) != 0 {
             flags |= SPAWN_HORIZONTAL;
         }
@@ -156,9 +153,6 @@ unsafe fn cmd_split_window_exec(
         }
         if args_has(args, 'd' as i32 as u_char) != 0 {
             flags |= SPAWN_DETACHED;
-        }
-        if args_has(args, 'Z' as i32 as u_char) != 0 {
-            flags |= SPAWN_ZOOM;
         }
         input = args_has(args, 'I' as i32 as u_char);
         if input != 0
@@ -410,7 +404,6 @@ unsafe fn cmd_split_window_exec(
                                                     0 as ::core::ffi::c_int,
                                                 );
                                             }
-                                            original_window.pop_zoom();
                                             server_redraw_window(&original_window);
                                             server_redraw_session(
                                                 s.as_ref().expect("live session"),
@@ -473,7 +466,6 @@ unsafe fn cmd_split_window_exec(
             layout_close_pane(new_pane);
             original_window.remove_pane(new_pane);
         }
-        original_window.pop_zoom();
         drop(sc.environ.take());
         window_owner.release(c"cmd_split_window");
         CMD_RETURN_ERROR

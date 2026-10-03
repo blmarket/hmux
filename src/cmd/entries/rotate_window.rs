@@ -55,7 +55,7 @@ unsafe fn cmd_rotate_window_assign_cell(
     }
     if let Some(cell) = cell {
         pane.place_in_layout(cell);
-    } else if let Some(previous) = pane.layout_identity(false) {
+    } else if let Some(previous) = pane.layout_identity() {
         pane.detach_layout(previous);
     }
 }
@@ -80,7 +80,7 @@ unsafe fn cmd_rotate_window_panes(
             order.push_back(observer);
         }
     }
-    let saved_cell = moved.layout_identity(false);
+    let saved_cell = moved.layout_identity();
     let (saved_sx, saved_sy, saved_x, saved_y) = moved.geometry();
     let mut cursor = window
         .step_pane(None, !down)
@@ -88,7 +88,7 @@ unsafe fn cmd_rotate_window_panes(
     let next =
         |pane: &Rc<UnsafeCell<window_pane>>| window.step_pane(Some(&Rc::downgrade(pane)), !down);
     while let Some(neighbor) = next(&cursor) {
-        let cell = neighbor.layout_identity(false);
+        let cell = neighbor.layout_identity();
         let (sx, sy, x, y) = neighbor.geometry();
         cmd_rotate_window_assign_cell(window, &cursor, cell);
         cursor.set_layout_offset(x, y);
@@ -119,7 +119,6 @@ unsafe fn cmd_rotate_window_exec(
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let window_owner = (*target).w.upgrade().expect("live rotation window");
     let result = {
-        window_owner.push_zoom(false, (args_has(args, b'Z')) != 0);
         let selected_pane =
             cmd_rotate_window_panes(&window_owner, args_has(args, b'D') != 0, |pane, sx, sy| {
                 pane.resize(sx, sy)
@@ -131,7 +130,6 @@ unsafe fn cmd_rotate_window_exec(
             &selected_pane,
             0 as ::core::ffi::c_int,
         );
-        std::rc::Rc::clone(&(window_owner)).pop_zoom();
         window_owner.invalidate_scene();
         server_redraw_window(&(window_owner));
         CMD_RETURN_NORMAL

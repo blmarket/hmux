@@ -124,7 +124,7 @@ use crate::src::shared::pane::{
     PANE_DESTROYED, PANE_EMPTY, PANE_EXITED, PANE_FOCUSED, PANE_INPUTOFF, PANE_REDRAW,
     PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT,
     PANE_SCROLLBARS_MODAL, PANE_STATUSREADY, PANE_STATUS_BOTTOM, PANE_STATUS_OFF, PANE_STATUS_TOP,
-    PANE_STYLECHANGED, PANE_THEMECHANGED, PANE_UNSEENCHANGES, PANE_ZOOMED,
+    PANE_STYLECHANGED, PANE_THEMECHANGED, PANE_UNSEENCHANGES,
 };
 use crate::src::shared::pane::{
     window_pane_history, window_pane_modes, window_pane_prompt, window_panes, PaneScreenSource,
@@ -147,9 +147,8 @@ pub use crate::src::shared::window::{
     winlinks,
 };
 use crate::src::shared::window::{
-    WINDOW_ACTIVITY, WINDOW_ALERTFLAGS, WINDOW_MODE_HIDE_PANE_STATUS, WINDOW_MODE_HIDE_SCROLLBARS,
-    WINDOW_MODE_NO_STACK, WINDOW_PANE_NO_MODE, WINDOW_ZOOMED, WINLINK_ACTIVITY, WINLINK_ALERTFLAGS,
-    WINLINK_BELL, WINLINK_SILENCE, WINLINK_VISITED,
+    WINDOW_ACTIVITY, WINDOW_ALERTFLAGS, WINDOW_MODE_NO_STACK, WINDOW_PANE_NO_MODE,
+    WINLINK_ACTIVITY, WINLINK_ALERTFLAGS, WINLINK_BELL, WINLINK_SILENCE, WINLINK_VISITED,
 };
 use libc::{REG_EXTENDED, REG_ICASE};
 
@@ -530,11 +529,6 @@ unsafe fn window_pane_printable_flags(
         let fresh13 = pos;
         pos += 1;
         flags[fresh13 as usize] = '-' as i32 as ::core::ffi::c_char;
-    }
-    if (*wp).flags & PANE_ZOOMED != 0 {
-        let fresh14 = pos;
-        pos += 1;
-        flags[fresh14 as usize] = 'Z' as i32 as ::core::ffi::c_char;
     }
     flags[pos as usize] = '\0' as i32 as ::core::ffi::c_char;
     std::ffi::CStr::from_ptr(flags.as_ptr()).to_owned()
@@ -1076,10 +1070,9 @@ unsafe fn window_pane_set_mode(
     assert!(!mode_screen.is_null(), "active mode has a screen");
     (*wp).screen_source = PaneScreenSource::Mode((*wp).active_mode_entry());
     (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_CHANGED;
-    layout_fix_panes(
-        &std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
-        None,
-    );
+    layout_fix_panes(&std::rc::Rc::clone(
+        ((*wp).window_handle().as_ref()).expect("live window"),
+    ));
     server_redraw_window_borders(((*wp).window_handle().as_ref()).expect("live window"));
     server_status_window(((*wp).window_handle().as_ref()).expect("live window"));
     window_fire_pane_mode_changed(
@@ -1154,10 +1147,9 @@ unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<window_pa
         next.get_unchecked().mode.name.as_ptr()
     };
     (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_CHANGED;
-    layout_fix_panes(
-        &std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
-        None,
-    );
+    layout_fix_panes(&std::rc::Rc::clone(
+        ((*wp).window_handle().as_ref()).expect("live window"),
+    ));
     server_redraw_window_borders(((*wp).window_handle().as_ref()).expect("live window"));
     server_status_window(((*wp).window_handle().as_ref()).expect("live window"));
     window_fire_pane_mode_changed(
@@ -1432,7 +1424,6 @@ unsafe fn window_pane_copy_paste(
             && (*loop_0).modes.is_empty()
             && (*loop_0).fd.is_some()
             && !(*loop_0).flags & PANE_INPUTOFF != 0
-            && window_pane_is_visible(&pane_owner) != 0
             && options_get_number(
                 options_owner_ptr(&mut (*loop_0).options)
                     .map_or(std::ptr::null_mut(), |options| options),
@@ -1466,7 +1457,6 @@ unsafe fn window_pane_copy_key(
             && (*loop_0).modes.is_empty()
             && (*loop_0).fd.is_some()
             && !(*loop_0).flags & PANE_INPUTOFF != 0
-            && window_pane_is_visible(&pane_owner) != 0
             && options_get_number(
                 options_owner_ptr(&mut (*loop_0).options)
                     .map_or(std::ptr::null_mut(), |options| options),
@@ -1580,16 +1570,6 @@ unsafe fn window_pane_key(
         window_pane_copy_key(pane_owner, key);
     }
     0 as ::core::ffi::c_int
-}
-
-unsafe fn window_pane_is_visible(pane: &Rc<UnsafeCell<window_pane>>) -> ::core::ffi::c_int {
-    let parent = pane.window_observer().upgrade().expect("live pane parent");
-    // The false redraw argument only writes this disposable context. A deferred
-    // draw (-1) still means the pane is placed and therefore visible while zoomed.
-    let visible = !parent.is_zoomed()
-        || pane.prepare_render(&mut crate::src::shared::tty::tty_ctx::default(), false) != 0;
-    parent.release(c"window_pane_is_visible");
-    visible as ::core::ffi::c_int
 }
 
 fn window_pane_exited(wp: &window_pane) -> ::core::ffi::c_int {
@@ -2051,15 +2031,6 @@ unsafe fn window_pane_show_scrollbar(wp: &window_pane) -> ::core::ffi::c_int {
         return 0;
     }
     let window = wp.window_handle().expect("live window");
-    if window.is_zoomed()
-        && window.active_pane().is_some_and(|active| {
-            (*active.get())
-                .active_mode()
-                .is_some_and(|mode| mode.flags & WINDOW_MODE_HIDE_SCROLLBARS != 0)
-        })
-    {
-        return 0;
-    }
     let mode = window.scrollbar_mode();
     (mode == PANE_SCROLLBARS_ALWAYS
         || mode == PANE_SCROLLBARS_AUTOHIDE
@@ -2439,18 +2410,6 @@ unsafe fn window_pane_get_pane_lines(wp: &window_pane) -> pane_lines {
 }
 
 unsafe fn window_pane_get_pane_status(wp: &window_pane) -> ::core::ffi::c_int {
-    let hide_status = wp.modes.first().is_some_and(|entry| {
-        entry
-            .try_borrow_mut()
-            .expect("active pane mode already borrowed")
-            .mode
-            .flags
-            & WINDOW_MODE_HIDE_PANE_STATUS
-            != 0
-    });
-    if hide_status && wp.flags & PANE_ZOOMED != 0 {
-        return 0;
-    }
     wp.window_handle()
         .expect("pane window")
         .pane_border_status()

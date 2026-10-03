@@ -452,11 +452,8 @@ fn migrated_name_and_window_notification_helpers_use_holders() {
             "src/format/callbacks.rs",
             &[
                 "format_cb_window_layout",
-                "format_cb_window_visible_layout",
                 "format_cb_pane_modal_flag",
                 "format_cb_pane_at_bottom",
-                "format_cb_pane_unzoomed_width",
-                "format_cb_pane_unzoomed_height",
                 "format_cb_window_linked_sessions",
                 "format_cb_window_name",
                 "format_cb_window_zoomed_flag",
@@ -479,7 +476,6 @@ fn migrated_name_and_window_notification_helpers_use_holders() {
             "src/window_panes.rs",
             &[
                 "window_panes_pane_geometry",
-                "window_panes_pane_visible",
                 "window_panes_scaled_geometry",
                 "window_panes_get_geometry",
                 "window_panes_get_border_cell",
@@ -808,7 +804,6 @@ fn window_state_is_private_and_pane_implementation_is_a_sibling_module() {
                 | "window_winlinks_first"
                 | "window_winlinks_next"
                 | "window_has_pane"
-                | "window_zoomed_pane"
                 | "window_pane_first"
                 | "window_pane_last"
                 | "window_pane_stack_first"

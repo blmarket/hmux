@@ -1,7 +1,8 @@
 # Scrolling window implementation plan
 
-Status: rewritten on 2026-10-03 against `main` at `f457d591`. This replaces the
-layout-based design. Nothing below has been started.
+Status: written on 2026-10-03 against `main` at `f457d591`; it replaces the
+layout-based design. Steps 1 and 2 are done (see "Where things stand"); step 3
+is next. Line references are current as of step 2.
 
 ## Direction
 
@@ -30,6 +31,10 @@ answer and marks it "proposed".
 | 4 | `pane-border-status` (per-pane title row, off by default) | Drop | Step 6 |
 | 5 | Active-pane indicator: half-coloured border on every separator | Adopt | Step 6 |
 | 6 | Blank area beside a trailing half pane: inside fill or outside fill | Outside fill, as tmux paints beyond a smaller window | Step 6 |
+
+Steps 1 and 2 followed the proposed answer to decision 1 wherever they had to
+choose; "Left by steps 1 and 2" lists what they kept. If decision 1 is
+rejected, step 3 deletes those names along with the layout ones.
 
 ## Confirmed behavior
 
@@ -62,8 +67,10 @@ answer and marks it "proposed".
 
 | Piece | Commit | Fate |
 | --- | --- | --- |
+| Step 1: floating and modal panes removed | `b35d5683` | Done |
+| Step 2: zoom removed | The commit after `b35d5683` | Done |
 | Window sizing split (`Window::size()` vs. `layout::logical_size`) | `8e6e80db` | Kept. `Window::size()` stays the sizing basis; the extent rule changes (see Geometry) |
-| Sticky layouts (`sticky-layout` option, `sticky` and `lastlayout` fields) | `4b6e6435` | Removed in step 3 with `tests/sticky_layout.rs` (20 tests) |
+| Sticky layouts (`sticky-layout` option, `sticky` and `lastlayout` fields) | `4b6e6435` | Removed in step 3 with `tests/sticky_layout.rs` (17 tests) |
 | Shared server harness (`tests/common/mod.rs`) | `4b6e6435` | Kept |
 
 Reference material only, none of it mergeable: branch `h1` (worktree
@@ -71,6 +78,31 @@ Reference material only, none of it mergeable: branch `h1` (worktree
 following (`src/tty.rs`, `src/server_client/api.rs`), menu placement per client
 viewport, navigation that stops at the ends, the key map, the PTY test client
 and test cases. Its mode flag and `src/layout/scrolling.rs` are superseded.
+
+### Left by steps 1 and 2
+
+- Format variables kept as constant `0`: `pane_floating_flag`,
+  `pane_modal_flag`, `pane_zoomed_flag`, `window_zoomed_flag`. Removed:
+  `pane_z`, `window_modal_pane`, and `pane_unzoomed_width`/`_height`, which
+  equalled `pane_width`/`pane_height` once zoom was gone. The
+  `display-panes-format` default now uses `pane_width`/`pane_height`.
+  `#{window_visible_layout}` returns the same string as `#{window_layout}`.
+- The `window-zoomed` and `window-unzoomed` hooks are accepted and never run.
+- `-Z` is accepted and ignored by `resize-pane`, `select-pane`, `swap-pane`,
+  `rotate-window`, `switch-client`, `split-window`/`new-pane`, the mode-tree
+  choosers (`choose-tree`, `choose-buffer`, `choose-client`, `customize-mode`,
+  `find-window`), `display-panes` and `switch-mode`.
+- `display-panes` draws its preview inside the mode pane instead of zooming it.
+- `WindowPane::is_visible` was false only for panes hidden by zoom and is gone.
+  Step 5 decides visibility per client from the viewport.
+- `layout_fix_panes` lost its skip argument and `layout_assign_pane` its
+  do-not-resize flag; only zoomed splits used them.
+- Bindings already removed: `*`, `@`, the `move` key table, the floating mouse
+  bindings (`C-MouseDrag1Pane`, `C-MouseDrag1Empty`, `M-MouseDrag1Pane`,
+  `M-MouseDrag1Border`, `MouseDown1Control7`), `z`, `MouseDown1Control8`, and
+  the Zoom item in the three pane menus. The matching float and zoom buttons
+  are gone from `pane-border-format`, and the tree-mode flag lines no longer
+  show "zoomed".
 
 ## Design
 
@@ -84,12 +116,13 @@ borrows before resizing panes or dispatching callbacks.
 
 | State | Where | Change |
 | --- | --- | --- |
-| Pane order | `panes` (`src/window/model.rs:56`) | Existing; it is the strip order |
+| Pane order | `panes` (`src/window/model.rs:49`) | Existing; it is the strip order |
 | Active pane, pane history | `active`, `last_panes` | Existing |
 | Size | `sx`, `sy`, pending and manual sizes | Existing |
 | Width preference | New value in the pane model (`src/window_pane/model.rs`) | Half by default |
-| Pane rectangle | Pane `sx`, `sy`, `xoff`, `yoff` (`src/window_pane/model.rs:16-19`) | Existing; written only by the arrange step |
-| Removed | `layout_root`, `saved_layout_root`, `old_layout`, `lastlayout`, `sticky`, `was_zoomed`, `z_index`, `modal`, `modal_last`, `last_new_pane_x/y`, the `WINDOW_ZOOMED` flag; the pane's `layout_cell` and `saved_layout_cell` | |
+| Pane rectangle | Pane `sx`, `sy`, `xoff`, `yoff` (`src/window_pane/model.rs:15-18`) | Existing; written only by the arrange step |
+| Removed in steps 1 and 2 | `z_index`, `modal`, `modal_last`, `last_new_pane_x/y`, `saved_layout_root`, `was_zoomed`, the `WINDOW_ZOOMED` flag; the pane's `saved_layout_cell` and `PANE_ZOOMED` flag | Done |
+| Removed in step 3 | `layout_root`, `old_layout`, `lastlayout`, `sticky`; the pane's `layout_cell` | |
 
 ### Arrange
 
@@ -102,7 +135,7 @@ On movement it invalidates the scene, fires `window-layout-changed` and redraws,
 as `layout_set_select` and `refit_layout` do today; with no movement it is
 silent.
 
-`apply_layout` (`src/window_pane/api.rs:933`) takes a layout cell today; it
+`apply_layout` (`src/window_pane/api.rs:868`) takes a layout cell today; it
 takes a rectangle instead. `layout_fix_panes` and `layout_resize_limits` lose
 their tree and move into the arrange step.
 
@@ -116,7 +149,7 @@ With `(W, H) = Window::size()` and the panes in order:
 | Full width | `W`, raised to the same minimum |
 | Pane height | `H`, less scrollbar and status adjustments as today |
 | Pane first column | Previous pane's first column, plus its width, plus one separator |
-| Scrollable extent | Last pane's first column plus `W`; this replaces `layout::logical_size` (`src/layout/core.rs:740`) |
+| Scrollable extent | Last pane's first column plus `W`; this replaces `layout::logical_size` (`src/layout/core.rs:557`) |
 
 - Two halves and their separator always fit in `W`. An even `W` leaves one spare
   column at the right edge.
@@ -139,23 +172,23 @@ With `(W, H) = Window::size()` and the panes in order:
   `src/server_client/api.rs:506-545`) and may leave the view off a boundary.
   Selecting a pane resets it; so does `refresh-client -c`.
 - Left/right navigation (`window_pane_find_left`/`_right`,
-  `src/window_pane/mod.rs:1904`, `:1949`) becomes the previous/next pane in
+  `src/window_pane/mod.rs:1806`, `:1851`) becomes the previous/next pane in
   order and stops at the ends. Up/down navigation has no target.
 - Menus and popups are placed against the logical size
-  (`src/cmd/entries/display_menu.rs:522`, `src/window/mod.rs:531`). Place them
+  (`src/cmd/entries/display_menu.rs:522`, `src/window/mod.rs:522`). Place them
   within the target client's viewport.
 
 ### Borders
 
 - Keep the marking rule in `redraw_mark_pane_borders`
-  (`src/screen_redraw.rs:596`): left when there is a column before the pane,
+  (`src/screen_redraw.rs:559`): left when there is a column before the pane,
   right when it is within the extent.
-- Delete horizontal borders, junction cell types, and the floating border and
-  clipping code. Panes never overlap, so visible-range clipping against other
-  panes goes too.
+- Delete horizontal borders and junction cell types. The floating border and
+  clipping code went in step 1. Panes never overlap, so visible-range clipping
+  against other panes goes too.
 - Active-pane indicator (proposed): on every separator the top half takes the
   left pane's style and the bottom half the right pane's. This replaces
-  `redraw_check_two_pane_colours` (`src/screen_redraw.rs:296`), which only
+  `redraw_check_two_pane_colours` (`src/screen_redraw.rs:270`), which only
   handles exactly two panes and reads the tree.
 - The `display-panes` preview (`src/window_panes.rs`) walks the tree to draw
   scaled borders; draw it from the pane rectangles.
@@ -170,21 +203,21 @@ decisions 1 to 3.
 | `new-pane` | Inserts a half-width pane after the target; `-b` before it. `-c`, `-e`, `-E` and `-d` as today. Floating and modal flags (`-L`, `-M`, `-O`, `-x`, `-y`, `-X`, `-Y`) are removed | Confirmed |
 | `kill-pane` | Unchanged; the strip closes the gap | Confirmed |
 | `select-pane -L` / `-R` | Previous/next pane, stopping at the ends | Confirmed |
-| `resize-pane -W` | New. Toggles the target between half and full width. `W` is free in the template (`src/cmd/entries/resize_pane.rs:43`) | Confirmed |
+| `resize-pane -W` | New. Toggles the target between half and full width. `W` is free in the template (`src/cmd/entries/resize_pane.rs:40`) | Confirmed |
 | `swap-pane -U` / `-D`, `-s`/`-t` | Reorder the pane list; the width preference travels with the pane; `-U`/`-D` stop at the ends | Confirmed |
 | `refresh-client -L` / `-R` / `-c` | Manual pan and reset, unchanged | Confirmed |
 | `display-panes` | Kept | Confirmed |
 | `split-window` | Alias for insertion; direction and size flags ignored. Otherwise rejected with a clear error before any side effect | Proposed (decision 2) |
-| `resize-pane -Z`, `-Z` on choosers | `resize-pane -Z` toggles full width; the chooser flag is accepted and ignored | Proposed |
+| `resize-pane -Z`, `-Z` on choosers | `resize-pane -Z` toggles full width; the chooser flag is accepted and ignored. Both have been accepted no-ops since step 2 | Proposed |
 | `select-layout`, `next-layout`, `previous-layout` | Parse, check the target, succeed, do nothing | Proposed |
 | `resize-pane -x/-y/-U/-D/-L/-R/-M` | Succeed, do nothing | Proposed |
 | `rotate-window` | Rotates the pane order | Proposed |
 | `join-pane`, `break-pane` | Remove from one strip and insert into another, or into a new window | Proposed (decision 3) |
-| `move-pane`, `break-pane -W` | Removed; they position or create floating panes | Confirmed |
+| `move-pane`, `break-pane -W` | Removed in step 1; they positioned or created floating panes | Confirmed |
 | `main-pane-*`, `other-pane-*`, `tiled-layout-max-columns` | Still accepted, no effect | Proposed |
 | `sticky-layout` | Removed; it was added in `4b6e6435` and is not a tmux option | Confirmed |
 | `#{window_layout}`, `#{window_visible_layout}`, `%layout-change` | Generated from the pane rectangles as a single-row layout string | Proposed |
-| Zoom and floating format variables | Constant 0 | Proposed |
+| Zoom and floating format variables | Constant 0, done in steps 1 and 2; see "Left by steps 1 and 2" | Proposed |
 
 ### Default keys
 
@@ -192,23 +225,22 @@ decisions 1 to 3.
 
 | Keys | Action | Command | Today (`src/key_bindings.rs`) |
 | --- | --- | --- | --- |
-| `Ctrl+a c` | Insert a half-width pane after the active pane, using its current directory | `new-pane -c '#{pane_current_path}'` | `new-window` (`:242`) |
-| `Ctrl+a h` / `Ctrl+a l` | Focus the pane to the left/right; stop at the strip ends | `select-pane -L` / `select-pane -R` | `h` unbound; `l` is `last-window` (`:246`) |
-| `Ctrl+a f` | Toggle the active pane between half-width and full-width | `resize-pane -W` | `find-window` prompt (`:244`) |
-| `Ctrl+a H` / `Ctrl+a L` | Reorder the active pane one position left/right | `swap-pane -U` / `swap-pane -D` | `H` unbound; `L` is `switch-client -l` (`:237`) |
-| `Ctrl+a x` | Close the active pane | `kill-pane` | `confirm-before … kill-pane` (`:259`) |
+| `Ctrl+a c` | Insert a half-width pane after the active pane, using its current directory | `new-pane -c '#{pane_current_path}'` | `new-window` (`:240`) |
+| `Ctrl+a h` / `Ctrl+a l` | Focus the pane to the left/right; stop at the strip ends | `select-pane -L` / `select-pane -R` | `h` unbound; `l` is `last-window` (`:244`) |
+| `Ctrl+a f` | Toggle the active pane between half-width and full-width | `resize-pane -W` | `find-window` prompt (`:242`) |
+| `Ctrl+a H` / `Ctrl+a L` | Reorder the active pane one position left/right | `swap-pane -U` / `swap-pane -D` | `H` unbound; `L` is `switch-client -l` (`:235`) |
+| `Ctrl+a x` | Close the active pane | `kill-pane` | `confirm-before … kill-pane` (`:257`) |
 | `Ctrl+a Ctrl+a` | Send a literal Ctrl+a to the application | `send-prefix` | `C-b` (`:202`) |
 
-- The prefix default is `C-b` at `src/options_table.rs:1389`.
+- The prefix default is `C-b` at `src/options_table.rs:1383`.
 - Uppercase `H` and `L` are bound as literal characters, distinct from lowercase.
 - Remove the bindings for deleted features: splits (`"`, `%`), layouts (`Space`,
-  `E`, `M-1` to `M-7`), tiled resize (the eight arrow bindings), `!`, `*`, `@`,
-  `z`, the `move` key table, and the mouse bindings that create, move or
-  resize panes by dragging.
-- `Tab` and `BTab` open their choosers in a floating pane today
-  (`src/key_bindings.rs:256-257`). Open them in a temporary strip pane with
-  `new-pane -E` instead.
-- The defaults array has a hardcoded length of 308 (`src/key_bindings.rs:201`).
+  `E`, `M-1` to `M-7`), tiled resize (the eight arrow bindings), `!`, and the
+  mouse bindings that resize panes by dragging. Steps 1 and 2 already removed
+  the floating and zoom bindings; see "Left by steps 1 and 2".
+- `Tab` and `BTab` already open their choosers in a temporary pane with
+  `new-pane -E` (`src/key_bindings.rs:254-255`, step 1).
+- The defaults array has a hardcoded length of 279 (`src/key_bindings.rs:201`).
 
 ### Working directory and environment
 
@@ -232,15 +264,17 @@ a new environment transport.
 Each step ends with passing tests. Steps 1 and 2 delete features while the
 tree still exists, so step 3 replaces a purely tiled tree.
 
-1. **Remove floating and modal panes.** Plain `new-pane` creates a tiled pane.
-   Remove `move-pane`, `break-pane -W`, the float/tile toggle, the stacking
-   order, the `move` key table and the floating code in redraw, the
-   `display-panes` preview and `src/layout/core.rs`. Move the `Tab`/`BTab`
-   choosers to a temporary tiled pane. About 350 references in 30 files.
-2. **Remove zoom.** Remove the saved tree, the visible/unzoomed views, the
-   unzoom guards around commands, and the zoom events. `resize-pane -Z` and the
-   chooser `-Z` flag are accepted and do nothing until step 4. About 270
-   references in 33 files.
+1. **Remove floating and modal panes.** Done in `b35d5683`. Plain `new-pane`
+   creates a tiled pane. Removed `move-pane`, `break-pane -W`, the float/tile
+   toggle, the stacking order, the `move` key table and the floating code in
+   redraw, the `display-panes` preview and `src/layout/core.rs`. The `Tab`/`BTab`
+   choosers use a temporary tiled pane.
+2. **Remove zoom.** Done in the commit after `b35d5683`. Removed the saved
+   tree, the visible/unzoomed views (`LayoutView`), push/pop zoom and the
+   unzoom guards around commands, the zoom events, pane visibility, and the
+   chooser zoom state. `resize-pane -Z` and the chooser `-Z` flag are accepted
+   and do nothing until step 4. `tests/window_sizes.rs` checks that the `-Z`
+   flags change nothing.
 3. **The strip replaces the tree.** Add the arrange step with every pane
    half-width, and route pane add, remove and reorder through the Window.
    Delete `src/layout/set.rs`, layout import in `src/layout/custom.rs`, the tree

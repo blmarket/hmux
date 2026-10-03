@@ -23,13 +23,6 @@ use crate::src::spawn::spawn_pane;
 use crate::src::window_pane::WindowPane as _;
 use std::time::{Duration, Instant, SystemTime};
 
-#[derive(Clone, Copy)]
-pub enum LayoutView {
-    Visible,
-    /// Use the saved, unzoomed tree when one exists, otherwise the current tree.
-    Unzoomed,
-}
-
 fn find_layout_pane<'a>(
     root: &'a layout_cell,
     pane: &Weak<UnsafeCell<window_pane>>,
@@ -99,15 +92,9 @@ pub trait Window {
     unsafe fn update_focus_for(window: Option<&Self>)
     where
         Self: Sized;
-    unsafe fn zoom_pane(pane: &Rc<UnsafeCell<window_pane>>) -> i32
-    where
-        Self: Sized;
     unsafe fn redraw_active_switch(&self, pane: Option<&Rc<UnsafeCell<window_pane>>>);
     unsafe fn pane_at(&self, x: u32, y: u32) -> Option<Rc<UnsafeCell<window_pane>>>;
     unsafe fn find_pane(&self, name: &CStr) -> Option<Rc<UnsafeCell<window_pane>>>;
-    /// Save the previous zoom identity before temporarily displaying all panes.
-    unsafe fn push_zoom(&self, always: bool, flag: bool) -> i32;
-    unsafe fn pop_zoom(&self) -> i32;
     unsafe fn add_pane(
         &self,
         other: Option<&Rc<UnsafeCell<window_pane>>>,
@@ -149,14 +136,14 @@ pub trait Window {
     where
         Self: 'a;
     unsafe fn borrow_layout_root_mut(&self) -> Self::LayoutRootMut<'_>;
-    /// Read a visible or saved tree only within a pure layout calculation.
+    /// Read the tree only within a pure layout calculation.
     /// Release the guard before any Window/Pane query, rendering or callback;
     /// pointers used by legacy tree walkers must not escape the borrow.
     type LayoutRoot<'a>: std::ops::Deref<Target = layout_cell>
     where
         Self: 'a;
-    unsafe fn borrow_layout_root(&self, view: LayoutView) -> Option<Self::LayoutRoot<'_>>;
-    /// Resolve an already captured identity across visible/saved tree transfers.
+    unsafe fn borrow_layout_root(&self) -> Option<Self::LayoutRoot<'_>>;
+    /// Resolve an already captured identity in the tree.
     /// End the guard before model queries, resizing, formatting or callbacks;
     /// references and cell/parent pointers must not escape it.
     type LayoutCell<'a>: std::ops::Deref<Target = layout_cell>
@@ -171,12 +158,9 @@ pub trait Window {
         id: *mut layout_cell,
     ) -> Option<Self::LayoutCellMut<'_>>;
     unsafe fn last_layout_preset(&self) -> i32;
-    unsafe fn layout_string(&self, view: LayoutView, legacy: bool) -> Option<CString>;
-    unsafe fn pane_layout_cell(
-        &self,
-        pane: &Weak<UnsafeCell<window_pane>>,
-        view: LayoutView,
-    ) -> Option<&layout_cell>;
+    unsafe fn layout_string(&self, legacy: bool) -> Option<CString>;
+    unsafe fn pane_layout_cell(&self, pane: &Weak<UnsafeCell<window_pane>>)
+        -> Option<&layout_cell>;
     /// Preset selection records its result after arrangement notifications.
     unsafe fn remember_layout_preset(&self, preset: i32);
 
@@ -267,8 +251,7 @@ pub trait Window {
     /// Allocate the tiled layout internally, then spawn into it. The
     /// context supplies the command, source pane, session/link, and spawn flags.
     /// Its nonowning layout reservation must be empty on entry and is cleared on return.
-    /// Report errors before restoring zoom, preserving command/control event
-    /// ordering. The callback may reenter; no component borrow spans the call.
+    /// The error callback may reenter; no component borrow spans the call.
     unsafe fn split_pane(
         &self,
         context: &mut spawn_context,
@@ -284,7 +267,6 @@ pub trait Window {
     unsafe fn defer_resize(&self, sx: u32, sy: u32, xpixel: u32, ypixel: u32);
     /// Pixel dimensions of a terminal cell, for the pane's PTY resize protocol.
     unsafe fn cell_size(&self) -> (u32, u32);
-    unsafe fn is_zoomed(&self) -> bool;
     /// The preset in force, which the layout engine arranges again whenever
     /// the panes, the size or the options it reads change.
     unsafe fn sticky_layout(&self) -> Option<u32>;
@@ -300,8 +282,6 @@ pub trait Window {
         spread: Option<&Rc<UnsafeCell<window_pane>>>,
         legacy_format: bool,
     ) -> Result<(), CString>;
-    unsafe fn zoom(&self, pane: &Rc<UnsafeCell<window_pane>>) -> i32;
-    unsafe fn unzoom(&self, notify: bool) -> i32;
     unsafe fn update_activity(&self);
     /// Return whether the identity changed. Attachment and input dispatch have
     /// different notifications and keep that orchestration in their callers.
@@ -367,9 +347,6 @@ impl Window for WindowRef {
     unsafe fn update_focus_for(window: Option<&Self>) {
         window_update_focus(window);
     }
-    unsafe fn zoom_pane(pane: &Rc<UnsafeCell<window_pane>>) -> i32 {
-        window_zoom(pane)
-    }
     unsafe fn redraw_active_switch(&self, pane: Option<&Rc<UnsafeCell<window_pane>>>) {
         window_redraw_active_switch(self, pane);
     }
@@ -378,12 +355,6 @@ impl Window for WindowRef {
     }
     unsafe fn find_pane(&self, name: &CStr) -> Option<Rc<UnsafeCell<window_pane>>> {
         window_find_string(self, name)
-    }
-    unsafe fn push_zoom(&self, always: bool, flag: bool) -> i32 {
-        window_push_zoom(self, always as i32, flag as i32)
-    }
-    unsafe fn pop_zoom(&self) -> i32 {
-        window_pop_zoom(self)
     }
     unsafe fn add_pane(
         &self,
@@ -407,34 +378,20 @@ impl Window for WindowRef {
     type LayoutCellMut<'a> = &'a mut layout_cell;
 
     unsafe fn borrow_layout_cell(&self, id: *mut layout_cell) -> Option<Self::LayoutCell<'_>> {
-        let state = &*self.get();
-        state
+        (*self.get())
             .layout_root
             .as_deref()
             .and_then(|root| root.find(id))
-            .or_else(|| {
-                state
-                    .saved_layout_root
-                    .as_deref()
-                    .and_then(|root| root.find(id))
-            })
     }
 
     unsafe fn borrow_layout_cell_mut(
         &self,
         id: *mut layout_cell,
     ) -> Option<Self::LayoutCellMut<'_>> {
-        let state = &mut *self.get();
-        state
+        (*self.get())
             .layout_root
             .as_deref_mut()
             .and_then(|root| root.find_mut(id))
-            .or_else(|| {
-                state
-                    .saved_layout_root
-                    .as_deref_mut()
-                    .and_then(|root| root.find_mut(id))
-            })
     }
 
     type PaneOrderMut<'a> = &'a mut window_panes;
@@ -469,38 +426,21 @@ impl Window for WindowRef {
         &mut (*self.get()).layout_root
     }
     type LayoutRoot<'a> = &'a layout_cell;
-    unsafe fn borrow_layout_root(&self, view: LayoutView) -> Option<Self::LayoutRoot<'_>> {
-        let state = &*self.get();
-        match view {
-            LayoutView::Visible => state.layout_root.as_deref(),
-            LayoutView::Unzoomed => state
-                .saved_layout_root
-                .as_deref()
-                .or(state.layout_root.as_deref()),
-        }
+    unsafe fn borrow_layout_root(&self) -> Option<Self::LayoutRoot<'_>> {
+        (*self.get()).layout_root.as_deref()
     }
-    unsafe fn layout_string(&self, view: LayoutView, legacy: bool) -> Option<CString> {
-        let root = self.borrow_layout_root(view)?;
+    unsafe fn layout_string(&self, legacy: bool) -> Option<CString> {
+        let root = self.borrow_layout_root()?;
         layout_dump(root, legacy)
     }
     unsafe fn pane_layout_cell(
         &self,
         pane: &Weak<UnsafeCell<window_pane>>,
-        view: LayoutView,
     ) -> Option<&layout_cell> {
-        let state = &*self.get();
-        let saved = match view {
-            LayoutView::Unzoomed => state.saved_layout_root.as_deref(),
-            LayoutView::Visible => None,
-        };
-        saved
+        (*self.get())
+            .layout_root
+            .as_deref()
             .and_then(|root| find_layout_pane(root, pane))
-            .or_else(|| {
-                state
-                    .layout_root
-                    .as_deref()
-                    .and_then(|root| find_layout_pane(root, pane))
-            })
     }
 
     unsafe fn last_layout_preset(&self) -> i32 {
@@ -895,7 +835,6 @@ impl Window for WindowRef {
             );
             let error = CString::new(message).expect("spawn diagnostic contains no NUL");
             report_error(&error);
-            window_pop_zoom(self);
             error
         })
     }
@@ -942,9 +881,6 @@ impl Window for WindowRef {
     unsafe fn cell_size(&self) -> (u32, u32) {
         ((*self.get()).xpixel, (*self.get()).ypixel)
     }
-    unsafe fn is_zoomed(&self) -> bool {
-        (*self.get()).flags & WINDOW_ZOOMED != 0
-    }
     unsafe fn sticky_layout(&self) -> Option<u32> {
         let state = &*self.get();
         state.sticky.then_some(state.lastlayout as u32)
@@ -964,10 +900,7 @@ impl Window for WindowRef {
         if cycle == 0 && spread.is_some() && (*self.get()).sticky {
             return Err(c"layout is sticky".to_owned());
         }
-        if self.unzoom(true) == 0 {
-            server_redraw_window(self);
-        }
-        let new_layout = self.layout_string(LayoutView::Visible, legacy_format);
+        let new_layout = self.layout_string(legacy_format);
         let old_layout = window_replace_old_layout(self, new_layout);
         let sticky =
             self.with_options_mut(|options| options_get_number(options, c"sticky-layout")) != 0;
@@ -1024,16 +957,6 @@ impl Window for WindowRef {
         server_redraw_window(self);
         events_fire_window(c"window-layout-changed".as_ptr(), self.clone());
         Ok(())
-    }
-    unsafe fn zoom(&self, pane: &Rc<UnsafeCell<window_pane>>) -> i32 {
-        assert!(
-            window_has_pane(&*self.get(), &Rc::downgrade(pane)),
-            "zoom pane belongs to window"
-        );
-        window_zoom(pane)
-    }
-    unsafe fn unzoom(&self, notify: bool) -> i32 {
-        window_unzoom(self, notify as i32)
     }
     unsafe fn update_activity(&self) {
         window_update_activity(self);
@@ -1132,10 +1055,6 @@ unsafe fn resize_window(
     if sy > WINDOW_MAXIMUM as u_int {
         sy = WINDOW_MAXIMUM as u_int;
     }
-    let zoomed_owner = window_zoomed_pane(&*w);
-    if zoomed_owner.is_some() {
-        window_unzoom(w_owner, 1 as ::core::ffi::c_int);
-    }
     layout_resize(w_owner, sx, sy);
     window_resize(w_owner, sx, sy, xpixel, ypixel);
     log_debug(format_args!(
@@ -1155,11 +1074,6 @@ unsafe fn resize_window(
         .g
         .sy) as u32
     ));
-    if let Some(zoomed_owner) = zoomed_owner {
-        if window_has_pane(&*w, &std::rc::Rc::downgrade(&zoomed_owner)) {
-            window_zoom(&zoomed_owner);
-        }
-    }
     tty_update_window_offset(w_owner);
     server_redraw_window(w_owner);
     events_fire_window(
@@ -1173,30 +1087,6 @@ unsafe fn resize_window(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn captured_cell_borrows_follow_identity_through_saved_tree_transfer() {
-        unsafe {
-            let window = window::new();
-            let first = layout_cell::new();
-            let original = first.id();
-            *window.borrow_layout_root_mut() = Some(first);
-            window.borrow_layout_cell_mut(original).unwrap().g.xoff = 7;
-            let detached = window.borrow_layout_root_mut().take();
-            (*window.get()).saved_layout_root = detached;
-            let second = layout_cell::new();
-            let replacement = second.id();
-            *window.borrow_layout_root_mut() = Some(second);
-            window.borrow_layout_cell_mut(original).unwrap().g.xoff = 11;
-            window.borrow_layout_cell_mut(replacement).unwrap().g.xoff = 23;
-            assert_eq!(window.borrow_layout_cell(original).unwrap().g.xoff, 11);
-            assert_eq!(window.borrow_layout_cell(replacement).unwrap().g.xoff, 23);
-            drop((*window.get()).saved_layout_root.take());
-            assert!(window.borrow_layout_cell(original).is_none());
-            assert_eq!(window.borrow_layout_cell(replacement).unwrap().g.xoff, 23);
-            window.release(c"layout identity borrow test");
-        }
-    }
 
     #[test]
     fn fill_rendering_keeps_inside_outside_formats_and_composes_border_style() {

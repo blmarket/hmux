@@ -123,7 +123,7 @@ use crate::src::shared::options::{options, options_array_item, options_entry};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{
     PANE_CMDRUNNING, PANE_INPUTOFF, PANE_MINIMUM, PANE_SCROLLBARS_ALWAYS, PANE_STATUSDRAWN,
-    PANE_STATUSREADY, PANE_STATUS_BOTTOM, PANE_STATUS_TOP, PANE_UNSEENCHANGES, PANE_ZOOMED,
+    PANE_STATUSREADY, PANE_STATUS_BOTTOM, PANE_STATUS_TOP, PANE_UNSEENCHANGES,
 };
 use crate::src::shared::paste::PasteBufferRef;
 use crate::src::shared::posix_io::FNM_CASEFOLD;
@@ -145,8 +145,8 @@ use crate::src::shared::tty::*;
 use crate::src::shared::tty::{TERM_256COLOURS, TERM_RGBCOLOURS, TTY_STARTED};
 use crate::src::shared::window::{window, window_mode_entry, winlink};
 use crate::src::shared::window::{
-    WINDOW_PANE_NO_MODE, WINDOW_SIZE_MANUAL, WINDOW_ZOOMED, WINLINK_ACTIVITY, WINLINK_ALERTFLAGS,
-    WINLINK_BELL, WINLINK_SILENCE,
+    WINDOW_PANE_NO_MODE, WINDOW_SIZE_MANUAL, WINLINK_ACTIVITY, WINLINK_ALERTFLAGS, WINLINK_BELL,
+    WINLINK_SILENCE,
 };
 use libc::{REG_EXTENDED, REG_ICASE};
 

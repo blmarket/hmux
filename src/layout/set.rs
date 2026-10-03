@@ -91,7 +91,7 @@ pub unsafe fn layout_set_select(w_owner: &WindowRef, mut layout: u_int) -> u_int
         layout = layout_sets.len().wrapping_sub(1_usize) as u_int;
     }
     if (layout_sets[layout as usize].arrange)(w_owner, w_owner.size()) {
-        layout_fix_panes(w_owner, None);
+        layout_fix_panes(w_owner);
         events_fire_window(
             c"window-layout-changed".as_ptr(),
             std::rc::Rc::clone(w_owner),
@@ -130,16 +130,13 @@ pub unsafe fn layout_set_previous(w_owner: &WindowRef) -> u_int {
 /// Arrange the window's sticky preset, if any, for an `sx` by `sy` window.
 /// Returns whether it arranged; panes are not resized and nothing is notified.
 pub unsafe fn layout_set_arrange_sticky(w_owner: &WindowRef, sx: u_int, sy: u_int) -> bool {
-    if w_owner.is_zoomed() {
-        return false;
-    }
     let Some(layout) = w_owner.sticky_layout() else {
         return false;
     };
     // A cell reserved for a pane not yet assigned has nothing to arrange; the
     // assignment arranges instead.
     let leaves = w_owner
-        .borrow_layout_root(crate::src::window::LayoutView::Visible)
+        .borrow_layout_root()
         .map_or(0, |root| layout_count_cells(&*root as *const _ as *mut _));
     if leaves as usize != layout_set_cells(w_owner).len() {
         return false;
@@ -150,17 +147,14 @@ pub unsafe fn layout_set_arrange_sticky(w_owner: &WindowRef, sx: u_int, sy: u_in
 /// cell was just closed is still in the pane list and is skipped.
 unsafe fn layout_set_cells(w_owner: &WindowRef) -> Vec<*mut layout_cell> {
     let panes = w_owner.pane_snapshot();
-    let Some(root) = w_owner.borrow_layout_root(crate::src::window::LayoutView::Visible) else {
+    let Some(root) = w_owner.borrow_layout_root() else {
         return Vec::new();
     };
     panes
         .iter()
         .filter_map(|pane| {
-            let id = pane.layout_identity(false)?;
-            assert!(
-                root.find(id).is_some(),
-                "placed pane belongs to visible layout"
-            );
+            let id = pane.layout_identity()?;
+            assert!(root.find(id).is_some(), "placed pane belongs to layout");
             Some(id)
         })
         .collect()

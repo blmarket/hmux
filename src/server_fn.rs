@@ -239,7 +239,6 @@ pub unsafe fn server_kill_window(owner: WindowRef, mut renumber: ::core::ffi::c_
         // Destroying a group may remove both s and its next session.
         let name = s.as_ref().expect("live session").name().into_bytes();
         if !(!s.as_ref().expect("live session").contains_window(&owner)) {
-            server_unzoom_window(&std::rc::Rc::clone(&(owner)));
             loop {
                 wl = s.as_ref().expect("live session").with_winlinks(|links| {
                     winlink_find_by_window(links, &std::rc::Rc::clone(&(owner)))
@@ -629,10 +628,5 @@ pub unsafe fn server_check_unattached() {
         }
         s_owner = sessions.after(&name);
         s = s_owner.clone();
-    }
-}
-pub unsafe fn server_unzoom_window(w_owner: &WindowRef) {
-    if w_owner.unzoom(true) == 0 as ::core::ffi::c_int {
-        server_redraw_window(w_owner);
     }
 }

@@ -73,29 +73,21 @@ fn imported_layout_is_arranged_to_window_size() {
 }
 
 #[test]
-fn zoom_never_changes_window_size() {
+fn zoom_flags_are_accepted_and_change_nothing() {
     let server = Server::new();
     server.start(30, 12, 2, "-h");
+    let layout = server.display("#{window_layout}");
     server.count_events();
 
     server.success(&["resize-pane", "-Z"]);
-    assert_eq!(server.display("#{window_zoomed_flag}"), "1");
-    assert_eq!(server.window_size(), (30, 12));
-    assert_eq!(server.events().1, 0);
-
-    server.success(&["resize-window", "-x", "25"]);
-    assert_eq!(server.display("#{window_zoomed_flag}"), "1");
-    assert_eq!(server.window_size(), (25, 12));
-
-    server.success(&["resize-pane", "-Z"]);
+    server.success(&["select-pane", "-Z", "-L"]);
+    server.success(&["select-pane", "-Z", "-R"]);
     assert_eq!(server.display("#{window_zoomed_flag}"), "0");
-    assert_eq!(server.window_size(), (25, 12));
-    assert_eq!(server.root_size(), (25, 12));
-    assert_eq!(
-        server.events().1,
-        1,
-        "only resize-window fired window-resized"
-    );
+    assert_eq!(server.display("#{pane_zoomed_flag}"), "0");
+    assert_eq!(server.display("#{window_flags}"), "*");
+    assert_eq!(server.display("#{window_layout}"), layout);
+    assert_eq!(server.window_size(), (30, 12));
+    assert_eq!(server.events(), (0, 0));
 }
 
 #[test]

@@ -74,7 +74,7 @@ pub(super) unsafe fn alternate_screen_changed(pane: &Rc<UnsafeCell<window_pane>>
         drop((*pane.get()).resize_timer.take());
     }
     let window = pane.window_observer().upgrade().expect("live pane parent");
-    layout_fix_panes(&window, None);
+    layout_fix_panes(&window);
     if entered && !(*pane.get()).resize_queue.is_empty() {
         let (sx, sy, _, _) = pane.geometry();
         window_pane_send_resize(&*pane.get(), sx, sy);

@@ -26,7 +26,7 @@ representation boundary.
 | Entity | External capabilities | Work kept inside the entity |
 | --- | --- | --- |
 | Session | Creation and lookup, identity, window navigation and membership, attachment/status decisions, configuration, grouping, lifetime | Index keys, current/last-used links, group synchronization, activity/lock timers, attached counts, status caches |
-| Window | Creation and lookup, pane ordering and membership, layout/zoom, sizing, focus, redraw, configuration, lifetime | Layout trees, zoom restoration, pane history, pending resize state, alerts, scene invalidation |
+| Window | Creation and lookup, pane ordering and membership, layout, sizing, focus, redraw, configuration, lifetime | Layout tree, pane history, pending resize state, alerts, scene invalidation |
 | WindowPane | Creation and lookup, geometry, input and modes, screen copying and rendering, output consumption, configuration, lifetime | Parser, screen selection, mode stack, stream offsets, pipe/process state, resize/sync queues, scrollbar state |
 | Client | Creation and registry traversal, attachment, focus/size decisions, input and output, redraw, UI installation, lifetime | TTY, status/prompt and control state, attachment history, redraw completion, timers, transport cleanup |
 

@@ -223,14 +223,6 @@ fn manual_geometry_is_refused() {
         );
         assert_eq!(layout(&server, ""), before);
     }
-
-    server.success(&["resize-pane", "-Z"]);
-    assert!(!server.run(&["resize-pane", "-x", "10"]).status.success());
-    assert!(!server.run(&["select-layout", "-E"]).status.success());
-    assert_eq!(server.display("#{window_zoomed_flag}"), "1");
-    server.success(&["resize-pane", "-Z"]);
-    assert_eq!(server.display("#{window_zoomed_flag}"), "0");
-    assert_eq!(layout(&server, ""), before);
 }
 
 #[test]
@@ -285,17 +277,6 @@ fn cycling_makes_each_preset_sticky() {
         server.success(&["kill-pane"]);
         assert_matches(&server, "", preset);
     }
-}
-
-#[test]
-fn zoomed_resize_is_arranged_after_unzoom() {
-    let server = sticky_server(3, "even-horizontal");
-    server.success(&["resize-pane", "-Z"]);
-    server.success(&["resize-window", "-x", "62"]);
-    if server.display("#{window_zoomed_flag}") == "1" {
-        server.success(&["resize-pane", "-Z"]);
-    }
-    assert_eq!(widths(&server), [20, 20, 20]);
 }
 
 #[test]

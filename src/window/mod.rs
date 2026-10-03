@@ -6,7 +6,7 @@ use crate::src::window_pane::WindowPane as _;
 use std::time::SystemTime;
 mod alerts;
 mod api;
-pub use api::{LayoutView, Window, WindowIndex};
+pub use api::{Window, WindowIndex};
 
 mod model;
 pub use crate::src::window_pane::*;
@@ -116,7 +116,7 @@ use crate::src::shared::pane::{
     PANE_EMPTY, PANE_EXITED, PANE_FOCUSED, PANE_INPUTOFF, PANE_REDRAW, PANE_REDRAWSCROLLBAR,
     PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT, PANE_SCROLLBARS_MODAL,
     PANE_STATUSREADY, PANE_STATUS_BOTTOM, PANE_STATUS_OFF, PANE_STATUS_TOP, PANE_STYLECHANGED,
-    PANE_THEMECHANGED, PANE_UNSEENCHANGES, PANE_ZOOMED,
+    PANE_THEMECHANGED, PANE_UNSEENCHANGES,
 };
 use crate::src::shared::posix_io::FNM_CASEFOLD;
 use crate::src::shared::posix_terminal::{winsize, TIOCSWINSZ};
@@ -135,15 +135,13 @@ pub use crate::src::shared::window::{
     window_mode, window_mode_entry, window_winlinks, windows, winlink, winlink_stack, winlinks,
 };
 use crate::src::shared::window::{
-    WINDOW_ACTIVITY, WINDOW_ALERTFLAGS, WINDOW_MODE_HIDE_PANE_STATUS, WINDOW_MODE_HIDE_SCROLLBARS,
-    WINDOW_MODE_NO_STACK, WINDOW_PANE_NO_MODE, WINDOW_ZOOMED, WINLINK_ACTIVITY, WINLINK_ALERTFLAGS,
-    WINLINK_BELL, WINLINK_SILENCE, WINLINK_VISITED,
+    WINDOW_ACTIVITY, WINDOW_ALERTFLAGS, WINDOW_MODE_NO_STACK, WINDOW_PANE_NO_MODE,
+    WINLINK_ACTIVITY, WINLINK_ALERTFLAGS, WINLINK_BELL, WINLINK_SILENCE, WINLINK_VISITED,
 };
 use libc::{REG_EXTENDED, REG_ICASE};
 
 pub const DEFAULT_XPIXEL: ::core::ffi::c_int = 16 as ::core::ffi::c_int;
 pub const DEFAULT_YPIXEL: ::core::ffi::c_int = 32 as ::core::ffi::c_int;
-pub const WINDOW_WASZOOMED: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
 pub static mut windows: windows = windows { storage: None };
 
 static mut next_window_id: u_int = 0;
@@ -421,13 +419,10 @@ unsafe fn window_destroy(w_owner: &WindowRef) {
     (*w).lifecycle = WindowLifecycle::Destroying;
     log_debug(format_args!("window @{} destroyed", { (*w).id }));
     // The releasing owner keeps weak parent links upgradeable throughout cleanup.
-    // Restore layout links without scheduling resize events for dying panes.
-    window_unzoom_internal(w_owner, 0, false);
     if !(*w).owner.is_empty() {
         windows_remove(&mut windows, w_owner);
     }
     drop((*w).layout_root.take());
-    drop((*w).saved_layout_root.take());
     drop(window_replace_old_layout(w_owner, None));
     menu_destroy((*w).menu.take());
     window_destroy_panes(w_owner);
@@ -564,9 +559,6 @@ unsafe fn window_set_active_pane(
     if (*w).active.ptr_eq(&observer) {
         return 0;
     }
-    if window.is_zoomed() && !pane.is_visible() {
-        window.unzoom(true);
-    }
     let previous = window.active_pane();
     pane_history_remove(&mut (*w).last_panes, &observer);
     if let Some(previous) = previous.as_ref() {
@@ -630,20 +622,15 @@ unsafe fn window_get_active_at(
     pane_status = window_get_pane_status(&*w);
     if pane_status == PANE_STATUS_TOP {
         for candidate in (*w).panes.snapshot() {
-            if candidate.is_visible() {
-                (xoff, yoff, sx, sy) = candidate.outer_geometry();
-                if !((x as ::core::ffi::c_int) < xoff || x > (xoff as u_int).wrapping_add(sx))
-                    && y as ::core::ffi::c_int == yoff - 1 as ::core::ffi::c_int
-                {
-                    return Some(candidate);
-                }
+            (xoff, yoff, sx, sy) = candidate.outer_geometry();
+            if !((x as ::core::ffi::c_int) < xoff || x > (xoff as u_int).wrapping_add(sx))
+                && y as ::core::ffi::c_int == yoff - 1 as ::core::ffi::c_int
+            {
+                return Some(candidate);
             }
         }
     }
     for candidate in (*w).panes.snapshot() {
-        if !candidate.is_visible() {
-            continue;
-        }
         (xoff, yoff, sx, sy) = candidate.outer_geometry();
         if (x as ::core::ffi::c_int) < xoff || x > (xoff as u_int).wrapping_add(sx) {
             continue;
@@ -705,123 +692,6 @@ unsafe fn window_find_string(
     }
     window_get_active_at(window_owner, x, y)
 }
-unsafe fn window_zoom(pane: &Rc<UnsafeCell<window_pane>>) -> i32 {
-    let window = pane.window_observer().upgrade().expect("zoom pane window");
-    let result = window_zoom_in(&window, pane);
-    window.release(c"zoom pane window");
-    result
-}
-
-unsafe fn window_zoom_in(window: &WindowRef, pane: &Rc<UnsafeCell<window_pane>>) -> i32 {
-    let w = window.get();
-    if (*w).flags & WINDOW_ZOOMED != 0 || (*w).panes.storage.len() == 1 {
-        return -1;
-    }
-    if !(*w).active.ptr_eq(&Rc::downgrade(pane)) {
-        window_set_active_pane(window, pane, 1);
-    }
-    pane.mark_zoomed();
-    for owner in (*w).panes.snapshot() {
-        owner.save_layout_for_zoom();
-    }
-    (*w).saved_layout_root = (*w).layout_root.take();
-    layout_init(window, pane);
-    (*w).flags |= WINDOW_ZOOMED;
-    events_fire_window(c"window-zoomed".as_ptr(), window.clone());
-    events_fire_window(c"window-layout-changed".as_ptr(), window.clone());
-    (*w).invalidate_scene();
-    0
-}
-unsafe fn window_unzoom(w_owner: &WindowRef, notify: ::core::ffi::c_int) -> ::core::ffi::c_int {
-    let _w = w_owner.get();
-    window_unzoom_internal(w_owner, notify, true)
-}
-
-unsafe fn window_unzoom_internal(window: &WindowRef, notify: i32, resize_panes: bool) -> i32 {
-    let w = window.get();
-    if (*w).flags & WINDOW_ZOOMED == 0 {
-        return -1;
-    }
-    (*w).flags &= !WINDOW_ZOOMED;
-    layout_free(window);
-    (*w).layout_root = (*w).saved_layout_root.take();
-    for pane in (*w).panes.snapshot() {
-        pane.restore_layout_after_zoom();
-    }
-    if resize_panes {
-        layout_fix_panes(window, None);
-    }
-    if notify != 0 {
-        events_fire_window(c"window-unzoomed".as_ptr(), window.clone());
-        events_fire_window(c"window-layout-changed".as_ptr(), window.clone());
-    }
-    (*w).invalidate_scene();
-    0
-}
-
-unsafe fn window_zoomed_pane(w: &window) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    if w.flags & WINDOW_ZOOMED == 0 {
-        return None;
-    }
-    w.panes
-        .snapshot()
-        .into_iter()
-        .find(|owner| owner.is_zoomed())
-}
-unsafe fn window_push_zoom(
-    w_owner: &WindowRef,
-    mut always: ::core::ffi::c_int,
-    mut flag: ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    let mut w = w_owner.get();
-    let pane_owner = window_zoomed_pane(&*w);
-    log_debug(format_args!(
-        "{}: @{} {}",
-        "window_push_zoom",
-        { (*w).id },
-        (flag != 0 && (*w).flags & WINDOW_ZOOMED != 0) as ::core::ffi::c_int
-    ));
-    if flag != 0 && (always != 0 || (*w).flags & WINDOW_ZOOMED != 0) {
-        (*w).flags |= WINDOW_WASZOOMED;
-    } else {
-        (*w).flags &= !WINDOW_WASZOOMED;
-    }
-    if (*w).flags & WINDOW_WASZOOMED != 0 {
-        (*w).was_zoomed = pane_owner
-            .as_ref()
-            .map_or_else(std::rc::Weak::new, Rc::downgrade);
-    } else {
-        (*w).was_zoomed = std::rc::Weak::new();
-    }
-    (window_unzoom(w_owner, 1 as ::core::ffi::c_int) == 0 as ::core::ffi::c_int)
-        as ::core::ffi::c_int
-}
-unsafe fn window_pop_zoom(w_owner: &WindowRef) -> ::core::ffi::c_int {
-    let mut w = w_owner.get();
-    let mut pane_owner = (*w).was_zoomed.upgrade();
-    log_debug(format_args!(
-        "{}: @{} {}",
-        "window_pop_zoom",
-        { (*w).id },
-        ((*w).flags & WINDOW_WASZOOMED != 0) as ::core::ffi::c_int
-    ));
-    if (*w).flags & WINDOW_WASZOOMED != 0 {
-        (*w).flags &= !WINDOW_WASZOOMED;
-        (*w).was_zoomed = std::rc::Weak::new();
-        let active = (*w).active.upgrade();
-        if active.is_some()
-            || pane_owner
-                .as_ref()
-                .is_none_or(|owner| !window_has_pane(&*w, &Rc::downgrade(owner)))
-        {
-            pane_owner = active;
-        }
-        if let Some(owner) = pane_owner {
-            return (window_zoom(&owner) == 0) as ::core::ffi::c_int;
-        }
-    }
-    0 as ::core::ffi::c_int
-}
 unsafe fn window_add_pane(
     window: &WindowRef,
     other: Option<&Rc<UnsafeCell<window_pane>>>,
@@ -881,9 +751,6 @@ unsafe fn window_lost_pane(window: &WindowRef, pane: &Rc<UnsafeCell<window_pane>
         .is_some_and(|marked| Rc::ptr_eq(&marked, pane))
     {
         server_clear_marked();
-    }
-    if (*w).was_zoomed.ptr_eq(&observer) {
-        (*w).was_zoomed = Weak::new();
     }
     pane_history_remove(&mut (*w).last_panes, &observer);
     if (*w).active.ptr_eq(&observer) {
@@ -975,19 +842,6 @@ unsafe fn window_printable_flags(
         pos = pos.wrapping_add(1);
         flags[fresh9 as usize] = 'M' as i32 as ::core::ffi::c_char;
     }
-    if (*wl
-        .get_unchecked()
-        .window_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get()))
-    .flags
-        & WINDOW_ZOOMED
-        != 0
-    {
-        let fresh11 = pos;
-        pos = pos.wrapping_add(1);
-        flags[fresh11 as usize] = 'Z' as i32 as ::core::ffi::c_char;
-    }
     flags[pos as usize] = '\0' as i32 as ::core::ffi::c_char;
     std::ffi::CStr::from_ptr(flags.as_ptr()).to_owned()
 }
@@ -1073,7 +927,7 @@ impl Drop for window {
 }
 
 #[cfg(test)]
-mod zoom_teardown_tests {
+mod teardown_tests {
     use super::*;
 
     #[test]

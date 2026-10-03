@@ -141,13 +141,10 @@ pub(super) unsafe fn kill_process(pane_owner: &std::rc::Rc<std::cell::UnsafeCell
         recalculate_sizes();
     } else {
         window_owner.release(c"server_kill_pane");
-        std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window"))
-            .push_zoom(false, false);
         ClientRef::forget_pane(pane_owner);
         layout_close_pane(pane_owner);
         std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window"))
             .remove_pane(pane_owner);
-        std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")).pop_zoom();
         server_redraw_window(((*wp).window_handle().as_ref()).expect("live window"));
     };
 }
@@ -282,8 +279,6 @@ pub(super) unsafe fn finish_process(
     if notify != 0 {
         server_fire_pane_exit(c"pane-exited".as_ptr(), pane_owner);
     }
-    std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window"))
-        .push_zoom(false, false);
     ClientRef::forget_pane(pane_owner);
     layout_close_pane(pane_owner);
     std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window"))
@@ -296,7 +291,6 @@ pub(super) unsafe fn finish_process(
             1,
         );
     } else {
-        std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")).pop_zoom();
         server_redraw_window(((*wp).window_handle().as_ref()).expect("live window"));
     };
     window_owner.release(c"server_destroy_pane");

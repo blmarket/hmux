@@ -61,12 +61,6 @@ unsafe fn cmd_swap_pane_exec(
         let mut src_pane_owner = (*source).wp.upgrade().expect("live swap source pane");
 
         src_idx = ((*source).winlink_handle()).get_unchecked().idx;
-        if std::rc::Rc::clone(&(dst_window_owner))
-            .push_zoom(false, (args_has(args, 'Z' as i32 as u_char)) != 0)
-            != 0
-        {
-            server_redraw_window(&(dst_window_owner));
-        }
         if args_has(args, 'D' as i32 as u_char) != 0 {
             let previous = std::mem::replace(&mut src_window_owner, dst_window_owner.clone());
             previous.release(c"cmd_swap_pane_exec");
@@ -84,11 +78,6 @@ unsafe fn cmd_swap_pane_exec(
                 .or_else(|| dst_window_owner.step_pane(None, true))
                 .expect("swap target remains in its window");
         }
-        if !Rc::ptr_eq(&src_window_owner, &dst_window_owner)
-            && src_window_owner.push_zoom(false, (args_has(args, 'Z' as i32 as u_char)) != 0) != 0
-        {
-            server_redraw_window(&src_window_owner);
-        }
         if !Rc::ptr_eq(&src_pane_owner, &dst_pane_owner) {
             ClientRef::forget_pane(&src_pane_owner);
             ClientRef::forget_pane(&dst_pane_owner);
@@ -98,10 +87,10 @@ unsafe fn cmd_swap_pane_exec(
                 &Rc::downgrade(&src_pane_owner),
             );
             let src_lc = src_pane_owner
-                .layout_identity(false)
+                .layout_identity()
                 .expect("swap source layout cell");
             let dst_lc = dst_pane_owner
-                .layout_identity(false)
+                .layout_identity()
                 .expect("swap target layout cell");
             {
                 let mut cell = src_window_owner
@@ -157,11 +146,11 @@ unsafe fn cmd_swap_pane_exec(
                 );
                 src_pane_owner.refresh_palette();
                 dst_pane_owner.refresh_palette();
-                layout_fix_panes(&src_window_owner, None);
+                layout_fix_panes(&src_window_owner);
                 src_window_owner.invalidate_scene();
                 server_redraw_window(&src_window_owner);
             }
-            layout_fix_panes(&std::rc::Rc::clone(&(dst_window_owner)), None);
+            layout_fix_panes(&std::rc::Rc::clone(&(dst_window_owner)));
             dst_window_owner.invalidate_scene();
             server_redraw_window(&(dst_window_owner));
             if !Rc::ptr_eq(&src_window_owner, &dst_window_owner) {
@@ -188,14 +177,6 @@ unsafe fn cmd_swap_pane_exec(
                     std::rc::Rc::clone(&(dst_window_owner)),
                 );
             }
-        }
-        if src_window_owner.pop_zoom() != 0 {
-            server_redraw_window(&src_window_owner);
-        }
-        if !Rc::ptr_eq(&src_window_owner, &dst_window_owner)
-            && std::rc::Rc::clone(&(dst_window_owner)).pop_zoom() != 0
-        {
-            server_redraw_window(&(dst_window_owner));
         }
         CMD_RETURN_NORMAL
     })();

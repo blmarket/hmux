@@ -79,7 +79,7 @@ use crate::src::shared::session::session;
 use crate::src::shared::signal::{__sigset_t, sigset_t, SIGCHLD, SIGHUP, SIG_BLOCK, SIG_SETMASK};
 use crate::src::shared::spawn::{spawn_editor_state, spawn_finish_edit_cb};
 use crate::src::shared::spawn::{
-    SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_KILL, SPAWN_NONOTIFY, SPAWN_RESPAWN, SPAWN_ZOOM,
+    SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_KILL, SPAWN_NONOTIFY, SPAWN_RESPAWN,
 };
 use crate::src::shared::stdio::FILE;
 use crate::src::shared::terminal::*;
@@ -369,24 +369,11 @@ pub(super) unsafe fn spawn_pane(
                 )
                 .add_pane(source_pane_owner.as_ref(), hlimit, (*sc).flags);
                 new_wp = new_pane_owner.get();
-                if (*sc).flags & SPAWN_ZOOM != 0 {
-                    layout_assign_pane(
-                        &original_window,
-                        (*sc).layout.expect("reserved pane layout"),
-                        &new_pane_owner,
-                        1 as ::core::ffi::c_int,
-                    );
-                } else {
-                    layout_assign_pane(
-                        &original_window,
-                        (*sc).layout.expect("reserved pane layout"),
-                        &new_pane_owner,
-                        0 as ::core::ffi::c_int,
-                    );
-                }
-            }
-            if original_window.is_zoomed() {
-                (*new_wp).saved_layout_cell = (*new_wp).layout_cell;
+                layout_assign_pane(
+                    &original_window,
+                    (*sc).layout.expect("reserved pane layout"),
+                    &new_pane_owner,
+                );
             }
         }
         if (*sc).argv.is_empty() {

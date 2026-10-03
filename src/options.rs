@@ -1705,7 +1705,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         let mut window_cursor = windows.first();
         while let Some(window_owner) = window_cursor.take() {
             window_owner.refresh_scrollbars();
-            layout_fix_panes(&window_owner, None);
+            layout_fix_panes(&window_owner);
             window_cursor = window_owner.next_window();
             window_owner.release(c"window traversal");
         }
@@ -1725,7 +1725,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         }
         let mut window_cursor = windows.first();
         while let Some(window_owner) = window_cursor.take() {
-            layout_fix_panes(&window_owner, None);
+            layout_fix_panes(&window_owner);
             window_cursor = window_owner.next_window();
             window_owner.release(c"window traversal");
         }

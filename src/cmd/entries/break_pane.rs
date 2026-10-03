@@ -17,7 +17,6 @@ use crate::src::window::Window as _;
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::{
     server_link_window, server_redraw_session, server_status_session_group, server_unlink_window,
-    server_unzoom_window,
 };
 use crate::src::session::Session;
 
@@ -33,7 +32,7 @@ use crate::src::shared::layout::layout_geometry;
 use crate::src::shared::layout::*;
 use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::WINDOW_ZOOMED;
+
 use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::{check_name, clean_name_cstring};
 use crate::src::window::{winlink_find_by_index, winlink_find_by_window, winlink_shuffle_up};
@@ -123,7 +122,6 @@ unsafe fn cmd_break_pane_exec(
                 return CMD_RETURN_ERROR;
             }
         }
-        server_unzoom_window(&source_window);
         if source_window.pane_snapshot().len() == 1 {
             if let Err(link_error) = server_link_window(
                 src_s.as_ref().expect("live session"),

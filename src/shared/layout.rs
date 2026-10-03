@@ -106,11 +106,6 @@ impl layout_cell {
             cells: Vec::new(),
         })
     }
-    pub unsafe fn is_saved(&self) -> bool {
-        self.wp
-            .upgrade()
-            .is_some_and(|pane| pane.layout_identity(true) == Some(self.id()))
-    }
     pub unsafe fn has_border(&self, status: i32) -> bool {
         let cell = self.id();
         let mut root = cell;

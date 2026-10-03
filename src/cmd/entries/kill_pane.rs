@@ -9,7 +9,7 @@ use crate::src::server_client::Client as _;
 use crate::src::shared::client::ClientRef;
 use crate::src::window::Window as _;
 
-use crate::src::server_fn::{server_kill_pane, server_redraw_window, server_unzoom_window};
+use crate::src::server_fn::{server_kill_pane, server_redraw_window};
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -83,9 +83,6 @@ unsafe fn cmd_kill_pane_all(
     let mut s: Option<SessionRef> = (*target).session_handle();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let target_pane = (*target).pane_handle().expect("kill target pane");
-    server_unzoom_window(&std::rc::Rc::clone(
-        (wl.get_unchecked().window_handle().as_ref()).expect("live window"),
-    ));
     let mut cursor = wl
         .get_unchecked()
         .window_handle()

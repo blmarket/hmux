@@ -457,12 +457,7 @@ pub unsafe fn recalculate_size(w_owner: &WindowRef, mut now: ::core::ffi::c_int)
 unsafe fn refit_layout(w_owner: &WindowRef) {
     let (sx, sy) = w_owner.size();
     if w_owner.sticky_layout().is_some() {
-        // While zoomed the arrangement is the saved tree.
-        if w_owner.is_zoomed()
-            || w_owner
-                .borrow_layout_root(crate::src::window::LayoutView::Visible)
-                .is_none()
-        {
+        if w_owner.borrow_layout_root().is_none() {
             return;
         }
     } else if crate::src::layout::logical_size(w_owner) == (sx, sy) {

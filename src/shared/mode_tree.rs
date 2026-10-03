@@ -26,7 +26,6 @@ pub struct mode_tree_help_info {
 
 pub struct mode_tree_data {
     pub dead: ::core::ffi::c_int,
-    pub zoomed: ::core::ffi::c_int,
     pub wp: Weak<UnsafeCell<window_pane>>,
     pub menu: &'static [menu_item<'static>],
     pub sort_crit: sort_criteria,
@@ -67,7 +66,6 @@ impl Default for mode_tree_data {
     fn default() -> Self {
         Self {
             dead: 0,
-            zoomed: 0,
             wp: Weak::new(),
             menu: &[],
             sort_crit: sort_criteria {

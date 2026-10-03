@@ -1,5 +1,4 @@
 //! Encode pane process input without lending pane storage to consumers.
-use super::window_pane_is_visible;
 use super::WindowPane;
 use crate::src::input_keys::{input_key, input_key_get_mouse};
 use crate::src::key_string::key_string_format;
@@ -60,9 +59,6 @@ unsafe fn write_mouse(pane: &Rc<UnsafeCell<window_pane>>, mouse: &mouse_event) {
     let Some((x, y)) = pane.mouse_position(mouse, false) else {
         return;
     };
-    if window_pane_is_visible(pane) == 0 {
-        return;
-    }
     let mut bytes = [0; 40];
     let Some(count) = input_key_get_mouse(screen, mouse, x, y, &mut bytes) else {
         return;

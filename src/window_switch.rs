@@ -18,7 +18,7 @@ use crate::src::screen_write::{
     screen_write_cell, screen_write_clearendofline, screen_write_clearscreen,
     screen_write_cursormove, screen_write_start, screen_write_stop,
 };
-use crate::src::server_fn::{server_redraw_window, server_unzoom_window};
+use crate::src::server_fn::server_redraw_window;
 use crate::src::session::Session;
 use crate::src::session::SessionIndex as _;
 
@@ -51,7 +51,7 @@ use crate::src::shared::session::SessionRef;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 use crate::src::shared::style::*;
-use crate::src::shared::window::WINDOW_ZOOMED;
+
 use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink};
 use crate::src::sort::{sort_get_sessions, sort_get_winlinks};
 use crate::src::status::status_message_set;
@@ -64,7 +64,6 @@ use std::ffi::{CStr, CString};
 #[repr(C)]
 pub struct window_switch_modedata {
     pub screen: screen,
-    pub zoomed: ::core::ffi::c_int,
     pub format: CString,
     pub command: CString,
     pub type_0: window_switch_type,
@@ -476,7 +475,6 @@ unsafe fn window_switch_init(
     };
     let owner = Box::new(std::cell::UnsafeCell::new(window_switch_modedata {
         screen: screen::empty(),
-        zoomed: 0,
         format: CStr::from_ptr(format).to_owned(),
         command: CStr::from_ptr(command).to_owned(),
         type_0: WINDOW_SWITCH_TYPE_SESSION,
@@ -517,19 +515,6 @@ unsafe fn window_switch_init(
     s = &raw mut (*data).screen;
     let (pane_sx, pane_sy) = mode_pane_owner.screen_size(false);
     screen_init(&mut *s, pane_sx, pane_sy, 0 as u_int);
-    if args_has(args, 'Z' as i32 as u_char) == 0 {
-        (*data).zoomed = -(1 as ::core::ffi::c_int);
-    } else {
-        let window = mode_pane_owner
-            .window_observer()
-            .upgrade()
-            .expect("live window");
-        (*data).zoomed = if window.is_zoomed() { WINDOW_ZOOMED } else { 0 };
-        if (*data).zoomed == 0 && window.zoom(&mode_pane_owner) == 0 as ::core::ffi::c_int {
-            server_redraw_window(&window);
-        }
-        window.release(c"switch mode zoom");
-    }
     window_switch_build(data);
     prompt_incremental_start(&prompt);
     window_switch_draw_screen(wme.clone());
@@ -543,20 +528,7 @@ unsafe fn window_switch_get_screen(wme: refbox::Weak<window_mode_entry>) -> *mut
 }
 
 unsafe fn window_switch_free(mut wme: refbox::Weak<window_mode_entry>) {
-    let mode_pane_owner = wme
-        .get_unchecked()
-        .wp
-        .upgrade()
-        .expect("mode belongs to a live pane");
     let mut data: *mut window_switch_modedata = window_switch_data(wme.clone());
-    if (*data).zoomed == 0 as ::core::ffi::c_int {
-        let window = mode_pane_owner
-            .window_observer()
-            .upgrade()
-            .expect("live window");
-        server_unzoom_window(&window);
-        window.release(c"switch mode unzoom");
-    }
     (*data).matches.clear();
     (*data).item_list.clear();
     if let Some(prompt) = (*data).prompt.take() {

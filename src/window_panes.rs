@@ -22,7 +22,7 @@ use crate::src::screen_write::{
     screen_write_stop,
 };
 use crate::src::server_fn::{
-    server_redraw_window, server_redraw_window_borders, server_status_window, server_unzoom_window,
+    server_redraw_window, server_redraw_window_borders, server_status_window,
 };
 use crate::src::session::Session;
 use crate::src::session::SessionIndex as _;
@@ -51,11 +51,9 @@ use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
 use crate::src::shared::session::{SessionRef, SessionWeak};
 use crate::src::shared::style::*;
+use crate::src::shared::window::WINDOW_MODE_NO_STACK;
 use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink};
 use crate::src::shared::window::{WindowRef, WindowWeak};
-use crate::src::shared::window::{
-    WINDOW_MODE_HIDE_PANE_STATUS, WINDOW_MODE_HIDE_SCROLLBARS, WINDOW_MODE_NO_STACK, WINDOW_ZOOMED,
-};
 use crate::src::style::style_apply_with_options;
 use crate::src::text::utf8::utf8_set;
 use crate::src::window::winlink_find_by_window;
@@ -78,7 +76,6 @@ pub struct window_panes_modedata {
     pub state: Option<Box<args_command_state>>,
     pub delay: u_int,
     pub ignore_keys: ::core::ffi::c_int,
-    pub zoomed: ::core::ffi::c_int,
     areas: Vec<window_panes_area>,
 }
 #[derive(Copy, Clone)]
@@ -96,10 +93,7 @@ pub static window_panes_mode: window_mode = {
     window_mode {
         name: c"panes-mode",
         default_format: None,
-        flags: WINDOW_MODE_HIDE_PANE_STATUS
-            | WINDOW_MODE_NO_STACK
-            | WINDOW_MODE_FILL_WINDOW
-            | WINDOW_MODE_HIDE_SCROLLBARS,
+        flags: WINDOW_MODE_NO_STACK | WINDOW_MODE_FILL_WINDOW,
         init: Some(
             window_panes_init
                 as unsafe fn(
@@ -206,19 +200,9 @@ unsafe fn window_panes_add_area(
 }
 unsafe fn window_panes_pane_geometry(pane: &Rc<UnsafeCell<window_pane>>) -> Option<&layout_cell> {
     let window = pane.window_observer().upgrade()?;
-    let cell = window.pane_layout_cell(
-        &Rc::downgrade(pane),
-        crate::src::window::LayoutView::Unzoomed,
-    )? as *const layout_cell;
+    let cell = window.pane_layout_cell(&Rc::downgrade(pane))? as *const layout_cell;
     // The pane's window owns this cell throughout the immediate geometry query.
     Some(&*cell)
-}
-unsafe fn window_panes_pane_visible(pane: &Rc<UnsafeCell<window_pane>>) -> ::core::ffi::c_int {
-    if window_panes_pane_geometry(pane).is_some_and(|geometry| geometry.is_saved()) {
-        1
-    } else {
-        pane.is_visible() as i32
-    }
 }
 fn window_panes_scaled_geometry(
     geometry: &layout_geometry,
@@ -519,9 +503,6 @@ unsafe fn window_panes_mark_pane_status_borders(
     }
     // No callbacks occur while collecting these copied geometry records.
     for pane in window.pane_snapshot() {
-        if window_panes_pane_visible(&pane) == 0 {
-            continue;
-        }
         let Some(geometry) = window_panes_pane_geometry(&pane) else {
             continue;
         };
@@ -762,8 +743,7 @@ unsafe fn window_panes_draw_borders(
     let map_size = (dsx as usize).checked_mul(dsy as usize).unwrap();
     let mut map = vec![0; map_size];
     {
-        let Some(root) = w_owner.borrow_layout_root(crate::src::window::LayoutView::Unzoomed)
-        else {
+        let Some(root) = w_owner.borrow_layout_root() else {
             return;
         };
         // These legacy tree walkers only read cells. Their local pointers end
@@ -773,8 +753,7 @@ unsafe fn window_panes_draw_borders(
     }
     window_panes_mark_pane_status_borders(map.as_mut_ptr(), w_owner, osx, osy, dsx, dsy);
     {
-        let Some(root) = w_owner.borrow_layout_root(crate::src::window::LayoutView::Unzoomed)
-        else {
+        let Some(root) = w_owner.borrow_layout_root() else {
             return;
         };
         let cell = (root as *const layout_cell).cast_mut();
@@ -1159,9 +1138,6 @@ unsafe fn window_panes_draw_pane(
     let mut y: u_int = 0;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
-    if window_panes_pane_visible(wp_owner) == 0 {
-        return;
-    }
     if window_panes_get_geometry(
         wp_owner,
         osx,
@@ -1273,8 +1249,7 @@ unsafe fn window_panes_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         .expect("source window remains owned");
     (|| {
         (osx, osy) = {
-            let Some(root) = window.borrow_layout_root(crate::src::window::LayoutView::Unzoomed)
-            else {
+            let Some(root) = window.borrow_layout_root() else {
                 return;
             };
             (root.g.sx, root.g.sy)
@@ -1371,7 +1346,6 @@ unsafe fn window_panes_init(
         state: None,
         delay: 0,
         ignore_keys: 0,
-        zoomed: 0,
         areas: Vec::new(),
     }));
     data = owner.get();
@@ -1397,33 +1371,7 @@ unsafe fn window_panes_init(
     }
     (*data).delay = delay;
     (*data).ignore_keys = args_has(args, 'N' as i32 as u_char);
-    if args_has(args, 'Z' as i32 as u_char) != 0 {
-        (*data).zoomed = -(1 as ::core::ffi::c_int);
-    } else {
-        (*data).zoomed = if original_window
-            .upgrade()
-            .expect("live display-panes window")
-            .is_zoomed()
-        {
-            WINDOW_ZOOMED
-        } else {
-            0
-        };
-        if (*data).zoomed == 0 {
-            window_panes_set_preview(data);
-        }
-        if (*data).zoomed == 0
-            && crate::src::shared::window::WindowRef::zoom_pane(&mode_pane_owner)
-                == 0 as ::core::ffi::c_int
-        {
-            server_redraw_window(
-                &mode_pane_owner
-                    .window_observer()
-                    .upgrade()
-                    .expect("live pane parent"),
-            );
-        }
-    }
+    window_panes_set_preview(data);
     if (*data).delay != 0 as u_int {
         let timeout = Duration::from_millis((*data).delay as u64);
         let mode_observer = wme.clone();
@@ -1461,14 +1409,6 @@ unsafe fn window_panes_free(mut wme: refbox::Weak<window_mode_entry>) {
         .expect("mode belongs to a live pane");
     let mut data: *mut window_panes_modedata = window_panes_data(wme.clone());
     drop((*data).timer.take());
-    if (*data).zoomed == 0 as ::core::ffi::c_int {
-        server_unzoom_window(&std::rc::Rc::clone(
-            &mode_pane_owner
-                .window_observer()
-                .upgrade()
-                .expect("live pane parent"),
-        ));
-    }
     server_redraw_window(
         &mode_pane_owner
             .window_observer()
@@ -1661,20 +1601,6 @@ unsafe fn window_panes_key(
             mode_pane_owner.reset_mode();
         }
         return;
-    }
-    if mode_pane_owner
-        .window_observer()
-        .upgrade()
-        .expect("live display-panes window")
-        .is_zoomed()
-    {
-        std::rc::Rc::clone(
-            &mode_pane_owner
-                .window_observer()
-                .upgrade()
-                .expect("live pane parent"),
-        )
-        .unzoom(true);
     }
     window_panes_run_command(
         data,

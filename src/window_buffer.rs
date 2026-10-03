@@ -12,7 +12,7 @@ use crate::src::key_string::key_string_parse_cstr;
 use crate::src::mode_tree::{
     mode_tree_add, mode_tree_build, mode_tree_down, mode_tree_draw, mode_tree_each_tagged,
     mode_tree_free, mode_tree_get_current, mode_tree_key, mode_tree_resize, mode_tree_run_command,
-    mode_tree_start, mode_tree_up, mode_tree_zoom,
+    mode_tree_start, mode_tree_up,
 };
 use crate::src::paste::{
     paste_buffer_data, paste_buffer_name, paste_buffer_order, paste_free, paste_get_name,
@@ -516,10 +516,6 @@ unsafe fn window_buffer_init(
         &window_buffer_menu_items,
         &raw mut s,
     ));
-    mode_tree_zoom(
-        (*data).data.clone().as_ref().expect("mode tree owner"),
-        args,
-    );
     mode_tree_build((*data).data.clone().as_ref().expect("mode tree owner"));
     mode_tree_draw((*data).data.clone().as_ref().expect("mode tree owner"));
     s

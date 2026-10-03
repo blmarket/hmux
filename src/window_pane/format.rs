@@ -148,8 +148,6 @@ unsafe fn evaluate(key: &CStr, context: &mut format_tree) -> Option<FormatValue>
         b"pane_title" => format_cb_pane_title(context).map(FormatValue::String),
         b"pane_top" => format_cb_pane_top(context).map(FormatValue::String),
         b"pane_tty" => format_cb_pane_tty(context).map(FormatValue::String),
-        b"pane_unzoomed_height" => format_cb_pane_unzoomed_height(context).map(FormatValue::String),
-        b"pane_unzoomed_width" => format_cb_pane_unzoomed_width(context).map(FormatValue::String),
         b"pane_width" => format_cb_pane_width(context).map(FormatValue::String),
         b"pane_x" => format_cb_pane_x(context).map(FormatValue::String),
         b"pane_y" => format_cb_pane_y(context).map(FormatValue::String),
@@ -1641,16 +1639,6 @@ unsafe fn format_cb_pane_tty(mut ft: *mut format_tree) -> Option<CString> {
     None
 }
 
-unsafe fn format_cb_pane_unzoomed_height(ft: *mut format_tree) -> Option<CString> {
-    let size = (*ft).wp.upgrade()?.unzoomed_height()?;
-    Some(CString::new(size.to_string()).expect("formatted pane size"))
-}
-
-unsafe fn format_cb_pane_unzoomed_width(ft: *mut format_tree) -> Option<CString> {
-    let size = (*ft).wp.upgrade()?.unzoomed_width()?;
-    Some(CString::new(size.to_string()).expect("formatted pane size"))
-}
-
 unsafe fn format_cb_pane_width(mut ft: *mut format_tree) -> Option<CString> {
     let format_pane_owner = (*ft).wp.upgrade();
     let format_pane = format_pane_owner
@@ -1693,19 +1681,9 @@ unsafe fn format_cb_pane_y(mut ft: *mut format_tree) -> Option<CString> {
     None
 }
 
-unsafe fn format_cb_pane_zoomed_flag(mut ft: *mut format_tree) -> Option<CString> {
-    let format_pane_owner = (*ft).wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wp: *mut window_pane = format_pane;
-    if !wp.is_null() {
-        if (*wp).flags & PANE_ZOOMED != 0 {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
-    }
-    None
+// Panes no longer zoom; the flag remains for configurations that test it.
+unsafe fn format_cb_pane_zoomed_flag(ft: *mut format_tree) -> Option<CString> {
+    (*ft).wp.upgrade().map(|_| c"0".to_owned())
 }
 
 unsafe fn format_cb_scroll_region_lower(mut ft: *mut format_tree) -> Option<CString> {

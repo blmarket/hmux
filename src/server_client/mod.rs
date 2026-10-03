@@ -2754,16 +2754,14 @@ unsafe fn server_client_handle_key0(
         {
             prompt_pane = prompt_window.next_pane(None);
             while let Some(pane_owner) = prompt_pane.as_ref() {
-                if pane_owner.prompt_position(true).is_some() && pane_owner.is_visible() {
+                if pane_owner.prompt_position(true).is_some() {
                     break;
                 }
                 prompt_pane = prompt_window.next_pane(Some(pane_owner));
             }
         }
         prompt_window.release(c"prompt pane lookup");
-        if let Some(pane_owner) =
-            prompt_pane.filter(|pane| pane.prompt_position(true).is_some() && pane.is_visible())
-        {
+        if let Some(pane_owner) = prompt_pane.filter(|pane| pane.prompt_position(true).is_some()) {
             match pane_owner.prompt_key(Some(owner), (*event).key, Some(&mut (*event).m))
                 as ::core::ffi::c_uint
             {

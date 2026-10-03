@@ -86,7 +86,7 @@ use crate::src::shared::session::session;
 use crate::src::shared::signal::{__sigset_t, sigset_t, SIGCHLD, SIGHUP, SIG_BLOCK, SIG_SETMASK};
 use crate::src::shared::spawn::{spawn_editor_state, spawn_finish_edit_cb};
 use crate::src::shared::spawn::{
-    SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_KILL, SPAWN_NONOTIFY, SPAWN_RESPAWN, SPAWN_ZOOM,
+    SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_KILL, SPAWN_NONOTIFY, SPAWN_RESPAWN,
 };
 use crate::src::shared::stdio::FILE;
 use crate::src::shared::terminal::*;
@@ -364,10 +364,8 @@ pub(crate) unsafe fn spawn_editor(
         es = &raw mut *owner;
         // The editor runs in a temporary pane split from the active one; it
         // closes when the editor exits and selection returns to that pane.
-        original_window.push_zoom(false, true);
         let source = original_window.active_pane().expect("editor source pane");
         let Some(layout_id) = layout_split_pane(&source, LAYOUT_TOPBOTTOM, -1, 0) else {
-            original_window.pop_zoom();
             unlink(&raw mut path as *mut ::core::ffi::c_char);
             return None;
         };
@@ -391,12 +389,8 @@ pub(crate) unsafe fn spawn_editor(
         sc.cwd = Some(c"/tmp/".to_owned());
         let spawned_pane = spawn_pane(&raw mut sc, &raw mut cause);
         let Some(pane) = spawned_pane else {
-            std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
-                .pop_zoom();
             return None;
         };
-        std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
-            .pop_zoom();
         Some(pane.install_editor(owner))
     })();
     original_window.release(c"spawn editor");
