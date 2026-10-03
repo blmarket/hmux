@@ -44,7 +44,10 @@ Use these as reference material only. Neither can be merged.
 - Each pane uses the full available height; no vertical stacks within columns.
 - Each pane independently uses half or all of the visible width. Mixed widths are allowed.
 - New panes start at half-width and appear immediately to the right of the active pane.
-- Selecting a pane scrolls only as far as necessary to show that pane completely.
+- Selecting a pane scrolls to the nearest pane boundary that shows that pane
+  completely. A pane boundary is a view whose first column is a pane's first
+  column; the view always rests on one, so it never sits one column off. On an
+  even width the spare column is therefore always at the right edge.
 - Adding panes extends the strip instead of squeezing the existing panes.
 - Left/right navigation stops at the first/last pane; it does not wrap around.
 - A lone half-width pane stays half-width, leaving empty space beside it.
@@ -244,10 +247,12 @@ insertion after the target. For scrolling:
 ### Viewport
 
 - `tty_window_offset1` (`src/tty.rs:1055`) follows the active pane's cursor and
-  centers on it. For a scrolling window, follow the active pane's bounds: keep
-  the offset when the pane, including its border, is fully visible; otherwise
-  move to the nearest offset that reveals it and clamp to the logical size.
-  Cursor movement inside a visible pane must not move the view.
+  centers on it. For a scrolling window, follow the active pane's bounds: rest
+  on the nearest offset that is a pane's first column and shows the active pane
+  completely. That offset must be reachable, so the scrollable extent runs to
+  one view width past the last pane's first column, showing its right border
+  and then empty space. Cursor movement inside a visible pane must not move
+  the view.
 - A client narrower than the pane cannot show it fully; fall back to keeping the
   cursor visible. Pane geometry stays shared and follows `window-size`.
 - Explicit panning lives in `Client` (`apply_pan`, `pan_window`, `reset_pan`,
