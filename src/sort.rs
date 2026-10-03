@@ -205,9 +205,6 @@ pub unsafe fn sort_order_from_string(mut order: *const ::core::ffi::c_char) -> s
         if strcasecmp(order, c"size".as_ptr()) == 0 as ::core::ffi::c_int {
             return SORT_SIZE;
         }
-        if strcasecmp(order, c"z".as_ptr()) == 0 as ::core::ffi::c_int {
-            return SORT_Z;
-        }
     }
     SORT_END
 }
@@ -232,9 +229,6 @@ pub unsafe fn sort_order_to_string(mut order: sort_order) -> *const ::core::ffi:
     }
     if order as ::core::ffi::c_uint == SORT_SIZE as ::core::ffi::c_int as ::core::ffi::c_uint {
         return c"size".as_ptr();
-    }
-    if order as ::core::ffi::c_uint == SORT_Z as ::core::ffi::c_int as ::core::ffi::c_uint {
-        return c"z".as_ptr();
     }
     ::core::ptr::null::<::core::ffi::c_char>()
 }

@@ -8,7 +8,6 @@ pub type layout_type = ::core::ffi::c_uint;
 pub const LAYOUT_WINDOWPANE: layout_type = 2;
 pub const LAYOUT_TOPBOTTOM: layout_type = 1;
 pub const LAYOUT_LEFTRIGHT: layout_type = 0;
-pub const LAYOUT_CELL_FLOATING: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const LAYOUT_CUSTOM_OLD_FORMAT: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const LAYOUT_V1_MAX_DEPTH: ::core::ffi::c_int = 1000 as ::core::ffi::c_int;
 
@@ -81,12 +80,10 @@ mod tests {
 /// Child addresses remain stable as the parent `Vec` moves the boxes.
 pub struct layout_cell {
     pub type_0: layout_type,
-    pub flags: ::core::ffi::c_int,
     pub parent: *mut layout_cell,
     /// Index in `parent.cells` for constant-time neighbor steps.
     pub sibling_index: usize,
     pub g: layout_geometry,
-    pub fg: layout_geometry,
     /// Nonowning pane association; upgrade before accessing the pane.
     pub wp: Weak<UnsafeCell<window_pane>>,
     pub cells: layout_cells,
@@ -102,17 +99,12 @@ impl layout_cell {
         };
         Box::new(Self {
             type_0: LAYOUT_WINDOWPANE,
-            flags: 0,
             parent: std::ptr::null_mut(),
             sibling_index: 0,
             g: geometry,
-            fg: geometry,
             wp: Weak::new(),
             cells: Vec::new(),
         })
-    }
-    pub fn is_floating(&self) -> bool {
-        self.flags & LAYOUT_CELL_FLOATING != 0
     }
     pub unsafe fn is_saved(&self) -> bool {
         self.wp

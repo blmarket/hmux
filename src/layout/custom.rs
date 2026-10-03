@@ -5,9 +5,8 @@ use crate::src::json::{
     json_find_string, json_get_object, json_parse,
 };
 use crate::src::layout::{
-    layout_cell_has_tiled_child, layout_cell_is_tiled, layout_count_cells, layout_create_cell,
-    layout_destroy_cell, layout_fix_offsets, layout_fix_panes, layout_make_leaf, layout_print_cell,
-    layout_resize, layout_set_size, layout_take_leaf,
+    layout_count_cells, layout_create_cell, layout_destroy_cell, layout_make_leaf,
+    layout_print_cell, layout_resize,
 };
 use crate::src::resize::recalculate_sizes;
 use crate::src::shared::window::WindowRef;
@@ -67,7 +66,6 @@ pub struct layout_parse_cell_ctx {
     pub active: ::core::ffi::c_int,
     pub last: ::core::ffi::c_int,
     pub index: ::core::ffi::c_int,
-    pub zindex: ::core::ffi::c_int,
 }
 
 unsafe fn layout_parse_free_ctx(mut pctx: *mut layout_parse_ctx) {
@@ -81,14 +79,12 @@ unsafe fn layout_parse_add_cctx(
     mut active: ::core::ffi::c_int,
     mut last: ::core::ffi::c_int,
     mut index: ::core::ffi::c_int,
-    mut zindex: ::core::ffi::c_int,
 ) {
     (*pctx).cctxs.push(layout_parse_cell_ctx {
         lc,
         active,
         last,
         index,
-        zindex,
     });
 }
 unsafe fn layout_parse_remove_cctx(
@@ -121,7 +117,7 @@ fn layout_checksum(layout: &[u8]) -> u_short {
 pub(crate) unsafe fn layout_dump(root: &layout_cell, legacy: bool) -> Option<CString> {
     let mut body = Vec::new();
     if legacy {
-        layout_append_v1(layout_compat_cell(root)?, &mut body, true);
+        layout_append_v1(root, &mut body, true);
     } else {
         layout_append_v2(root, &mut body)?;
     }
@@ -135,23 +131,6 @@ pub(crate) unsafe fn layout_dump(root: &layout_cell, legacy: bool) -> Option<CSt
         output.push(b'}');
     }
     Some(CString::new(output).expect("layout serializer produced an interior NUL"))
-}
-
-// Legacy layouts omit floating leaves and collapse nodes with one tiled child.
-fn layout_compat_cell(cell: &layout_cell) -> Option<&layout_cell> {
-    if cell.type_0 == LAYOUT_WINDOWPANE {
-        return (cell.flags & LAYOUT_CELL_FLOATING == 0).then_some(cell);
-    }
-    let mut children = cell
-        .cells
-        .iter()
-        .filter_map(|child| layout_compat_cell(child));
-    let first = children.next()?;
-    Some(if children.next().is_none() {
-        first
-    } else {
-        cell
-    })
 }
 
 unsafe fn layout_append_v2(cell: &layout_cell, bytes: &mut Vec<u8>) -> Option<()> {
@@ -199,11 +178,6 @@ unsafe fn layout_append_v2(cell: &layout_cell, bytes: &mut Vec<u8>) -> Option<()
         }
         let index = window.pane_index(&observer)?;
         bytes.extend_from_slice(format!(",\"i\":{index}").as_bytes());
-        if cell.flags & LAYOUT_CELL_FLOATING != 0 {
-            if let Some(index) = window.pane_stacking_index(&observer) {
-                bytes.extend_from_slice(format!(",\"z\":{index}").as_bytes());
-            }
-        }
         bytes.extend_from_slice(format!(",\"I\":\"%{}\"", pane.id()).as_bytes());
     }
     bytes.push(b'}');
@@ -230,12 +204,7 @@ unsafe fn layout_append_v1(cell: &layout_cell, bytes: &mut Vec<u8>, root: bool) 
         _ => return,
     };
     bytes.push(brackets[0]);
-    for (index, child) in cell
-        .cells
-        .iter()
-        .filter_map(|child| layout_compat_cell(child))
-        .enumerate()
-    {
+    for (index, child) in cell.cells.iter().enumerate() {
         if index != 0 {
             bytes.push(b',');
         }
@@ -251,17 +220,13 @@ unsafe fn layout_check(mut lc: *mut layout_cell) -> ::core::ffi::c_int {
         0 => {
             lcchild = layout_cells_first(&*lc);
             while !lcchild.is_null() {
-                if !(layout_cell_is_tiled(lcchild) == 0
-                    && layout_cell_has_tiled_child(lcchild) == 0)
-                {
-                    if (*lcchild).g.sy != (*lc).g.sy {
-                        return 0 as ::core::ffi::c_int;
-                    }
-                    if layout_check(lcchild) == 0 {
-                        return 0 as ::core::ffi::c_int;
-                    }
-                    n = n.wrapping_add((*lcchild).g.sx.wrapping_add(1 as u_int));
+                if (*lcchild).g.sy != (*lc).g.sy {
+                    return 0 as ::core::ffi::c_int;
                 }
+                if layout_check(lcchild) == 0 {
+                    return 0 as ::core::ffi::c_int;
+                }
+                n = n.wrapping_add((*lcchild).g.sx.wrapping_add(1 as u_int));
                 lcchild = layout_cell_next(lcchild);
             }
             if n != 0 as u_int && n.wrapping_sub(1 as u_int) != (*lc).g.sx {
@@ -271,17 +236,13 @@ unsafe fn layout_check(mut lc: *mut layout_cell) -> ::core::ffi::c_int {
         1 => {
             lcchild = layout_cells_first(&*lc);
             while !lcchild.is_null() {
-                if !(layout_cell_is_tiled(lcchild) == 0
-                    && layout_cell_has_tiled_child(lcchild) == 0)
-                {
-                    if (*lcchild).g.sx != (*lc).g.sx {
-                        return 0 as ::core::ffi::c_int;
-                    }
-                    if layout_check(lcchild) == 0 {
-                        return 0 as ::core::ffi::c_int;
-                    }
-                    n = n.wrapping_add((*lcchild).g.sy.wrapping_add(1 as u_int));
+                if (*lcchild).g.sx != (*lc).g.sx {
+                    return 0 as ::core::ffi::c_int;
                 }
+                if layout_check(lcchild) == 0 {
+                    return 0 as ::core::ffi::c_int;
+                }
+                n = n.wrapping_add((*lcchild).g.sy.wrapping_add(1 as u_int));
                 lcchild = layout_cell_next(lcchild);
             }
             if n != 0 as u_int && n.wrapping_sub(1 as u_int) != (*lc).g.sy {
@@ -312,17 +273,11 @@ pub unsafe fn layout_parse(
     let mut ncells: u_int = 0;
     let mut sx: u_int = 0 as u_int;
     let mut sy: u_int = 0 as u_int;
-    let mut with_floating: ::core::ffi::c_int = 0;
     if layout_construct(input, &raw mut pctx) != 0 as ::core::ffi::c_int {
         layout_parse_free_ctx(&raw mut pctx);
         return -(1 as ::core::ffi::c_int);
     }
-    with_floating = (pctx.version > 1 as int64_t) as ::core::ffi::c_int;
-    npanes = w_owner
-        .pane_snapshot()
-        .iter()
-        .filter(|pane| with_floating != 0 || !pane.is_floating())
-        .count() as u_int;
+    npanes = w_owner.pane_snapshot().len() as u_int;
     if npanes == 0 as u_int {
         layout_format_cause!(
             pctx.cause.as_deref_mut(),
@@ -331,7 +286,7 @@ pub unsafe fn layout_parse(
         );
     } else {
         loop {
-            ncells = layout_count_cells(pctx.root_ptr(), with_floating);
+            ncells = layout_count_cells(pctx.root_ptr());
             if npanes > ncells {
                 layout_format_cause!(
                     pctx.cause.as_deref_mut(),
@@ -370,24 +325,16 @@ pub unsafe fn layout_parse(
                     0 => {
                         lcchild = layout_cells_first(&*lc);
                         while !lcchild.is_null() {
-                            if layout_cell_is_tiled(lcchild) != 0
-                                || layout_cell_has_tiled_child(lcchild) != 0
-                            {
-                                sy = (*lcchild).g.sy.wrapping_add(1 as u_int);
-                                sx = sx.wrapping_add((*lcchild).g.sx.wrapping_add(1 as u_int));
-                            }
+                            sy = (*lcchild).g.sy.wrapping_add(1 as u_int);
+                            sx = sx.wrapping_add((*lcchild).g.sx.wrapping_add(1 as u_int));
                             lcchild = layout_cell_next(lcchild);
                         }
                     }
                     1 => {
                         lcchild = layout_cells_first(&*lc);
                         while !lcchild.is_null() {
-                            if layout_cell_is_tiled(lcchild) != 0
-                                || layout_cell_has_tiled_child(lcchild) != 0
-                            {
-                                sx = (*lcchild).g.sx.wrapping_add(1 as u_int);
-                                sy = sy.wrapping_add((*lcchild).g.sy.wrapping_add(1 as u_int));
-                            }
+                            sx = (*lcchild).g.sx.wrapping_add(1 as u_int);
+                            sy = sy.wrapping_add((*lcchild).g.sy.wrapping_add(1 as u_int));
                             lcchild = layout_cell_next(lcchild);
                         }
                     }
@@ -409,48 +356,22 @@ pub unsafe fn layout_parse(
                         c"size mismatch after applying layout".as_ptr(),
                     );
                 } else {
-                    let refit =
-                        layout_cell_is_tiled(lc) != 0 || layout_cell_has_tiled_child(lc) != 0;
                     // Keep all tree edits in one bounded borrow.
                     let panes = w_owner.pane_snapshot();
                     {
                         let mut tree = w_owner.borrow_layout_root_mut();
-                        let mut floating = Vec::new();
-                        if pctx.version == 1 {
-                            for pane in &panes {
-                                let cell = pane
-                                    .layout_identity(false)
-                                    .and_then(|id| {
-                                        tree.as_deref_mut().and_then(|root| root.find_mut(id))
-                                    })
-                                    .map_or(std::ptr::null_mut(), |cell| cell as *mut layout_cell);
-                                if !cell.is_null() && (*cell).flags & LAYOUT_CELL_FLOATING != 0 {
-                                    floating.push(
-                                        layout_cells_remove((*cell).parent, cell)
-                                            .expect("floating cell is owned"),
-                                    );
-                                    (*cell).parent = std::ptr::null_mut();
-                                }
-                            }
-                        }
                         // Dropping the old cells clears Pane's old cell links; this
                         // must precede assigning the panes into the replacement.
                         drop(tree.take());
                         *tree = candidate.take();
-                        layout_assign(&panes, tree, &mut pctx, &mut floating);
-                        assert!(floating.is_empty());
+                        layout_assign(&panes, tree, &mut pctx);
                     }
                     lc = std::ptr::null_mut();
                     lcchild = std::ptr::null_mut();
                     drop(panes);
-                    if refit {
-                        // Arrange the parsed tree against the window size.
-                        let (sx, sy) = w_owner.size();
-                        layout_resize(w_owner, sx, sy);
-                    } else {
-                        layout_fix_offsets(w_owner);
-                        layout_fix_panes(w_owner, None);
-                    }
+                    // Arrange the parsed tree against the window size.
+                    let (sx, sy) = w_owner.size();
+                    layout_resize(w_owner, sx, sy);
                     if pctx.version > 1 {
                         layout_parse_apply_ctx(w_owner, &mut pctx.cctxs);
                     }
@@ -523,7 +444,6 @@ unsafe fn layout_assign_fallback_tiled(
 unsafe fn layout_assign_fallback(
     panes: &[std::rc::Rc<std::cell::UnsafeCell<window_pane>>],
     tree: &mut Option<Box<layout_cell>>,
-    floating: &mut Vec<Box<layout_cell>>,
 ) {
     let mut root = tree.as_deref_mut().expect("assigned layout root") as *mut layout_cell;
     layout_assign_fallback_tiled(&mut panes.iter().cloned(), root);
@@ -535,27 +455,16 @@ unsafe fn layout_assign_fallback(
         root = tree.as_deref_mut().unwrap();
         layout_cells_push_front(root, previous);
     }
-    for pane in panes {
-        if let Some(id) = pane.layout_identity(false) {
-            if floating
-                .iter()
-                .any(|cell| cell.id() == id && cell.flags & LAYOUT_CELL_FLOATING != 0)
-            {
-                layout_cells_push_back(root, layout_take_leaf(floating, id));
-            }
-        }
-    }
 }
 unsafe fn layout_assign(
     panes: &[std::rc::Rc<std::cell::UnsafeCell<window_pane>>],
     tree: &mut Option<Box<layout_cell>>,
     pctx: &mut layout_parse_ctx,
-    floating: &mut Vec<Box<layout_cell>>,
 ) {
     if !pctx.cctxs.is_empty() {
         layout_assign_from_ctx(panes, pctx);
     } else {
-        layout_assign_fallback(panes, tree, floating);
+        layout_assign_fallback(panes, tree);
     }
 }
 
@@ -774,16 +683,7 @@ unsafe fn layout_parse_json_layout(
             } else if json_find(node, c"l").is_some() {
                 last = layout_json_number(node, c"l", 0, INT_MAX as i64, "last")? as i32;
             }
-            let zindex = if json_find(node, c"z").is_some() {
-                let zindex =
-                    layout_json_number(node, c"z", 0, (INT_MAX - 1) as i64, "floating zindex")?
-                        as i32;
-                (*lc).flags |= LAYOUT_CELL_FLOATING;
-                zindex
-            } else {
-                INT_MAX
-            };
-            layout_parse_add_cctx(pctx, lc, active, last, index, zindex);
+            layout_parse_add_cctx(pctx, lc, active, last, index);
         } else {
             let members = json_find_array(node, c"c")?;
             if members.len() < 2 {
@@ -871,27 +771,6 @@ unsafe fn layout_construct(
     0 as ::core::ffi::c_int
 }
 unsafe fn layout_parse_apply_ctx(w_owner: &WindowRef, restored: &mut [layout_parse_cell_ctx]) {
-    for pane_owner in w_owner.stacking_snapshot() {
-        if pane_owner.is_floating() {
-            assert!(
-                w_owner
-                    .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                    .remove(&std::rc::Rc::downgrade(&pane_owner)),
-                "pane is not in its stacking order"
-            );
-        }
-    }
-    restored.sort_unstable_by_key(|a| std::cmp::Reverse(a.zindex));
-    for cctx in restored.iter() {
-        let Some(pane_owner) = (*cctx.lc).wp.upgrade() else {
-            continue;
-        };
-        if pane_owner.is_floating() {
-            w_owner
-                .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-                .push_front(std::rc::Rc::downgrade(&pane_owner));
-        }
-    }
     for cctx in restored.iter() {
         if cctx.active == 1 as ::core::ffi::c_int {
             if let Some(pane_owner) = (*cctx.lc).wp.upgrade() {
@@ -929,24 +808,6 @@ unsafe fn layout_parse_ctx_check_indexes(mut pctx: *mut layout_parse_ctx) -> ::c
     }
     (*pctx)
         .cctxs
-        .sort_unstable_by_key(|a| std::cmp::Reverse(a.zindex));
-    let n = (*pctx)
-        .cctxs
-        .iter()
-        .take_while(|cctx| cctx.zindex == INT_MAX)
-        .count();
-    if (&(*pctx).cctxs)[n..]
-        .windows(2)
-        .any(|pair| pair[0].zindex == pair[1].zindex)
-    {
-        layout_set_static_cause(
-            (*pctx).cause.as_deref_mut(),
-            c"duplicate pane z-index".as_ptr(),
-        );
-        return 0 as ::core::ffi::c_int;
-    }
-    (*pctx)
-        .cctxs
         .sort_unstable_by_key(|a| std::cmp::Reverse(a.last));
     let n = (*pctx)
         .cctxs
@@ -970,7 +831,7 @@ unsafe fn layout_parse_ctx_check_indexes(mut pctx: *mut layout_parse_ctx) -> ::c
 mod json_tests {
     use super::*;
 
-    fn construct(input: &CStr) -> Result<Vec<(i32, i32, i32, i32)>, CString> {
+    fn construct(input: &CStr) -> Result<Vec<(i32, i32, i32)>, CString> {
         unsafe {
             let mut cause = None;
             let mut ctx = layout_parse_ctx {
@@ -984,7 +845,7 @@ mod json_tests {
             let cells = ctx
                 .cctxs
                 .iter()
-                .map(|cell| (cell.index, cell.active, cell.last, cell.zindex))
+                .map(|cell| (cell.index, cell.active, cell.last))
                 .collect();
             layout_parse_free_ctx(&mut ctx);
             if result == 0 {
@@ -997,10 +858,10 @@ mod json_tests {
 
     #[test]
     fn borrowed_json_preserves_layout_pane_metadata() {
-        let input = c"{\"V\":2,\"L\":{\"t\":\"h\",\"w\":80,\"h\":24,\"x\":0,\"y\":0,\"c\":[{\"t\":\"p\",\"w\":40,\"h\":24,\"x\":0,\"y\":0,\"i\":0,\"a\":false,\"l\":\"ignored\"},{\"t\":\"p\",\"w\":39,\"h\":24,\"x\":41,\"y\":0,\"i\":1,\"l\":7,\"z\":3}]}}";
+        let input = c"{\"V\":2,\"L\":{\"t\":\"h\",\"w\":80,\"h\":24,\"x\":0,\"y\":0,\"c\":[{\"t\":\"p\",\"w\":40,\"h\":24,\"x\":0,\"y\":0,\"i\":0,\"a\":false,\"l\":\"ignored\"},{\"t\":\"p\",\"w\":39,\"h\":24,\"x\":41,\"y\":0,\"i\":1,\"l\":7}]}}";
         let mut cells = construct(input).unwrap();
         cells.sort_by_key(|cell| cell.0);
-        assert_eq!(cells, [(0, 0, -1, INT_MAX), (1, -1, 7, 3)]);
+        assert_eq!(cells, [(0, 0, -1), (1, -1, 7)]);
     }
 
     #[test]
@@ -1037,30 +898,21 @@ mod serialization_tests {
     use super::*;
 
     #[test]
-    fn legacy_dump_collapses_floating_siblings() {
+    fn legacy_dump_places_a_lone_pane_at_the_origin() {
         unsafe {
             let mut root = layout_create_cell();
-            root.type_0 = LAYOUT_LEFTRIGHT;
-            let mut tiled = layout_create_cell();
-            tiled.g = layout_geometry {
+            root.g = layout_geometry {
                 sx: 40,
                 sy: 24,
                 xoff: 8,
                 yoff: 3,
             };
-            let mut floating = layout_create_cell();
-            floating.flags = LAYOUT_CELL_FLOATING;
-            layout_cells_push_back(&mut *root, tiled);
-            layout_cells_push_back(&mut *root, floating);
             let result = layout_dump(&root, true).unwrap();
             let body = b"40x24,0,0";
             assert_eq!(
                 result.to_bytes(),
                 format!("{:04x},40x24,0,0", layout_checksum(body)).as_bytes()
             );
-            let mut floating = layout_create_cell();
-            floating.flags = LAYOUT_CELL_FLOATING;
-            assert!(layout_dump(&floating, true).is_none());
         }
     }
 }

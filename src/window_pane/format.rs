@@ -153,7 +153,6 @@ unsafe fn evaluate(key: &CStr, context: &mut format_tree) -> Option<FormatValue>
         b"pane_width" => format_cb_pane_width(context).map(FormatValue::String),
         b"pane_x" => format_cb_pane_x(context).map(FormatValue::String),
         b"pane_y" => format_cb_pane_y(context).map(FormatValue::String),
-        b"pane_z" => format_cb_pane_z(context).map(FormatValue::String),
         b"pane_zoomed_flag" => format_cb_pane_zoomed_flag(context).map(FormatValue::String),
         b"scroll_region_lower" => format_cb_scroll_region_lower(context).map(FormatValue::String),
         b"scroll_region_upper" => format_cb_scroll_region_upper(context).map(FormatValue::String),
@@ -398,28 +397,14 @@ unsafe fn format_cb_pane_flags(mut ft: *mut format_tree) -> Option<CString> {
     None
 }
 
-unsafe fn format_cb_pane_floating_flag(mut ft: *mut format_tree) -> Option<CString> {
-    let format_pane_owner = (*ft).wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut wp: *mut window_pane = format_pane;
-    if !wp.is_null() {
-        if window_pane_is_floating(&*wp) != 0 {
-            return Some(c"1".to_owned());
-        }
-        return Some(c"0".to_owned());
-    }
-    None
+// Floating and modal panes no longer exist; the flags remain for configurations
+// that test them.
+unsafe fn format_cb_pane_floating_flag(ft: *mut format_tree) -> Option<CString> {
+    (*ft).wp.upgrade().map(|_| c"0".to_owned())
 }
 
 unsafe fn format_cb_pane_modal_flag(ft: *mut format_tree) -> Option<CString> {
-    let pane = (*ft).wp.upgrade()?;
-    let window = pane.window_observer().upgrade().expect("pane window");
-    let modal = window
-        .modal_pane()
-        .is_some_and(|modal| Rc::ptr_eq(&modal, &pane));
-    Some(if modal { c"1" } else { c"0" }.to_owned())
+    (*ft).wp.upgrade().map(|_| c"0".to_owned())
 }
 
 unsafe fn format_cb_pane_bg(mut ft: *mut format_tree) -> Option<CString> {
@@ -1703,26 +1688,6 @@ unsafe fn format_cb_pane_y(mut ft: *mut format_tree) -> Option<CString> {
         return Some(
             CString::new(format!("{}", ((*format_pane).yoff) as i32))
                 .expect("formatted numbers contain no NUL"),
-        );
-    }
-    None
-}
-
-unsafe fn format_cb_pane_z(mut ft: *mut format_tree) -> Option<CString> {
-    let format_pane_owner = (*ft).wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    let mut idx: u_int = 0;
-    if !format_pane.is_null()
-        && window_pane_zindex(format_pane_owner.as_ref().expect("live pane"))
-            .map(|value| {
-                idx = value;
-            })
-            .is_some()
-    {
-        return Some(
-            CString::new(format!("{}", (idx) as u32)).expect("formatted numbers contain no NUL"),
         );
     }
     None

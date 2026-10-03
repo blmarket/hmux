@@ -220,13 +220,7 @@ unsafe fn cmd_switch_client_exec(
                 .window_handle()
                 .cloned()
                 .expect("switch window");
-            if window_owner.modal_pane().is_some_and(|modal| {
-                !std::rc::Rc::ptr_eq(&modal, &target.pane_handle().expect("target pane"))
-            }) {
-                visible = 1 as ::core::ffi::c_int;
-            } else {
-                visible = wp.as_ref().expect("target pane").is_visible() as i32;
-            }
+            visible = wp.as_ref().expect("target pane").is_visible() as i32;
             if visible == 0 && window_owner.push_zoom(false, (Zflag) != 0) != 0 {
                 server_redraw_window(&window_owner);
             }

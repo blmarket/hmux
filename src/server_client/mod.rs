@@ -71,7 +71,7 @@ use crate::src::screen::screen_mode_display;
 use crate::src::screen_redraw::{redraw_pane, redraw_pane_scrollbar, redraw_screen};
 use crate::src::server::{current_time, server_add_accept, server_proc, server_update_socket};
 use crate::src::server_fn::{
-    server_check_unattached, server_destroy_pane, server_kill_pane, server_redraw_client,
+    server_check_unattached, server_destroy_pane, server_redraw_client,
     server_redraw_window_borders, server_status_client, server_status_window,
 };
 
@@ -678,10 +678,9 @@ use crate::src::shared::mouse::{
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{
-    window_pane_offset, window_pane_resize, PANE_ACTIVITY, PANE_CAPTUREALLKEYS, PANE_CLOSEONCANCEL,
-    PANE_CLOSEONCLICK, PANE_EXITED, PANE_REDRAW, PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_AUTOHIDE,
-    PANE_SCROLLBARS_LEFT, PANE_SCROLLBARS_MODAL, PANE_SCROLLBARS_RIGHT, PANE_STATUS_BOTTOM,
-    PANE_STATUS_OFF, PANE_STATUS_TOP, PANE_STYLECHANGED,
+    window_pane_offset, window_pane_resize, PANE_ACTIVITY, PANE_EXITED, PANE_REDRAW,
+    PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT, PANE_SCROLLBARS_MODAL,
+    PANE_SCROLLBARS_RIGHT, PANE_STATUS_BOTTOM, PANE_STATUS_OFF, PANE_STATUS_TOP, PANE_STYLECHANGED,
 };
 use crate::src::shared::posix_io::{
     _PATH_BSHELL, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, X_OK,
@@ -1459,7 +1458,6 @@ unsafe fn server_client_check_mouse(
         let mut b: u_int = 0;
         let mut bn: u_int = 0;
         let mut ignore: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-        let mut modal_drag: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
         let mut key: key_code = 0;
         let mut type_0: key_code_type = KEYC_TYPE_NOTYPE;
         let mut loc: key_code_mouse_location = KEYC_MOUSE_LOCATION_NOWHERE;
@@ -1721,69 +1719,20 @@ unsafe fn server_client_check_mouse(
             }
             px = px.wrapping_add((*m).ox);
             py = py.wrapping_add((*m).oy);
-            let modal_owner = window_owner.modal_pane();
-            if let Some(modal) = modal_owner.filter(|owner| !owner.contains(px, py)) {
-                if last_pane
-                    .as_ref()
-                    .is_some_and(|last| std::rc::Rc::ptr_eq(&modal, last))
-                    && (*c).tty.mouse_drag_flag != 0 as ::core::ffi::c_int
-                    && (type_0 as ::core::ffi::c_uint
-                        == KEYC_TYPE_MOUSEDRAG as ::core::ffi::c_int as ::core::ffi::c_uint
-                        || type_0 as ::core::ffi::c_uint
-                            == KEYC_TYPE_MOUSEUP as ::core::ffi::c_int as ::core::ffi::c_uint)
-                {
-                    modal_drag = 1 as ::core::ffi::c_int;
-                    selected_pane = last_pane.clone();
-                    loc = KEYC_MOUSE_LOCATION_PANE;
-                    (*m).wp =
-                        selected_pane.as_ref().expect("selected pane").id() as ::core::ffi::c_int;
-                    (*m).w = server_client_pane_window_id(
-                        selected_pane.as_ref().expect("selected pane"),
-                    ) as ::core::ffi::c_int;
-                } else {
-                    server_client_update_scrollbar_hover(
-                        client_owner,
-                        type_0 as ::core::ffi::c_int,
-                        -(1 as ::core::ffi::c_int),
-                        -(1 as ::core::ffi::c_int),
-                    );
-                    (*c).tty.mouse_drag_update = None;
-                    (*c).tty.mouse_drag_release = None;
-                    (*c).tty.mouse_drag_flag = 0 as ::core::ffi::c_int;
-                    (*c).tty.mouse_scrolling_flag = 0 as ::core::ffi::c_int;
-                    (*c).tty.mouse_slider_mpos = -(1 as ::core::ffi::c_int);
-                    (*c).tty.mouse_last_pane = -(1 as ::core::ffi::c_int);
-                    if modal.closes_on_click()
-                        && (type_0 as ::core::ffi::c_uint
-                            == KEYC_TYPE_MOUSEDOWN as ::core::ffi::c_int as ::core::ffi::c_uint
-                            || type_0 as ::core::ffi::c_uint
-                                == KEYC_TYPE_SECONDCLICK as ::core::ffi::c_int
-                                    as ::core::ffi::c_uint
-                            || type_0 as ::core::ffi::c_uint
-                                == KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int
-                                    as ::core::ffi::c_uint)
-                    {
-                        server_kill_pane(&modal);
-                    }
-                    return KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code;
-                }
-            }
             server_client_update_scrollbar_hover(
                 client_owner,
                 type_0 as ::core::ffi::c_int,
                 px as ::core::ffi::c_int,
                 py as ::core::ffi::c_int,
             );
-            if !(modal_drag != 0) {
-                if type_0 as ::core::ffi::c_uint
-                    == KEYC_TYPE_MOUSEDRAG as ::core::ffi::c_int as ::core::ffi::c_uint
-                    && last_pane.is_some()
-                {
-                    selected_pane = last_pane.clone();
-                } else {
-                    let hit_window_owner = &window_owner;
-                    selected_pane = hit_window_owner.pane_at(px, py);
-                }
+            if type_0 as ::core::ffi::c_uint
+                == KEYC_TYPE_MOUSEDRAG as ::core::ffi::c_int as ::core::ffi::c_uint
+                && last_pane.is_some()
+            {
+                selected_pane = last_pane.clone();
+            } else {
+                let hit_window_owner = &window_owner;
+                selected_pane = hit_window_owner.pane_at(px, py);
             }
             if selected_pane.is_none() {
                 loc = KEYC_MOUSE_LOCATION_EMPTY;
@@ -1794,15 +1743,13 @@ unsafe fn server_client_check_mouse(
                     (y) as u32
                 ));
             } else {
-                if modal_drag == 0 {
-                    let pane_owner = selected_pane.as_ref().expect("mouse target pane");
-                    loc = server_client_check_mouse_in_pane(
-                        pane_owner,
-                        px as ::core::ffi::c_int,
-                        py as ::core::ffi::c_int,
-                        &mut sl_mpos,
-                    );
-                }
+                let pane_owner = selected_pane.as_ref().expect("mouse target pane");
+                loc = server_client_check_mouse_in_pane(
+                    pane_owner,
+                    px as ::core::ffi::c_int,
+                    py as ::core::ffi::c_int,
+                    &mut sl_mpos,
+                );
                 if loc as ::core::ffi::c_uint
                     == KEYC_MOUSE_LOCATION_PANE as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
@@ -2354,22 +2301,8 @@ unsafe fn server_client_key_callback(
                             && server_client_is_assume_paste(&mut *(c)) != 0)
                     {
                         current_block = 3436715649514806935;
-                    } else if target_pane.is_some()
-                        && target_pane.as_ref().expect("key pane").captures_keys()
-                        && !target_pane.as_ref().expect("key pane").has_exited()
-                        && !(key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
-                            == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
-                            || key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
-                                >= (KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int
-                                    as ::core::ffi::c_ulonglong)
-                                    << 32 as ::core::ffi::c_int
-                                && key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
-                                    <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int
-                                        as ::core::ffi::c_ulonglong)
-                                        << 32 as ::core::ffi::c_int)
-                        && !target_pane.as_ref().expect("key pane").has_modes()
-                        || (key == KEYC_FOCUS_IN as ::core::ffi::c_ulong as key_code
-                            || key == KEYC_FOCUS_OUT as ::core::ffi::c_ulong as key_code)
+                    } else if key == KEYC_FOCUS_IN as ::core::ffi::c_ulong as key_code
+                        || key == KEYC_FOCUS_OUT as ::core::ffi::c_ulong as key_code
                     {
                         current_block = 15469183920764600035;
                     } else {
@@ -2794,55 +2727,6 @@ unsafe fn server_client_handle_key0(
         .expect("live window"))
         .active_pane();
         if server_client_handle_dead_key(active_pane_owner.as_ref(), (*event).key) != 0 {
-            return 0 as ::core::ffi::c_int;
-        }
-        if active_pane_owner.is_some()
-            && active_pane_owner
-                .as_ref()
-                .expect("active pane")
-                .window_observer()
-                .upgrade()
-                .expect("pane window")
-                .modal_pane()
-                .is_some_and(|modal| {
-                    std::rc::Rc::ptr_eq(&modal, active_pane_owner.as_ref().expect("active pane"))
-                })
-            && active_pane_owner
-                .as_ref()
-                .expect("active pane")
-                .closes_on_cancel()
-            && ((*event).key == '\u{1b}' as i32 as key_code
-                || (*event).key == 'c' as i32 as ::core::ffi::c_ulonglong | KEYC_CTRL)
-        {
-            server_kill_pane(active_pane_owner.as_ref().expect("live modal pane"));
-            return 0 as ::core::ffi::c_int;
-        }
-        if active_pane_owner.is_some()
-            && active_pane_owner
-                .as_ref()
-                .expect("active pane")
-                .captures_keys()
-            && !active_pane_owner.as_ref().expect("active pane").has_modes()
-            && !((*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_KEY
-                == KEYC_MOUSE as ::core::ffi::c_ulong as ::core::ffi::c_ulonglong
-                || (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
-                    >= (KEYC_TYPE_MOUSEMOVE as ::core::ffi::c_int as ::core::ffi::c_ulonglong)
-                        << 32 as ::core::ffi::c_int
-                    && (*event).key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
-                        <= (KEYC_TYPE_TRIPLECLICK as ::core::ffi::c_int
-                            as ::core::ffi::c_ulonglong)
-                            << 32 as ::core::ffi::c_int)
-            && !active_pane_owner
-                .as_ref()
-                .expect("active pane")
-                .has_exited()
-        {
-            active_pane_owner.as_ref().expect("key target pane").key(
-                Some(owner),
-                (s.as_ref().expect("live session").current_winlink()).clone(),
-                (*event).key,
-                Some(&mut (*event).m),
-            );
             return 0 as ::core::ffi::c_int;
         }
         if server_client_handle_menu_key(owner, event) != 0 {

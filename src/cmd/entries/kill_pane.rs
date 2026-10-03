@@ -95,11 +95,7 @@ unsafe fn cmd_kill_pane_all(
             .get_unchecked()
             .window_handle()
             .expect("linked window")
-            .step_pane(
-                crate::src::window::PaneOrder::Index,
-                Some(&std::rc::Rc::downgrade(&pane_owner)),
-                false,
-            );
+            .step_pane(Some(&std::rc::Rc::downgrade(&pane_owner)), false);
         if !std::rc::Rc::ptr_eq(&pane_owner, &target_pane)
             && cmd_kill_pane_filter(
                 item_handle,

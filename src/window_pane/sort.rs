@@ -1,7 +1,7 @@
 //! Pane comparison reads owned display state before querying parent order.
 use super::*;
 use crate::src::shared::sort::{
-    sort_criteria, SORT_ACTIVITY, SORT_CREATION, SORT_INDEX, SORT_NAME, SORT_SIZE, SORT_Z,
+    sort_criteria, SORT_ACTIVITY, SORT_CREATION, SORT_INDEX, SORT_NAME, SORT_SIZE,
 };
 use crate::src::shared::window::WindowWeak;
 use std::cmp::Ordering;
@@ -29,24 +29,19 @@ pub(super) unsafe fn compare(
             ),
         )
     };
-    let order_index =
-        |parent: &WindowWeak, observer: &std::rc::Weak<UnsafeCell<window_pane>>, stacking: bool| {
-            let window = parent.upgrade()?;
-            let index = if stacking {
-                window.pane_stacking_index(observer)
-            } else {
-                window.pane_index(observer)
-            };
-            window.release(c"pane sort");
-            index
-        };
+    let order_index = |parent: &WindowWeak, observer: &std::rc::Weak<UnsafeCell<window_pane>>| {
+        let window = parent.upgrade()?;
+        let index = window.pane_index(observer);
+        window.release(c"pane sort");
+        index
+    };
     let result = match criteria.order {
         SORT_ACTIVITY => activity_a.wrapping_sub(activity_b) as i32,
         SORT_CREATION => id_a.wrapping_sub(id_b) as i32,
         SORT_SIZE => size_a.wrapping_sub(size_b) as i32,
-        SORT_INDEX | SORT_Z => {
-            let ai = order_index(&parent_a, &Rc::downgrade(a), criteria.order == SORT_Z);
-            let bi = order_index(&parent_b, &Rc::downgrade(b), criteria.order == SORT_Z);
+        SORT_INDEX => {
+            let ai = order_index(&parent_a, &Rc::downgrade(a));
+            let bi = order_index(&parent_b, &Rc::downgrade(b));
             (ai.is_none(), ai).cmp(&(bi.is_none(), bi)) as i32
         }
         SORT_NAME => title_order,
@@ -74,7 +69,6 @@ mod tests {
                 SORT_CREATION,
                 SORT_SIZE,
                 SORT_INDEX,
-                SORT_Z,
                 SORT_NAME,
             ] {
                 let mut criteria = sort_criteria {

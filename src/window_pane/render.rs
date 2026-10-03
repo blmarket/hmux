@@ -64,31 +64,8 @@ pub(super) unsafe fn is_obscured(pane: &Rc<UnsafeCell<window_pane>>) -> bool {
         || yoff < 0
         || (xoff as u32).wrapping_add(sx) > wsx
         || (yoff as u32).wrapping_add(sy) > wsy;
-    if outside {
-        window.release(c"pane obscured outside window");
-        return true;
-    }
-    let panes = window.stacking_snapshot();
     window.release(c"pane obscured");
-    for other in panes
-        .into_iter()
-        .rev()
-        .skip_while(|other| !Rc::ptr_eq(other, pane))
-        .skip(1)
-    {
-        let (other_sx, other_sy, other_xoff, other_yoff) = other.geometry();
-        if other.is_floating()
-            && (other_yoff >= yoff && other_yoff <= yoff + sy as i32
-                || other_yoff + other_sy as i32 >= yoff
-                    && (other_yoff as u32).wrapping_add(other_sy) <= (yoff as u32).wrapping_add(sy))
-            && (other_xoff >= xoff && other_xoff <= xoff + sx as i32
-                || other_xoff + other_sx as i32 >= xoff
-                    && (other_xoff as u32).wrapping_add(other_sx) <= (xoff as u32).wrapping_add(sx))
-        {
-            return true;
-        }
-    }
-    false
+    outside
 }
 
 pub(super) unsafe fn alternate_screen_changed(pane: &Rc<UnsafeCell<window_pane>>, entered: bool) {
@@ -509,9 +486,8 @@ pub(super) unsafe fn visible_ranges(
         .upgrade()
         .expect("live pane parent");
     let window_size = crate::src::layout::logical_size(&window);
-    let scrollbars = &window;
+    window.release(c"visible pane range");
     if py as u_int >= window_size.1 || px as u_int >= window_size.0 {
-        window.release(c"visible pane range outside");
         return;
     }
     if (px as u_int).wrapping_add(width) > window_size.0 {
@@ -521,108 +497,4 @@ pub(super) unsafe fn visible_ranges(
         px: px as u_int,
         nx: width,
     });
-    let mut found_self = false;
-    let mut cursor = window.step_pane(PaneOrder::Stacking, None, true);
-    while let Some(pane_owner) = cursor {
-        let wp = &pane_owner;
-        if Rc::ptr_eq(wp, base_wp) {
-            found_self = true;
-        } else {
-            let floating = wp.is_floating();
-            let no_border = floating && wp.pane_lines() == PANE_LINES_NONE as pane_lines;
-            let (tb, bb) = if no_border {
-                (
-                    wp.geometry().3,
-                    wp.geometry().3 + wp.geometry().1 as ::core::ffi::c_int - 1,
-                )
-            } else {
-                (
-                    if wp.geometry().3 > 0 {
-                        wp.geometry().3 - 1
-                    } else {
-                        0
-                    },
-                    wp.geometry().3 + wp.geometry().1 as ::core::ffi::c_int,
-                )
-            };
-            if found_self
-                && pane_owner.is_visible()
-                && py >= tb
-                && py <= bb
-                && (floating || (py != tb && py != bb))
-            {
-                let (sb_w, sb_pos) = if wp.scrollbar_reserved() {
-                    (
-                        wp.scrollbar_width() + wp.scrollbar_pad(),
-                        scrollbars.scrollbar_position(),
-                    )
-                } else {
-                    (0, 0)
-                };
-                let (mut lb, mut rb) = if no_border {
-                    (
-                        wp.geometry().2,
-                        wp.geometry().2 + wp.geometry().0 as ::core::ffi::c_int - 1,
-                    )
-                } else if sb_pos == PANE_SCROLLBARS_LEFT {
-                    (
-                        if wp.geometry().2 > sb_w {
-                            wp.geometry().2 - 1 - sb_w
-                        } else {
-                            0
-                        },
-                        wp.geometry().2 + wp.geometry().0 as ::core::ffi::c_int,
-                    )
-                } else {
-                    (
-                        if wp.geometry().2 > 0 {
-                            wp.geometry().2 - 1
-                        } else {
-                            0
-                        },
-                        wp.geometry().2 + wp.geometry().0 as ::core::ffi::c_int + sb_w,
-                    )
-                };
-                lb = lb.max(0);
-                if rb >= 0 {
-                    if (no_border && rb >= window_size.0 as ::core::ffi::c_int)
-                        || (!no_border && rb > window_size.0 as ::core::ffi::c_int)
-                    {
-                        rb = window_size.0.wrapping_sub(1) as ::core::ffi::c_int;
-                    }
-                    if lb <= rb {
-                        let mut i = 0;
-                        while i < ranges.len() {
-                            let range = ranges[i];
-                            if range.nx != 0 {
-                                let sx = range.px as ::core::ffi::c_int;
-                                let ex = range.px.wrapping_add(range.nx).wrapping_sub(1)
-                                    as ::core::ffi::c_int;
-                                if lb > sx && lb <= ex && rb > ex {
-                                    ranges[i].nx = (lb - sx) as u_int;
-                                } else if rb >= sx && rb <= ex && lb <= sx {
-                                    ranges[i].nx = (ex - rb) as u_int;
-                                    ranges[i].px = (rb + 1) as u_int;
-                                } else if lb > sx && rb <= ex {
-                                    ranges.insert(
-                                        i + 1,
-                                        visible_range {
-                                            px: (rb + 1) as u_int,
-                                            nx: (ex - rb) as u_int,
-                                        },
-                                    );
-                                    ranges[i].nx = (lb - sx) as u_int;
-                                } else if lb <= sx && rb > ex {
-                                    ranges[i].nx = 0;
-                                }
-                            }
-                            i += 1;
-                        }
-                    }
-                }
-            }
-        }
-        cursor = window.step_pane(PaneOrder::Stacking, Some(&Rc::downgrade(wp)), true);
-    }
-    window.release(c"visible pane ranges");
 }

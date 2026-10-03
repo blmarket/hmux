@@ -17,7 +17,7 @@ use crate::src::cmd::entries::display_menu::{cmd_display_menu_entry, cmd_display
 use crate::src::cmd::entries::display_message::cmd_display_message_entry;
 use crate::src::cmd::entries::find_window::cmd_find_window_entry;
 use crate::src::cmd::entries::if_shell::cmd_if_shell_entry;
-use crate::src::cmd::entries::join_pane::{cmd_join_pane_entry, cmd_move_pane_entry};
+use crate::src::cmd::entries::join_pane::cmd_join_pane_entry;
 use crate::src::cmd::entries::kill_pane::cmd_kill_pane_entry;
 use crate::src::cmd::entries::kill_server::{cmd_kill_server_entry, cmd_start_server_entry};
 use crate::src::cmd::entries::kill_session::cmd_kill_session_entry;
@@ -112,7 +112,7 @@ pub const DQ: C2RustUnnamed_38 = 2;
 pub type C2RustUnnamed_38 = ::core::ffi::c_uint;
 pub const SQ: C2RustUnnamed_38 = 1;
 pub const NQ: C2RustUnnamed_38 = 0;
-pub static cmd_table: [&cmd_entry; 92] = {
+pub static cmd_table: [&cmd_entry; 91] = {
     [
         &cmd_attach_session_entry,
         &cmd_bind_key_entry,
@@ -156,7 +156,6 @@ pub static cmd_table: [&cmd_entry; 92] = {
         &cmd_lock_client_entry,
         &cmd_lock_server_entry,
         &cmd_lock_session_entry,
-        &cmd_move_pane_entry,
         &cmd_move_window_entry,
         &cmd_new_pane_entry,
         &cmd_new_session_entry,
@@ -678,14 +677,6 @@ pub unsafe fn cmd_mouse_pane(
         }
         Some(pane)
     };
-    if let Some(modal) = window.modal_pane() {
-        if !pane
-            .as_ref()
-            .is_some_and(|pane| std::rc::Rc::ptr_eq(pane, &modal))
-        {
-            return None;
-        }
-    }
     if !wlp.is_null() {
         *wlp = link;
     }

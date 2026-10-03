@@ -49,15 +49,11 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::grid::grid_cells_look_equal;
 use crate::src::grid::view::grid_view_string_cells_bytes;
 use crate::src::input_keys::input_key_pane;
-use crate::src::layout::{
-    layout_assign_pane, layout_fix_panes, layout_floating_pane, layout_free, layout_init,
-};
+use crate::src::layout::{layout_assign_pane, layout_fix_panes, layout_free, layout_init};
 use crate::src::log::{fatal, fatalx, log_cstr, log_cstr_n, log_debug};
 use crate::src::menu::{menu_destroy, menu_resize};
 use crate::src::options::options_owner_ptr;
-use crate::src::options::{
-    options_create, options_free, options_get_number, options_get_number_ref,
-};
+use crate::src::options::{options_create, options_free, options_get_number};
 use crate::src::prompt::{
     prompt_closed, prompt_create, prompt_free, prompt_incremental_start, prompt_key, prompt_mouse,
     prompt_set_options, prompt_type_string, prompt_update,
@@ -125,10 +121,9 @@ use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS,
 use crate::src::shared::options::options;
 use crate::src::shared::pane::{
     pane_output_data, window_pane_offset, window_pane_resize, window_pane_resizes, PANE_CHANGED,
-    PANE_DESTROYED, PANE_EMPTY, PANE_EXITED, PANE_FLOATOVERZOOM, PANE_FOCUSED, PANE_INPUTOFF,
-    PANE_REDRAW, PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_AUTOHIDE,
-    PANE_SCROLLBARS_LEFT, PANE_SCROLLBARS_MODAL, PANE_STATUSREADY, PANE_STATUS_BOTTOM,
-    PANE_STATUS_BOTTOM_FLOATING, PANE_STATUS_OFF, PANE_STATUS_TOP, PANE_STATUS_TOP_FLOATING,
+    PANE_DESTROYED, PANE_EMPTY, PANE_EXITED, PANE_FOCUSED, PANE_INPUTOFF, PANE_REDRAW,
+    PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT,
+    PANE_SCROLLBARS_MODAL, PANE_STATUSREADY, PANE_STATUS_BOTTOM, PANE_STATUS_OFF, PANE_STATUS_TOP,
     PANE_STYLECHANGED, PANE_THEMECHANGED, PANE_UNSEENCHANGES, PANE_ZOOMED,
 };
 use crate::src::shared::pane::{
@@ -143,7 +138,7 @@ use crate::src::shared::screen::{screen, MODE_BRACKETPASTE, MODE_FOCUSON, MODE_T
 use crate::src::shared::session::session;
 use crate::src::shared::signal::SIGCHLD;
 use crate::src::shared::spawn::spawn_editor_state;
-use crate::src::shared::spawn::{SPAWN_BEFORE, SPAWN_FLOATING, SPAWN_FULLSIZE};
+use crate::src::shared::spawn::{SPAWN_BEFORE, SPAWN_FULLSIZE};
 use crate::src::shared::status::status_prompt_input_cb;
 use crate::src::shared::style::*;
 use crate::src::shared::tree::{RB_INF, RB_NEGINF};
@@ -471,55 +466,6 @@ unsafe fn window_pane_send_resize(wp: &window_pane, sx: u_int, sy: u_int) {
     }
 }
 
-unsafe fn window_pane_contains(
-    pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
-    mut x: u_int,
-    mut y: u_int,
-) -> ::core::ffi::c_int {
-    let wp = pane_owner.get();
-    let mut xoff: ::core::ffi::c_int = 0;
-    let mut yoff: ::core::ffi::c_int = 0;
-    let mut sx: u_int = 0;
-    let mut sy: u_int = 0;
-    if window_pane_is_visible(pane_owner) == 0 {
-        return 0 as ::core::ffi::c_int;
-    }
-    (xoff, yoff, sx, sy) = window_pane_full_size_offset(pane_owner);
-    if window_pane_is_floating(&*wp) == 0 {
-        if (x as ::core::ffi::c_int) < xoff || x > (xoff as u_int).wrapping_add(sx) {
-            return 0 as ::core::ffi::c_int;
-        }
-        if (y as ::core::ffi::c_int) < yoff || y > (yoff as u_int).wrapping_add(sy) {
-            return 0 as ::core::ffi::c_int;
-        }
-    } else if window_pane_get_pane_lines(&*wp) as ::core::ffi::c_uint
-        == PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        if (x as ::core::ffi::c_int) < xoff
-            || x as ::core::ffi::c_int >= xoff + sx as ::core::ffi::c_int
-        {
-            return 0 as ::core::ffi::c_int;
-        }
-        if (y as ::core::ffi::c_int) < yoff
-            || y as ::core::ffi::c_int >= yoff + sy as ::core::ffi::c_int
-        {
-            return 0 as ::core::ffi::c_int;
-        }
-    } else {
-        if (x as ::core::ffi::c_int) < xoff - 1 as ::core::ffi::c_int
-            || x > (xoff as u_int).wrapping_add(sx)
-        {
-            return 0 as ::core::ffi::c_int;
-        }
-        if (y as ::core::ffi::c_int) < yoff - 1 as ::core::ffi::c_int
-            || y > (yoff as u_int).wrapping_add(sy)
-        {
-            return 0 as ::core::ffi::c_int;
-        }
-    }
-    1 as ::core::ffi::c_int
-}
-
 unsafe fn window_pane_update_focus(wp_owner: Option<&Rc<std::cell::UnsafeCell<window_pane>>>) {
     let Some(pane) = wp_owner else {
         return;
@@ -562,12 +508,6 @@ unsafe fn window_pane_index(pane: &Rc<std::cell::UnsafeCell<window_pane>>) -> Op
         .pane_index(&Rc::downgrade(pane))
 }
 
-unsafe fn window_pane_zindex(pane: &Rc<std::cell::UnsafeCell<window_pane>>) -> Option<u32> {
-    (*pane.get())
-        .window_handle()?
-        .pane_stacking_index(&Rc::downgrade(pane))
-}
-
 unsafe fn window_pane_printable_flags(
     wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
 ) -> std::ffi::CString {
@@ -595,24 +535,6 @@ unsafe fn window_pane_printable_flags(
         let fresh14 = pos;
         pos += 1;
         flags[fresh14 as usize] = 'Z' as i32 as ::core::ffi::c_char;
-    }
-    if window_pane_is_floating(&*wp) != 0 {
-        let fresh15 = pos;
-        pos += 1;
-        flags[fresh15 as usize] = 'F' as i32 as ::core::ffi::c_char;
-    }
-    if (*wp).flags & PANE_FLOATOVERZOOM != 0 {
-        let fresh16 = pos;
-        pos += 1;
-        flags[fresh16 as usize] = 'A' as i32 as ::core::ffi::c_char;
-    }
-    if window
-        .modal_pane()
-        .is_some_and(|pane| Rc::ptr_eq(&pane, wp_owner))
-    {
-        let fresh17 = pos;
-        pos += 1;
-        flags[fresh17 as usize] = 'O' as i32 as ::core::ffi::c_char;
     }
     flags[pos as usize] = '\0' as i32 as ::core::ffi::c_char;
     std::ffi::CStr::from_ptr(flags.as_ptr()).to_owned()
@@ -2513,13 +2435,7 @@ unsafe fn window_pane_status_get_range(
 }
 
 unsafe fn window_pane_get_pane_lines(wp: &window_pane) -> pane_lines {
-    if window_pane_is_floating(wp) == 0 {
-        return wp.window_handle().expect("pane window").pane_border_lines();
-    }
-    options_get_number_ref(
-        wp.options.as_deref().expect("pane options"),
-        c"pane-border-lines",
-    ) as pane_lines
+    wp.window_handle().expect("pane window").pane_border_lines()
 }
 
 unsafe fn window_pane_get_pane_status(wp: &window_pane) -> ::core::ffi::c_int {
@@ -2535,41 +2451,9 @@ unsafe fn window_pane_get_pane_status(wp: &window_pane) -> ::core::ffi::c_int {
     if hide_status && wp.flags & PANE_ZOOMED != 0 {
         return 0;
     }
-    if window_pane_is_floating(wp) == 0 {
-        return wp
-            .window_handle()
-            .expect("pane window")
-            .pane_border_status();
-    }
-    if window_pane_get_pane_lines(wp) == PANE_LINES_NONE as pane_lines {
-        return 0;
-    }
-    let status = options_get_number_ref(
-        wp.options.as_deref().expect("pane options"),
-        c"pane-border-status",
-    ) as ::core::ffi::c_int;
-    if status == PANE_STATUS_TOP_FLOATING {
-        return 1;
-    }
-    if status == PANE_STATUS_BOTTOM_FLOATING {
-        return 2;
-    }
-    status
-}
-
-unsafe fn window_pane_is_floating(wp: &window_pane) -> ::core::ffi::c_int {
-    let Some(id) = wp.layout_cell else {
-        return 0;
-    };
-    let window = wp.window.upgrade().expect("pane layout window");
-    let floating = {
-        let tree = window.borrow_layout_root(crate::src::window::LayoutView::Visible);
-        tree.as_ref()
-            .and_then(|tree| tree.find(id))
-            .is_some_and(|cell| cell.flags & LAYOUT_CELL_FLOATING != 0)
-    };
-    window.release(c"pane floating policy");
-    floating as i32
+    wp.window_handle()
+        .expect("pane window")
+        .pane_border_status()
 }
 
 impl Drop for window_pane {

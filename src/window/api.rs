@@ -11,7 +11,7 @@ use crate::src::layout::layout_resize;
 use crate::src::layout::set::{
     layout_set_lookup, layout_set_next, layout_set_previous, layout_set_select,
 };
-use crate::src::layout::{layout_get_floating_cell, layout_get_tiled_cell, layout_spread_out};
+use crate::src::layout::{layout_get_tiled_cell, layout_spread_out};
 use crate::src::resize::recalculate_sizes;
 use crate::src::server_client::Client as _;
 use crate::src::shared::client::ClientRef;
@@ -28,12 +28,6 @@ pub enum LayoutView {
     Visible,
     /// Use the saved, unzoomed tree when one exists, otherwise the current tree.
     Unzoomed,
-}
-
-#[derive(Clone, Copy)]
-pub enum PaneOrder {
-    Index,
-    Stacking,
 }
 
 fn find_layout_pane<'a>(
@@ -111,7 +105,6 @@ pub trait Window {
     unsafe fn redraw_active_switch(&self, pane: Option<&Rc<UnsafeCell<window_pane>>>);
     unsafe fn pane_at(&self, x: u32, y: u32) -> Option<Rc<UnsafeCell<window_pane>>>;
     unsafe fn find_pane(&self, name: &CStr) -> Option<Rc<UnsafeCell<window_pane>>>;
-    unsafe fn active_pane_over_zoom(&self) -> i32;
     /// Save the previous zoom identity before temporarily displaying all panes.
     unsafe fn push_zoom(&self, always: bool, flag: bool) -> i32;
     unsafe fn pop_zoom(&self) -> i32;
@@ -134,9 +127,9 @@ pub trait Window {
     type PaneOrderMut<'a>: std::ops::DerefMut<Target = window_panes>
     where
         Self: 'a;
-    unsafe fn borrow_pane_order_mut(&self, order: PaneOrder) -> Self::PaneOrderMut<'_>;
-    /// Selection history is separate from index and stacking order. Only pure
-    /// history edits may run while this component is borrowed.
+    unsafe fn borrow_pane_order_mut(&self) -> Self::PaneOrderMut<'_>;
+    /// Selection history is separate from pane order. Only pure history edits
+    /// may run while this component is borrowed.
     type PaneHistoryMut<'a>: std::ops::DerefMut<Target = window_pane_history>
     where
         Self: 'a;
@@ -145,7 +138,6 @@ pub trait Window {
     /// Membership remains weak and neither selection nor notifications change.
     unsafe fn swap_pane_order(
         &self,
-        order: PaneOrder,
         first: &Weak<UnsafeCell<window_pane>>,
         other: &WindowRef,
         second: &Weak<UnsafeCell<window_pane>>,
@@ -236,22 +228,13 @@ pub trait Window {
     unsafe fn active_pane(&self) -> Option<Rc<UnsafeCell<window_pane>>>;
     /// Copy identity without upgrading it or changing pane ownership.
     unsafe fn active_pane_observer(&self) -> Weak<UnsafeCell<window_pane>>;
-    /// Most recently active pane from selection history, independent of z-order.
+    /// Most recently active pane from selection history.
     unsafe fn last_active_pane(&self) -> Option<Rc<UnsafeCell<window_pane>>>;
-    unsafe fn modal_pane(&self) -> Option<Rc<UnsafeCell<window_pane>>>;
-    /// Remember the current active identity and publish a newly spawned modal.
-    /// Selection, redraw and notifications remain with the caller, after this
-    /// bounded state edit. Pane membership and lifetime are caller guarantees.
-    unsafe fn begin_modal_pane(&self, pane: &Rc<UnsafeCell<window_pane>>);
-    /// Retain the current pane order for sorting without retaining a Window borrow.
+    /// Retain the current pane order without retaining a Window borrow, for
+    /// sorting, rendering and other walks that may reenter the Window.
     unsafe fn pane_snapshot(&self) -> Vec<Rc<UnsafeCell<window_pane>>>;
-    /// Copy membership before querying Pane policy, which may consult this Window.
-    unsafe fn pane_count(&self, with_floating: bool) -> u32;
-    /// Retain stacking order before rendering, which may reenter and reorder it.
-    unsafe fn stacking_snapshot(&self) -> Vec<Rc<UnsafeCell<window_pane>>>;
     unsafe fn step_pane(
         &self,
-        order: PaneOrder,
         after: Option<&Weak<UnsafeCell<window_pane>>>,
         reverse: bool,
     ) -> Option<Rc<UnsafeCell<window_pane>>>;
@@ -265,7 +248,6 @@ pub trait Window {
     unsafe fn pane_at_index(&self, index: u32) -> Option<Rc<UnsafeCell<window_pane>>>;
     unsafe fn pane_index(&self, pane: &Weak<UnsafeCell<window_pane>>) -> Option<u32>;
     unsafe fn pane_history_index(&self, pane: &Weak<UnsafeCell<window_pane>>) -> Option<u32>;
-    unsafe fn pane_stacking_index(&self, pane: &Weak<UnsafeCell<window_pane>>) -> Option<u32>;
     /// Advance in pane order with wrapping, retaining the original zero-step result.
     unsafe fn pane_by_number(
         &self,
@@ -282,7 +264,7 @@ pub trait Window {
     ) -> Option<Rc<UnsafeCell<window_pane>>>;
     unsafe fn select_pane(&self, pane: &Rc<UnsafeCell<window_pane>>, notify: bool) -> i32;
     unsafe fn remove_pane(&self, pane: &Rc<UnsafeCell<window_pane>>);
-    /// Allocate the tiled/floating layout internally, then spawn into it. The
+    /// Allocate the tiled layout internally, then spawn into it. The
     /// context supplies the command, source pane, session/link, and spawn flags.
     /// Its nonowning layout reservation must be empty on entry and is cleared on return.
     /// Report errors before restoring zoom, preserving command/control event
@@ -291,8 +273,6 @@ pub trait Window {
         &self,
         context: &mut spawn_context,
         arguments: &mut args,
-        lines: pane_lines,
-        restore_zoom: bool,
         report_error: impl FnOnce(&CStr),
     ) -> Result<Rc<UnsafeCell<window_pane>>, CString>;
     unsafe fn size(&self) -> (u32, u32);
@@ -327,7 +307,7 @@ pub trait Window {
     /// different notifications and keep that orchestration in their callers.
     unsafe fn set_latest_client(&self, client: Option<&ClientRef>) -> bool;
     unsafe fn is_latest_client(&self, client: &ClientRef) -> bool;
-    /// Window-owned modal/menu/selection policy used when a pane's focus changes.
+    /// Window-owned menu/selection policy used when a pane's focus changes.
     unsafe fn pane_is_focused(&self, pane: &Rc<UnsafeCell<window_pane>>) -> bool;
     /// Observe the independently owned menu; no Window/component pointer escapes.
     unsafe fn menu_observer(&self) -> Option<refbox::Weak<menu_data>>;
@@ -345,9 +325,6 @@ pub trait Window {
     /// Clamp to the current dimensions and remember the resulting menu position.
     unsafe fn place_menu(&self, position: (u32, u32), size: (u32, u32)) -> (u32, u32);
     unsafe fn last_menu_position(&self) -> (u32, u32);
-    /// Advance remembered placement only for omitted axes. The previous offset
-    /// determines wrapping; explicit coordinates leave the cascade unchanged.
-    unsafe fn resolve_floating_position(&self, x: Option<i32>, y: Option<i32>) -> (i32, i32);
     unsafe fn invalidate_scene(&self);
     unsafe fn scene_generation(&self) -> u64;
     /// Render each fill cell outside the Window borrow, publishing its fallback
@@ -401,9 +378,6 @@ impl Window for WindowRef {
     }
     unsafe fn find_pane(&self, name: &CStr) -> Option<Rc<UnsafeCell<window_pane>>> {
         window_find_string(self, name)
-    }
-    unsafe fn active_pane_over_zoom(&self) -> i32 {
-        window_active_pane_is_over_zoom(self)
     }
     unsafe fn push_zoom(&self, always: bool, flag: bool) -> i32 {
         window_push_zoom(self, always as i32, flag as i32)
@@ -464,12 +438,8 @@ impl Window for WindowRef {
     }
 
     type PaneOrderMut<'a> = &'a mut window_panes;
-    unsafe fn borrow_pane_order_mut(&self, order: PaneOrder) -> Self::PaneOrderMut<'_> {
-        let state = &mut *self.get();
-        match order {
-            PaneOrder::Index => &mut state.panes,
-            PaneOrder::Stacking => &mut state.z_index,
-        }
+    unsafe fn borrow_pane_order_mut(&self) -> Self::PaneOrderMut<'_> {
+        &mut (*self.get()).panes
     }
     type PaneHistoryMut<'a> = &'a mut window_pane_history;
     unsafe fn borrow_pane_history_mut(&self) -> Self::PaneHistoryMut<'_> {
@@ -477,17 +447,16 @@ impl Window for WindowRef {
     }
     unsafe fn swap_pane_order(
         &self,
-        order: PaneOrder,
         first: &Weak<UnsafeCell<window_pane>>,
         other: &WindowRef,
         second: &Weak<UnsafeCell<window_pane>>,
     ) {
         if Rc::ptr_eq(self, other) {
-            self.borrow_pane_order_mut(order).swap(first, second);
+            self.borrow_pane_order_mut().swap(first, second);
             return;
         }
-        let mut left = self.borrow_pane_order_mut(order);
-        let mut right = other.borrow_pane_order_mut(order);
+        let mut left = self.borrow_pane_order_mut();
+        let mut right = other.borrow_pane_order_mut();
         let left_position = left.position(first).expect("first pane is not in order");
         let right_position = right.position(second).expect("second pane is not in order");
         let left_pane = left.remove_at(first);
@@ -623,28 +592,6 @@ impl Window for WindowRef {
         let state = &*self.get();
         (state.menu_last_px, state.menu_last_py)
     }
-    unsafe fn resolve_floating_position(&self, x: Option<i32>, y: Option<i32>) -> (i32, i32) {
-        let state = &mut *self.get();
-        let x = x.unwrap_or_else(|| {
-            state.last_new_pane_x =
-                if state.last_new_pane_x == 0 || state.last_new_pane_x > state.sx {
-                    4
-                } else {
-                    state.last_new_pane_x.wrapping_add(4)
-                };
-            state.last_new_pane_x as i32
-        });
-        let y = y.unwrap_or_else(|| {
-            state.last_new_pane_y =
-                if state.last_new_pane_y == 0 || state.last_new_pane_y > state.sy {
-                    2
-                } else {
-                    state.last_new_pane_y.wrapping_add(2)
-                };
-            state.last_new_pane_y as i32
-        });
-        (x, y)
-    }
     unsafe fn invalidate_scene(&self) {
         (*self.get()).invalidate_scene();
     }
@@ -704,7 +651,6 @@ impl Window for WindowRef {
         let state = &mut *self.get();
         let observer = Rc::downgrade(pane);
         state.panes.push_front(observer.clone());
-        state.z_index.push_front(observer.clone());
         state.active = observer;
         state.latest = client.map_or_else(Weak::new, Rc::downgrade);
     }
@@ -782,43 +728,18 @@ impl Window for WindowRef {
     unsafe fn active_pane_observer(&self) -> Weak<UnsafeCell<window_pane>> {
         (*self.get()).active.clone()
     }
-    unsafe fn modal_pane(&self) -> Option<Rc<UnsafeCell<window_pane>>> {
-        (*self.get()).modal.upgrade()
-    }
-    unsafe fn begin_modal_pane(&self, pane: &Rc<UnsafeCell<window_pane>>) {
-        let state = &mut *self.get();
-        state.modal_last = state.active.clone();
-        state.modal = Rc::downgrade(pane);
-    }
     unsafe fn last_active_pane(&self) -> Option<Rc<UnsafeCell<window_pane>>> {
         crate::src::shared::pane::pane_history_first(&(*self.get()).last_panes)
     }
     unsafe fn pane_snapshot(&self) -> Vec<Rc<UnsafeCell<window_pane>>> {
         (*self.get()).panes.snapshot()
     }
-    unsafe fn pane_count(&self, with_floating: bool) -> u32 {
-        self.pane_snapshot().into_iter().fold(0u32, |count, pane| {
-            if with_floating || !pane.is_floating() {
-                count.wrapping_add(1)
-            } else {
-                count
-            }
-        })
-    }
-    unsafe fn stacking_snapshot(&self) -> Vec<Rc<UnsafeCell<window_pane>>> {
-        (*self.get()).z_index.snapshot()
-    }
     unsafe fn step_pane(
         &self,
-        order: PaneOrder,
         after: Option<&Weak<UnsafeCell<window_pane>>>,
         reverse: bool,
     ) -> Option<Rc<UnsafeCell<window_pane>>> {
-        let state = &*self.get();
-        let panes = match order {
-            PaneOrder::Index => &state.panes,
-            PaneOrder::Stacking => &state.z_index,
-        };
+        let panes = &(*self.get()).panes;
         match (after, reverse) {
             (None, false) => panes.first(),
             (None, true) => panes.last(),
@@ -874,24 +795,6 @@ impl Window for WindowRef {
             .position(|entry| entry.ptr_eq(pane))
             .map(|index| index as u32)
     }
-    unsafe fn pane_stacking_index(&self, pane: &Weak<UnsafeCell<window_pane>>) -> Option<u32> {
-        let order = (*self.get()).z_index.snapshot();
-        let mut index = 0_u32;
-        for owner in order {
-            let floating = owner.is_floating();
-            if Rc::downgrade(&owner).ptr_eq(pane) {
-                return Some(if floating {
-                    index
-                } else {
-                    index.wrapping_add(1)
-                });
-            }
-            if floating {
-                index = index.wrapping_add(1);
-            }
-        }
-        None
-    }
     unsafe fn pane_by_number(
         &self,
         pane: Option<&Rc<UnsafeCell<window_pane>>>,
@@ -946,8 +849,6 @@ impl Window for WindowRef {
         &self,
         context: &mut spawn_context,
         arguments: &mut args,
-        lines: pane_lines,
-        restore_zoom: bool,
         report_error: impl FnOnce(&CStr),
     ) -> Result<Rc<UnsafeCell<window_pane>>, CString> {
         assert!(
@@ -974,30 +875,10 @@ impl Window for WindowRef {
                 .is_some_and(|window| Rc::ptr_eq(window, self)),
             "split link belongs to window"
         );
-        if context.flags & crate::src::shared::spawn::SPAWN_MODAL != 0 {
-            if context.flags & SPAWN_FLOATING == 0 {
-                let error = c"modal pane must be floating".to_owned();
-                report_error(&error);
-                return Err(error);
-            }
-            if (*self.get()).modal.upgrade().is_some() {
-                let error = c"window already has a modal pane".to_owned();
-                report_error(&error);
-                return Err(error);
-            }
-        }
-        let layout = if context.flags & SPAWN_FLOATING != 0 {
-            layout_get_floating_cell(&item, arguments, lines, self, &pane, context.flags)
-        } else {
-            layout_get_tiled_cell(&item, arguments, self, &pane, context.flags)
-        };
-        let cell = match layout {
+        let cell = match layout_get_tiled_cell(&item, arguments, self, &pane, context.flags) {
             Ok(cell) => cell,
             Err(error) => {
                 report_error(&error);
-                if restore_zoom {
-                    window_pop_zoom(self);
-                }
                 return Err(error);
             }
         };
@@ -1014,9 +895,7 @@ impl Window for WindowRef {
             );
             let error = CString::new(message).expect("spawn diagnostic contains no NUL");
             report_error(&error);
-            if restore_zoom || context.flags & SPAWN_FLOATING == 0 {
-                window_pop_zoom(self);
-            }
+            window_pop_zoom(self);
             error
         })
     }
@@ -1316,21 +1195,6 @@ mod tests {
             assert!(window.borrow_layout_cell(original).is_none());
             assert_eq!(window.borrow_layout_cell(replacement).unwrap().g.xoff, 23);
             window.release(c"layout identity borrow test");
-        }
-    }
-
-    #[test]
-    fn floating_cascade_records_only_default_axes_and_wraps_after_crossing_bounds() {
-        unsafe {
-            let owner = window::new();
-            (*owner.get()).sx = 8;
-            (*owner.get()).sy = 4;
-            assert_eq!(owner.resolve_floating_position(None, None), (4, 2));
-            assert_eq!(owner.resolve_floating_position(Some(-3), None), (-3, 4));
-            assert_eq!(owner.resolve_floating_position(None, Some(12)), (8, 12));
-            assert_eq!(owner.resolve_floating_position(None, None), (12, 6));
-            assert_eq!(owner.resolve_floating_position(None, None), (4, 2));
-            owner.release(c"floating cascade test");
         }
     }
 

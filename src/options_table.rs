@@ -45,13 +45,7 @@ static options_table_cursor_style_list: [&std::ffi::CStr; 7] = [
 static options_table_pane_scrollbars_list: [&std::ffi::CStr; 4] =
     [c"off", c"modal", c"on", c"auto-hide"];
 static options_table_pane_scrollbars_position_list: [&std::ffi::CStr; 2] = [c"right", c"left"];
-static options_table_pane_status_list: [&std::ffi::CStr; 5] = [
-    c"off",
-    c"top",
-    c"bottom",
-    c"top-floating",
-    c"bottom-floating",
-];
+static options_table_pane_status_list: [&std::ffi::CStr; 3] = [c"off", c"top", c"bottom"];
 static options_table_pane_border_indicators_list: [&std::ffi::CStr; 4] =
     [c"off", c"colour", c"arrows", c"both"];
 static options_table_pane_border_lines_list: [&std::ffi::CStr; 8] = [
@@ -2559,7 +2553,7 @@ pub static options_table: [options_table_entry; 274] = [
             minimum: 0,
             maximum: 0,
             choices: &[],
-            default_str: Some(c"fg=#{?pane_modal_flag,themeblue,#{?pane_marked,thememagenta,#{?synchronize-panes,themered,#{?pane_in_mode,themeyellow,themegreen}}}}"),
+            default_str: Some(c"fg=#{?pane_marked,thememagenta,#{?synchronize-panes,themered,#{?pane_in_mode,themeyellow,themegreen}}}"),
             default_num: 0,
             default_arr: None,
             separator: Some(c","),
@@ -2593,7 +2587,7 @@ pub static options_table: [options_table_entry; 274] = [
             minimum: 0,
             maximum: 0,
             choices: &[],
-            default_str: Some(c"#{?pane_active,#[reverse],}#{pane_index}#[default] \"#{pane_title}\"#{?#{mouse},#[align=right]#[range=control|7][#{?#{pane_floating_flag},t,f}]#[norange]#[range=control|8][#{?#{window_zoomed_flag},u,z}]#[norange]#[range=control|9][x]#[norange],}"),
+            default_str: Some(c"#{?pane_active,#[reverse],}#{pane_index}#[default] \"#{pane_title}\"#{?#{mouse},#[align=right]#[range=control|8][#{?#{window_zoomed_flag},u,z}]#[norange]#[range=control|9][x]#[norange],}"),
             default_num: 0,
             default_arr: None,
             separator: None,

@@ -206,35 +206,6 @@ fn break_pane_keeps_the_source_and_frees_the_new_window() {
 }
 
 #[test]
-fn floating_panes_are_not_arranged() {
-    let server = sticky_server(3, "even-horizontal");
-    let first = server.display("#{pane_id}");
-    let floating = server.success(&["new-pane", "-P", "-F", "#{pane_id}", "sleep 60"]);
-    let floating = floating.trim_end();
-    server.success(&["select-layout", "even-horizontal"]);
-    let tiled = |server: &Server| {
-        server
-            .success(&["list-panes", "-F", "#{pane_floating_flag} #{pane_width}"])
-            .lines()
-            .filter_map(|line| line.strip_prefix("0 ").map(|w| w.parse::<u32>().unwrap()))
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(tiled(&server), [27, 27, 27]);
-
-    server.success(&["split-window", "-t", &first, "sleep 60"]);
-    assert_eq!(tiled(&server), [20, 20, 20, 20]);
-    assert_matches(&server, "", "even-horizontal");
-
-    server.success(&["break-pane", "-W", "-d", "-s", &first]);
-    assert_eq!(tiled(&server), [27, 27, 27]);
-    assert_matches(&server, "", "even-horizontal");
-
-    server.success(&["join-pane", "-s", floating, "-t", floating]);
-    assert_eq!(tiled(&server), [20, 20, 20, 20]);
-    assert_matches(&server, "", "even-horizontal");
-}
-
-#[test]
 fn manual_geometry_is_refused() {
     let server = sticky_server(3, "even-horizontal");
     let before = layout(&server, "");
@@ -260,17 +231,6 @@ fn manual_geometry_is_refused() {
     server.success(&["resize-pane", "-Z"]);
     assert_eq!(server.display("#{window_zoomed_flag}"), "0");
     assert_eq!(layout(&server, ""), before);
-}
-
-#[test]
-fn floating_panes_still_resize() {
-    let server = sticky_server(3, "even-horizontal");
-    let floating = server.success(&["new-pane", "-P", "-F", "#{pane_id}", "sleep 60"]);
-    let floating = floating.trim_end();
-    let width = || server.success(&["display-message", "-p", "-t", floating, "#{pane_width}"]);
-    let before = width();
-    server.success(&["resize-pane", "-t", floating, "-x", "15"]);
-    assert_ne!(width(), before);
 }
 
 #[test]

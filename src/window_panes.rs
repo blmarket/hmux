@@ -213,9 +213,6 @@ unsafe fn window_panes_pane_geometry(pane: &Rc<UnsafeCell<window_pane>>) -> Opti
     // The pane's window owns this cell throughout the immediate geometry query.
     Some(&*cell)
 }
-unsafe fn window_panes_pane_floating(pane: &Rc<UnsafeCell<window_pane>>) -> ::core::ffi::c_int {
-    window_panes_pane_geometry(pane).is_some_and(|geometry| geometry.is_floating()) as _
-}
 unsafe fn window_panes_pane_visible(pane: &Rc<UnsafeCell<window_pane>>) -> ::core::ffi::c_int {
     if window_panes_pane_geometry(pane).is_some_and(|geometry| geometry.is_saved()) {
         1
@@ -376,17 +373,6 @@ unsafe fn window_panes_map_y(mut y: u_int, mut osy: u_int, mut dsy: u_int) -> ::
     }
     y.wrapping_mul(dsy).wrapping_div(osy) as ::core::ffi::c_int
 }
-unsafe fn window_panes_next_tiled_cell(mut lc: *mut layout_cell) -> *mut layout_cell {
-    let mut next: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    next = layout_cell_next(lc);
-    while !next.is_null() {
-        if !(*next).flags & LAYOUT_CELL_FLOATING != 0 {
-            return next;
-        }
-        next = layout_cell_next(next);
-    }
-    ::core::ptr::null_mut::<layout_cell>()
-}
 unsafe fn window_panes_mark_border(
     mut map: *mut u_char,
     mut dsx: u_int,
@@ -492,38 +478,28 @@ unsafe fn window_panes_mark_borders_cell(
     lcchild = layout_cells_first(&*lc);
     while !lcchild.is_null() {
         window_panes_mark_borders_cell(map, lcchild, osx, osy, dsx, dsy);
-        if !((*lcchild).flags & LAYOUT_CELL_FLOATING != 0) {
-            lcnext = window_panes_next_tiled_cell(lcchild);
-            if !lcnext.is_null() {
-                if (*lc).type_0 as ::core::ffi::c_uint
-                    == LAYOUT_LEFTRIGHT as ::core::ffi::c_int as ::core::ffi::c_uint
-                {
-                    x = window_panes_map_x(
-                        ((*lcchild).g.xoff as u_int).wrapping_add((*lcchild).g.sx),
-                        osx,
-                        dsx,
-                    );
-                    y = window_panes_map_y((*lc).g.yoff as u_int, osy, dsy);
-                    y2 = window_panes_map_y(
-                        ((*lc).g.yoff as u_int).wrapping_add((*lc).g.sy),
-                        osy,
-                        dsy,
-                    );
-                    window_panes_mark_vline(map, dsx, dsy, x, y, y2);
-                } else {
-                    x = window_panes_map_x((*lc).g.xoff as u_int, osx, dsx);
-                    x2 = window_panes_map_x(
-                        ((*lc).g.xoff as u_int).wrapping_add((*lc).g.sx),
-                        osx,
-                        dsx,
-                    );
-                    y = window_panes_map_y(
-                        ((*lcchild).g.yoff as u_int).wrapping_add((*lcchild).g.sy),
-                        osy,
-                        dsy,
-                    );
-                    window_panes_mark_hline(map, dsx, dsy, x, x2, y);
-                }
+        lcnext = layout_cell_next(lcchild);
+        if !lcnext.is_null() {
+            if (*lc).type_0 as ::core::ffi::c_uint
+                == LAYOUT_LEFTRIGHT as ::core::ffi::c_int as ::core::ffi::c_uint
+            {
+                x = window_panes_map_x(
+                    ((*lcchild).g.xoff as u_int).wrapping_add((*lcchild).g.sx),
+                    osx,
+                    dsx,
+                );
+                y = window_panes_map_y((*lc).g.yoff as u_int, osy, dsy);
+                y2 = window_panes_map_y(((*lc).g.yoff as u_int).wrapping_add((*lc).g.sy), osy, dsy);
+                window_panes_mark_vline(map, dsx, dsy, x, y, y2);
+            } else {
+                x = window_panes_map_x((*lc).g.xoff as u_int, osx, dsx);
+                x2 = window_panes_map_x(((*lc).g.xoff as u_int).wrapping_add((*lc).g.sx), osx, dsx);
+                y = window_panes_map_y(
+                    ((*lcchild).g.yoff as u_int).wrapping_add((*lcchild).g.sy),
+                    osy,
+                    dsy,
+                );
+                window_panes_mark_hline(map, dsx, dsy, x, x2, y);
             }
         }
         lcchild = layout_cell_next(lcchild);
@@ -574,110 +550,6 @@ unsafe fn window_panes_mark_pane_status_borders(
         };
         window_panes_mark_hline(map, dsx, dsy, x, x2, y);
     }
-}
-unsafe fn window_panes_get_floating_borders(
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    mut osx: u_int,
-    mut osy: u_int,
-    mut dsx: u_int,
-    mut dsy: u_int,
-    mut xp: *mut ::core::ffi::c_int,
-    mut yp: *mut ::core::ffi::c_int,
-    mut x2p: *mut ::core::ffi::c_int,
-    mut y2p: *mut ::core::ffi::c_int,
-) -> ::core::ffi::c_int {
-    let Some(geometry) =
-        window_panes_pane_geometry(wp_owner).filter(|geometry| geometry.is_floating())
-    else {
-        return 0;
-    };
-    if geometry.g.xoff == 0 as ::core::ffi::c_int {
-        *xp = -(1 as ::core::ffi::c_int);
-    } else {
-        *xp = window_panes_map_x(
-            (geometry.g.xoff - 1 as ::core::ffi::c_int) as u_int,
-            osx,
-            dsx,
-        );
-    }
-    if geometry.g.yoff == 0 as ::core::ffi::c_int {
-        *yp = -(1 as ::core::ffi::c_int);
-    } else {
-        *yp = window_panes_map_y(
-            (geometry.g.yoff - 1 as ::core::ffi::c_int) as u_int,
-            osy,
-            dsy,
-        );
-    }
-    *x2p = window_panes_map_x(
-        (geometry.g.xoff as u_int).wrapping_add(geometry.g.sx),
-        osx,
-        dsx,
-    );
-    *y2p = window_panes_map_y(
-        (geometry.g.yoff as u_int).wrapping_add(geometry.g.sy),
-        osy,
-        dsy,
-    );
-    1 as ::core::ffi::c_int
-}
-unsafe fn window_panes_clip_floating_pane(
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    mut osx: u_int,
-    mut osy: u_int,
-    mut dsx: u_int,
-    mut dsy: u_int,
-    mut xp: *mut u_int,
-    mut yp: *mut u_int,
-    mut sxp: *mut u_int,
-    mut syp: *mut u_int,
-) -> ::core::ffi::c_int {
-    let mut x: ::core::ffi::c_int = 0;
-    let mut y: ::core::ffi::c_int = 0;
-    let mut x2: ::core::ffi::c_int = 0;
-    let mut y2: ::core::ffi::c_int = 0;
-    let mut bx: ::core::ffi::c_int = 0;
-    let mut by: ::core::ffi::c_int = 0;
-    let mut bx2: ::core::ffi::c_int = 0;
-    let mut by2: ::core::ffi::c_int = 0;
-    if window_panes_get_floating_borders(
-        wp_owner,
-        osx,
-        osy,
-        dsx,
-        dsy,
-        &raw mut x,
-        &raw mut y,
-        &raw mut x2,
-        &raw mut y2,
-    ) == 0
-    {
-        return 1 as ::core::ffi::c_int;
-    }
-    bx = *xp as ::core::ffi::c_int;
-    by = *yp as ::core::ffi::c_int;
-    bx2 = (bx as u_int).wrapping_add(*sxp).wrapping_sub(1 as u_int) as ::core::ffi::c_int;
-    by2 = (by as u_int).wrapping_add(*syp).wrapping_sub(1 as u_int) as ::core::ffi::c_int;
-    if x >= 0 as ::core::ffi::c_int && bx <= x {
-        bx = x + 1 as ::core::ffi::c_int;
-    }
-    if y >= 0 as ::core::ffi::c_int && by <= y {
-        by = y + 1 as ::core::ffi::c_int;
-    }
-    if (x2 as u_int) < dsx && bx2 >= x2 {
-        bx2 = x2 - 1 as ::core::ffi::c_int;
-    }
-    if (y2 as u_int) < dsy && by2 >= y2 {
-        by2 = y2 - 1 as ::core::ffi::c_int;
-    }
-    if bx2 < bx || by2 < by {
-        return 0 as ::core::ffi::c_int;
-    }
-    *xp = bx as u_int;
-    *yp = by as u_int;
-    *sxp = (bx2 - bx + 1 as ::core::ffi::c_int) as u_int;
-    *syp = (by2 - by + 1 as ::core::ffi::c_int) as u_int;
-    1 as ::core::ffi::c_int
 }
 unsafe fn window_panes_border_cell_type(mut mask: u_char) -> ::core::ffi::c_int {
     match mask as ::core::ffi::c_int {
@@ -730,143 +602,127 @@ unsafe fn window_panes_mark_border_joins_cell(
     lcchild = layout_cells_first(&*lc);
     while !lcchild.is_null() {
         window_panes_mark_border_joins_cell(map, lcchild, osx, osy, dsx, dsy);
-        if !((*lcchild).flags & LAYOUT_CELL_FLOATING != 0) {
-            lcnext = window_panes_next_tiled_cell(lcchild);
-            if !lcnext.is_null() {
-                if (*lc).type_0 as ::core::ffi::c_uint
-                    == LAYOUT_LEFTRIGHT as ::core::ffi::c_int as ::core::ffi::c_uint
-                {
-                    x = window_panes_map_x(
-                        ((*lcchild).g.xoff as u_int).wrapping_add((*lcchild).g.sx),
-                        osx,
-                        dsx,
-                    );
-                    y = window_panes_map_y((*lc).g.yoff as u_int, osy, dsy);
-                    y2 = window_panes_map_y(
-                        ((*lc).g.yoff as u_int).wrapping_add((*lc).g.sy),
-                        osy,
-                        dsy,
-                    );
-                    if !(x < 0 as ::core::ffi::c_int || x as u_int >= dsx) {
-                        if y > 0 as ::core::ffi::c_int
-                            && window_panes_border_has_horizontal(
-                                *map.offset(
-                                    ((y - 1 as ::core::ffi::c_int) as u_int)
-                                        .wrapping_mul(dsx)
-                                        .wrapping_add(x as u_int)
-                                        as isize,
-                                ),
-                            ) != 0
-                        {
-                            window_panes_mark_border(
-                                map,
-                                dsx,
-                                dsy,
-                                x as u_int,
-                                (y - 1 as ::core::ffi::c_int) as u_int,
-                                WINDOW_PANES_BORDER_D as u_char,
-                            );
-                            window_panes_mark_border(
-                                map,
-                                dsx,
-                                dsy,
-                                x as u_int,
-                                y as u_int,
-                                WINDOW_PANES_BORDER_U as u_char,
-                            );
-                        }
-                        if (y2 as u_int) < dsy
-                            && window_panes_border_has_horizontal(
-                                *map.offset(
-                                    (y2 as u_int).wrapping_mul(dsx).wrapping_add(x as u_int)
-                                        as isize,
-                                ),
-                            ) != 0
-                        {
-                            window_panes_mark_border(
-                                map,
-                                dsx,
-                                dsy,
-                                x as u_int,
-                                y2 as u_int,
-                                WINDOW_PANES_BORDER_U as u_char,
-                            );
-                            window_panes_mark_border(
-                                map,
-                                dsx,
-                                dsy,
-                                x as u_int,
-                                (y2 - 1 as ::core::ffi::c_int) as u_int,
-                                WINDOW_PANES_BORDER_D as u_char,
-                            );
-                        }
+        lcnext = layout_cell_next(lcchild);
+        if !lcnext.is_null() {
+            if (*lc).type_0 as ::core::ffi::c_uint
+                == LAYOUT_LEFTRIGHT as ::core::ffi::c_int as ::core::ffi::c_uint
+            {
+                x = window_panes_map_x(
+                    ((*lcchild).g.xoff as u_int).wrapping_add((*lcchild).g.sx),
+                    osx,
+                    dsx,
+                );
+                y = window_panes_map_y((*lc).g.yoff as u_int, osy, dsy);
+                y2 = window_panes_map_y(((*lc).g.yoff as u_int).wrapping_add((*lc).g.sy), osy, dsy);
+                if !(x < 0 as ::core::ffi::c_int || x as u_int >= dsx) {
+                    if y > 0 as ::core::ffi::c_int
+                        && window_panes_border_has_horizontal(
+                            *map.offset(
+                                ((y - 1 as ::core::ffi::c_int) as u_int)
+                                    .wrapping_mul(dsx)
+                                    .wrapping_add(x as u_int)
+                                    as isize,
+                            ),
+                        ) != 0
+                    {
+                        window_panes_mark_border(
+                            map,
+                            dsx,
+                            dsy,
+                            x as u_int,
+                            (y - 1 as ::core::ffi::c_int) as u_int,
+                            WINDOW_PANES_BORDER_D as u_char,
+                        );
+                        window_panes_mark_border(
+                            map,
+                            dsx,
+                            dsy,
+                            x as u_int,
+                            y as u_int,
+                            WINDOW_PANES_BORDER_U as u_char,
+                        );
                     }
-                } else {
-                    x = window_panes_map_x((*lc).g.xoff as u_int, osx, dsx);
-                    x2 = window_panes_map_x(
-                        ((*lc).g.xoff as u_int).wrapping_add((*lc).g.sx),
-                        osx,
-                        dsx,
-                    );
-                    y = window_panes_map_y(
-                        ((*lcchild).g.yoff as u_int).wrapping_add((*lcchild).g.sy),
-                        osy,
-                        dsy,
-                    );
-                    if !(y < 0 as ::core::ffi::c_int || y as u_int >= dsy) {
-                        if x > 0 as ::core::ffi::c_int
-                            && window_panes_border_has_vertical(
-                                *map.offset(
-                                    (y as u_int)
-                                        .wrapping_mul(dsx)
-                                        .wrapping_add(x as u_int)
-                                        .wrapping_sub(1 as u_int)
-                                        as isize,
-                                ),
-                            ) != 0
-                        {
-                            window_panes_mark_border(
-                                map,
-                                dsx,
-                                dsy,
-                                (x - 1 as ::core::ffi::c_int) as u_int,
-                                y as u_int,
-                                WINDOW_PANES_BORDER_R as u_char,
-                            );
-                            window_panes_mark_border(
-                                map,
-                                dsx,
-                                dsy,
-                                x as u_int,
-                                y as u_int,
-                                WINDOW_PANES_BORDER_L as u_char,
-                            );
-                        }
-                        if (x2 as u_int) < dsx
-                            && window_panes_border_has_vertical(
-                                *map.offset(
-                                    (y as u_int).wrapping_mul(dsx).wrapping_add(x2 as u_int)
-                                        as isize,
-                                ),
-                            ) != 0
-                        {
-                            window_panes_mark_border(
-                                map,
-                                dsx,
-                                dsy,
-                                x2 as u_int,
-                                y as u_int,
-                                WINDOW_PANES_BORDER_L as u_char,
-                            );
-                            window_panes_mark_border(
-                                map,
-                                dsx,
-                                dsy,
-                                (x2 - 1 as ::core::ffi::c_int) as u_int,
-                                y as u_int,
-                                WINDOW_PANES_BORDER_R as u_char,
-                            );
-                        }
+                    if (y2 as u_int) < dsy
+                        && window_panes_border_has_horizontal(*map.offset(
+                            (y2 as u_int).wrapping_mul(dsx).wrapping_add(x as u_int) as isize,
+                        )) != 0
+                    {
+                        window_panes_mark_border(
+                            map,
+                            dsx,
+                            dsy,
+                            x as u_int,
+                            y2 as u_int,
+                            WINDOW_PANES_BORDER_U as u_char,
+                        );
+                        window_panes_mark_border(
+                            map,
+                            dsx,
+                            dsy,
+                            x as u_int,
+                            (y2 - 1 as ::core::ffi::c_int) as u_int,
+                            WINDOW_PANES_BORDER_D as u_char,
+                        );
+                    }
+                }
+            } else {
+                x = window_panes_map_x((*lc).g.xoff as u_int, osx, dsx);
+                x2 = window_panes_map_x(((*lc).g.xoff as u_int).wrapping_add((*lc).g.sx), osx, dsx);
+                y = window_panes_map_y(
+                    ((*lcchild).g.yoff as u_int).wrapping_add((*lcchild).g.sy),
+                    osy,
+                    dsy,
+                );
+                if !(y < 0 as ::core::ffi::c_int || y as u_int >= dsy) {
+                    if x > 0 as ::core::ffi::c_int
+                        && window_panes_border_has_vertical(
+                            *map.offset(
+                                (y as u_int)
+                                    .wrapping_mul(dsx)
+                                    .wrapping_add(x as u_int)
+                                    .wrapping_sub(1 as u_int)
+                                    as isize,
+                            ),
+                        ) != 0
+                    {
+                        window_panes_mark_border(
+                            map,
+                            dsx,
+                            dsy,
+                            (x - 1 as ::core::ffi::c_int) as u_int,
+                            y as u_int,
+                            WINDOW_PANES_BORDER_R as u_char,
+                        );
+                        window_panes_mark_border(
+                            map,
+                            dsx,
+                            dsy,
+                            x as u_int,
+                            y as u_int,
+                            WINDOW_PANES_BORDER_L as u_char,
+                        );
+                    }
+                    if (x2 as u_int) < dsx
+                        && window_panes_border_has_vertical(*map.offset(
+                            (y as u_int).wrapping_mul(dsx).wrapping_add(x2 as u_int) as isize,
+                        )) != 0
+                    {
+                        window_panes_mark_border(
+                            map,
+                            dsx,
+                            dsy,
+                            x2 as u_int,
+                            y as u_int,
+                            WINDOW_PANES_BORDER_L as u_char,
+                        );
+                        window_panes_mark_border(
+                            map,
+                            dsx,
+                            dsy,
+                            (x2 - 1 as ::core::ffi::c_int) as u_int,
+                            y as u_int,
+                            WINDOW_PANES_BORDER_R as u_char,
+                        );
                     }
                 }
             }
@@ -953,191 +809,6 @@ unsafe fn window_panes_draw_borders(
             xx = xx.wrapping_add(1);
         }
         yy = yy.wrapping_add(1);
-    }
-}
-unsafe fn window_panes_draw_floating_border(
-    mut ctx: *mut screen_write_ctx,
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    mut gc: *const grid_cell,
-    mut osx: u_int,
-    mut osy: u_int,
-    mut dsx: u_int,
-    mut dsy: u_int,
-) {
-    let mut border_gc: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
-    let mut xx: u_int = 0;
-    let mut yy: u_int = 0;
-    let mut x: ::core::ffi::c_int = 0;
-    let mut y: ::core::ffi::c_int = 0;
-    let mut x2: ::core::ffi::c_int = 0;
-    let mut y2: ::core::ffi::c_int = 0;
-    let mut cell_type: ::core::ffi::c_int = 0;
-    if dsx == 0 as u_int || dsy == 0 as u_int {
-        return;
-    }
-    if window_panes_get_floating_borders(
-        wp_owner,
-        osx,
-        osy,
-        dsx,
-        dsy,
-        &raw mut x,
-        &raw mut y,
-        &raw mut x2,
-        &raw mut y2,
-    ) == 0
-    {
-        return;
-    }
-    let map_size = (dsx as usize).checked_mul(dsy as usize).unwrap();
-    let mut map = vec![0; map_size];
-    window_panes_mark_hline(
-        map.as_mut_ptr(),
-        dsx,
-        dsy,
-        x,
-        x2 + 1 as ::core::ffi::c_int,
-        y,
-    );
-    window_panes_mark_hline(
-        map.as_mut_ptr(),
-        dsx,
-        dsy,
-        x,
-        x2 + 1 as ::core::ffi::c_int,
-        y2,
-    );
-    window_panes_mark_vline(
-        map.as_mut_ptr(),
-        dsx,
-        dsy,
-        x,
-        y,
-        y2 + 1 as ::core::ffi::c_int,
-    );
-    window_panes_mark_vline(
-        map.as_mut_ptr(),
-        dsx,
-        dsy,
-        x2,
-        y,
-        y2 + 1 as ::core::ffi::c_int,
-    );
-    yy = 0 as u_int;
-    while yy < dsy {
-        xx = 0 as u_int;
-        while xx < dsx {
-            let border = map[yy.wrapping_mul(dsx).wrapping_add(xx) as usize];
-            if border != 0 {
-                cell_type = window_panes_border_cell_type(border);
-                memcpy(
-                    &raw mut border_gc as *mut ::core::ffi::c_void,
-                    gc as *const ::core::ffi::c_void,
-                    ::core::mem::size_of::<grid_cell>() as size_t,
-                );
-                border_gc.attr =
-                    (border_gc.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
-                utf8_set(
-                    &mut border_gc.data,
-                    CELL_BORDERS[cell_type as usize] as u_char,
-                );
-                screen_write_cursormove(
-                    &mut *ctx,
-                    xx as ::core::ffi::c_int,
-                    yy as ::core::ffi::c_int,
-                    0 as ::core::ffi::c_int,
-                );
-                screen_write_cell(&mut *ctx, &border_gc);
-            }
-            xx = xx.wrapping_add(1);
-        }
-        yy = yy.wrapping_add(1);
-    }
-}
-unsafe fn window_panes_clear_floating_area(
-    mut ctx: *mut screen_write_ctx,
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    mut osx: u_int,
-    mut osy: u_int,
-    mut dsx: u_int,
-    mut dsy: u_int,
-) {
-    let mut gc: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
-    let mut x: ::core::ffi::c_int = 0;
-    let mut y: ::core::ffi::c_int = 0;
-    let mut x2: ::core::ffi::c_int = 0;
-    let mut y2: ::core::ffi::c_int = 0;
-    let mut xx: ::core::ffi::c_int = 0;
-    let mut yy: ::core::ffi::c_int = 0;
-    if window_panes_get_floating_borders(
-        wp_owner,
-        osx,
-        osy,
-        dsx,
-        dsy,
-        &raw mut x,
-        &raw mut y,
-        &raw mut x2,
-        &raw mut y2,
-    ) == 0
-    {
-        return;
-    }
-    memcpy(
-        &raw mut gc as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
-    if x < 0 as ::core::ffi::c_int {
-        x = 0 as ::core::ffi::c_int;
-    }
-    if y < 0 as ::core::ffi::c_int {
-        y = 0 as ::core::ffi::c_int;
-    }
-    if x2 as u_int >= dsx {
-        x2 = dsx.wrapping_sub(1 as u_int) as ::core::ffi::c_int;
-    }
-    if y2 as u_int >= dsy {
-        y2 = dsy.wrapping_sub(1 as u_int) as ::core::ffi::c_int;
-    }
-    if x2 < x || y2 < y {
-        return;
-    }
-    yy = y;
-    while yy <= y2 {
-        screen_write_cursormove(&mut *ctx, x, yy, 0 as ::core::ffi::c_int);
-        xx = x;
-        while xx <= x2 {
-            screen_write_putc(&mut *ctx, &gc, ' ' as i32 as u_char);
-            xx += 1;
-        }
-        yy += 1;
     }
 }
 unsafe fn window_panes_draw_format(
@@ -1505,20 +1176,6 @@ unsafe fn window_panes_draw_pane(
     {
         return;
     }
-    if window_panes_clip_floating_pane(
-        wp_owner,
-        osx,
-        osy,
-        dsx,
-        dsy,
-        &raw mut x,
-        &raw mut y,
-        &raw mut sx,
-        &raw mut sy,
-    ) == 0
-    {
-        return;
-    }
     let window = wp_owner
         .window_observer()
         .upgrade()
@@ -1629,34 +1286,11 @@ unsafe fn window_panes_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         screen_write_clearscreen(&mut ctx, 8 as u_int);
         let mut next = window.next_pane(None);
         while let Some(pane) = next {
-            if window_panes_pane_floating(&pane) == 0 {
-                window_panes_draw_pane(data, &raw mut ctx, &pane, osx, osy, sx, sy);
-            }
+            window_panes_draw_pane(data, &raw mut ctx, &pane, osx, osy, sx, sy);
             next = pane.next_in_window();
         }
         window_panes_get_border_cell(data, &raw mut border_gc);
         window_panes_draw_borders(&raw mut ctx, &window, &raw mut border_gc, osx, osy, sx, sy);
-        let mut next = window.step_pane(crate::src::window::PaneOrder::Stacking, None, true);
-        while let Some(pane) = next {
-            if window_panes_pane_floating(&pane) != 0 {
-                window_panes_clear_floating_area(&raw mut ctx, &pane, osx, osy, sx, sy);
-                window_panes_draw_pane(data, &raw mut ctx, &pane, osx, osy, sx, sy);
-                window_panes_draw_floating_border(
-                    &raw mut ctx,
-                    &pane,
-                    &raw mut border_gc,
-                    osx,
-                    osy,
-                    sx,
-                    sy,
-                );
-            }
-            next = window.step_pane(
-                crate::src::window::PaneOrder::Stacking,
-                Some(&Rc::downgrade(&pane)),
-                true,
-            );
-        }
         screen_write_stop(&mut ctx);
         mode_pane_owner.request_redraw(false);
     })();

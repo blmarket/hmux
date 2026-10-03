@@ -210,15 +210,6 @@ unsafe fn cmd_select_pane_marked_pane(
         server_status_window(&window);
         window.release(c"marked pane redraw");
     }
-    if pane.is_floating() {
-        let window = pane
-            .window_observer()
-            .upgrade()
-            .expect("marked target window");
-        window.redraw_active_switch(Some(&pane));
-        window.select_pane(&pane, true);
-        window.release(c"marked pane selection");
-    }
     CMD_RETURN_NORMAL
 }
 unsafe fn cmd_select_pane_exec(
@@ -243,14 +234,8 @@ unsafe fn cmd_select_pane_exec(
                 last = window.active_pane().and_then(|active| {
                     let observer = std::rc::Rc::downgrade(&active);
                     window
-                        .step_pane(crate::src::window::PaneOrder::Index, Some(&observer), true)
-                        .or_else(|| {
-                            window.step_pane(
-                                crate::src::window::PaneOrder::Index,
-                                Some(&observer),
-                                false,
-                            )
-                        })
+                        .step_pane(Some(&observer), true)
+                        .or_else(|| window.step_pane(Some(&observer), false))
                 });
             }
             let Some(last) = last else {
@@ -262,10 +247,7 @@ unsafe fn cmd_select_pane_exec(
                 server_redraw_window_borders(&window);
                 server_status_window(&window);
             } else {
-                let visible = window
-                    .modal_pane()
-                    .is_some_and(|modal| !std::rc::Rc::ptr_eq(&modal, &last))
-                    || last.is_visible();
+                let visible = last.is_visible();
                 if !visible && window.push_zoom(false, (zoom) != 0) != 0 {
                     server_redraw_window(&window);
                 }
@@ -372,10 +354,7 @@ unsafe fn cmd_select_pane_exec(
         {
             return CMD_RETURN_NORMAL;
         }
-        let visible = window
-            .modal_pane()
-            .is_some_and(|modal| !std::rc::Rc::ptr_eq(&modal, &pane))
-            || pane.is_visible();
+        let visible = pane.is_visible();
         if !visible && window.push_zoom(false, (zoom) != 0) != 0 {
             server_redraw_window(&window);
         }

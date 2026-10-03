@@ -8,10 +8,7 @@ use crate::src::cmd::queue::{
 use crate::src::events::events_fire_window;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
-use crate::src::layout::{
-    layout_close_pane, layout_fix_offsets, layout_fix_panes, layout_float_pane,
-    layout_floating_args_parse, layout_init,
-};
+use crate::src::layout::{layout_close_pane, layout_init};
 use crate::src::names::default_window_name_cstring;
 use crate::src::options::{options_get_number, options_set_number, options_set_parent};
 use crate::src::session::SessionIndex as _;
@@ -19,8 +16,8 @@ use crate::src::window::Window as _;
 
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::{
-    server_link_window, server_redraw_session, server_redraw_window, server_status_session_group,
-    server_unlink_window, server_unzoom_window,
+    server_link_window, server_redraw_session, server_status_session_group, server_unlink_window,
+    server_unzoom_window,
 };
 use crate::src::session::Session;
 
@@ -34,10 +31,8 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state
 use crate::src::shared::layout::layout_cell;
 use crate::src::shared::layout::layout_geometry;
 use crate::src::shared::layout::*;
-use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::WINDOW_ZOOMED;
 use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::{check_name, clean_name_cstring};
@@ -53,12 +48,12 @@ pub static cmd_break_pane_entry: cmd_entry = {
         name: c"break-pane",
         alias: Some(c"breakp"),
         args: args_parse {
-            template: c"abdPF:n:s:t:Wx:X:y:Y:",
+            template: c"abdPF:n:s:t:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: c"[-abdPW] [-F format] [-n window-name] [-s src-pane] [-t dst-window] [-x width] [-y height] [-X x-position] [-Y y-position]",
+        usage: c"[-abdP] [-F format] [-n window-name] [-s src-pane] [-t dst-window]",
         source: cmd_entry_flag {
             flag: 's' as i32 as ::core::ffi::c_char,
             type_0: CMD_FIND_PANE,
@@ -73,60 +68,6 @@ pub static cmd_break_pane_entry: cmd_entry = {
         exec: Some(cmd_break_pane_exec),
     }
 };
-unsafe fn cmd_break_pane_float(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    mut args: *mut args,
-    w_owner: &WindowRef,
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-) -> cmd_retval {
-    let lines = w_owner.pane_border_lines();
-    if wp_owner.is_floating() {
-        cmdq_error(item_handle, |out| {
-            out.write_all(b"pane is already floating")
-        });
-        return CMD_RETURN_ERROR;
-    }
-    if w_owner.is_zoomed() {
-        cmdq_error(item_handle, |out| {
-            out.write_all(b"can't float a pane while window is zoomed")
-        });
-        return CMD_RETURN_ERROR;
-    }
-    let mut geometry = {
-        let mut tree = w_owner.borrow_layout_root_mut();
-        tree.as_deref_mut()
-            .expect("floating pane root")
-            .find_pane_mut(&std::rc::Rc::downgrade(wp_owner))
-            .expect("floating pane cell")
-            .fg
-    };
-    if let Err(cause) = layout_floating_args_parse(item_handle, args, lines, w_owner, &mut geometry)
-    {
-        cmdq_error(item_handle, |out| {
-            out.write_all(b"failed to float pane: ")?;
-            write_cstr(out, cause.as_ptr())
-        });
-        return CMD_RETURN_ERROR;
-    }
-    layout_float_pane(w_owner, wp_owner, geometry);
-    {
-        let mut order = w_owner.borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking);
-        let pane = std::rc::Rc::downgrade(wp_owner);
-        assert!(order.remove(&pane), "pane is not in its stacking order");
-        order.push_front(pane);
-    }
-    if args_has(args, 'd' as i32 as u_char) == 0 {
-        w_owner.select_pane(wp_owner, true);
-    }
-    layout_fix_offsets(w_owner);
-    layout_fix_panes(w_owner, None);
-    events_fire_window(
-        c"window-layout-changed".as_ptr(),
-        std::rc::Rc::clone(w_owner),
-    );
-    server_redraw_window(w_owner);
-    CMD_RETURN_NORMAL
-}
 unsafe fn cmd_break_pane_exec(
     mut self_0: refbox::Weak<cmd>,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
@@ -156,16 +97,6 @@ unsafe fn cmd_break_pane_exec(
         let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut name: *const ::core::ffi::c_char = args_get(&*(args), 'n' as i32 as u_char)
             .map_or(std::ptr::null(), |value| value.as_ptr());
-        if source_window
-            .modal_pane()
-            .is_some_and(|pane| std::rc::Rc::ptr_eq(&pane, &pane_owner))
-        {
-            cmdq_error(item_handle, |out| out.write_all(b"pane is modal"));
-            return CMD_RETURN_ERROR;
-        }
-        if args_has(args, 'W' as i32 as u_char) != 0 {
-            return cmd_break_pane_float(item_handle, args, &source_window, &pane_owner);
-        }
         if !name.is_null() && !check_name(CStr::from_ptr(name)) {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"invalid window name: ")?;
@@ -241,17 +172,12 @@ unsafe fn cmd_break_pane_exec(
             ClientRef::forget_pane(&pane_owner);
             // Select a replacement while the departing pane still has neighbors.
             source_window.forget_pane(&pane_owner);
-            for order in [
-                crate::src::window::PaneOrder::Index,
-                crate::src::window::PaneOrder::Stacking,
-            ] {
-                assert!(
-                    source_window
-                        .borrow_pane_order_mut(order)
-                        .remove(&std::rc::Rc::downgrade(&pane_owner)),
-                    "pane is not in its window order"
-                );
-            }
+            assert!(
+                source_window
+                    .borrow_pane_order_mut()
+                    .remove(&std::rc::Rc::downgrade(&pane_owner)),
+                "pane is not in its window order"
+            );
             layout_close_pane(&pane_owner);
             let (sx, sy) = source_window.size();
             let (xpixel, ypixel) = source_window.cell_size();

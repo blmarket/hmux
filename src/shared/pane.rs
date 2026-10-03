@@ -51,9 +51,6 @@ pub const PANE_STATUS_TOP: ::core::ffi::c_int = 1;
 pub const PANE_STATUS_BOTTOM: ::core::ffi::c_int = 2;
 pub const PANE_SCROLLBARS_RIGHT: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 pub const PANE_SCROLLBARS_LEFT: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub const PANE_CLOSEONCLICK: ::core::ffi::c_int = 0x80000 as ::core::ffi::c_int;
-pub const PANE_CAPTUREALLKEYS: ::core::ffi::c_int = 0x100000 as ::core::ffi::c_int;
-pub const PANE_CLOSEONCANCEL: ::core::ffi::c_int = 0x400000 as ::core::ffi::c_int;
 pub const PANE_ZOOMED: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
 pub const PANE_STATUSREADY: ::core::ffi::c_int = 0x200 as ::core::ffi::c_int;
 pub const PANE_STATUSDRAWN: ::core::ffi::c_int = 0x400 as ::core::ffi::c_int;
@@ -72,7 +69,6 @@ pub const PANE_DROP: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const PANE_EXITED: ::core::ffi::c_int = 0x100 as ::core::ffi::c_int;
 pub const PANE_SCROLLBARS_MODAL: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
 pub const PANE_SCROLLBARS_AUTOHIDE: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
-pub const PANE_FLOATOVERZOOM: ::core::ffi::c_int = 0x200000 as ::core::ffi::c_int;
 pub const PANE_EMPTY: ::core::ffi::c_int = 0x800 as ::core::ffi::c_int;
 pub const PANE_SCROLLBARS_DEFAULT_PADDING: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 pub const PANE_SCROLLBARS_DEFAULT_WIDTH: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
@@ -80,8 +76,6 @@ pub const PANE_SCROLLBARS_CHARACTER: ::core::ffi::c_int = ' ' as i32;
 pub const PANE_FOCUSED: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const PANE_VISITED: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 pub const PANE_DESTROYED: ::core::ffi::c_int = 0x10000 as ::core::ffi::c_int;
-pub const PANE_STATUS_TOP_FLOATING: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
-pub const PANE_STATUS_BOTTOM_FLOATING: ::core::ffi::c_int = 4 as ::core::ffi::c_int;
 
 /// The prompt cleanup closure owns this record; all other handles observe it.
 pub struct window_pane_prompt {

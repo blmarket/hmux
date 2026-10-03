@@ -45,14 +45,9 @@ pub struct window {
     pub(super) creation_time: SystemTime,
     /// Current pane identity; the pane index owns the allocation.
     pub(super) active: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    /// Current modal pane is observed; the pane index owns its lifetime.
-    pub(super) modal: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    /// Pane to restore after modal dismissal; does not own that pane.
-    pub(super) modal_last: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     /// Saved zoom target observes its pane without extending its lifetime.
     pub(super) was_zoomed: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     pub(super) last_panes: window_pane_history,
-    pub(super) z_index: window_panes,
     pub(super) panes: window_panes,
     pub(super) lastlayout: ::core::ffi::c_int,
     /// Whether the preset in `lastlayout` is in force; only layout selection
@@ -75,8 +70,6 @@ pub struct window {
     pub(super) menu: Option<refbox::RefBox<crate::src::shared::menu::menu_data>>,
     pub(super) menu_last_px: u_int,
     pub(super) menu_last_py: u_int,
-    pub(super) last_new_pane_x: u_int,
-    pub(super) last_new_pane_y: u_int,
     pub(super) sb: ::core::ffi::c_int,
     pub(super) sb_pos: ::core::ffi::c_int,
     pub(super) inside_cell: grid_cell,
@@ -102,11 +95,8 @@ impl Default for window {
             activity_time: UNIX_EPOCH,
             creation_time: UNIX_EPOCH,
             active: Default::default(),
-            modal: Default::default(),
-            modal_last: Default::default(),
             was_zoomed: Default::default(),
             last_panes: Default::default(),
-            z_index: Default::default(),
             panes: Default::default(),
             lastlayout: Default::default(),
             sticky: Default::default(),
@@ -127,8 +117,6 @@ impl Default for window {
             menu: Default::default(),
             menu_last_px: Default::default(),
             menu_last_py: Default::default(),
-            last_new_pane_x: Default::default(),
-            last_new_pane_y: Default::default(),
             sb: Default::default(),
             sb_pos: Default::default(),
             inside_cell: Default::default(),

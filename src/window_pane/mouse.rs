@@ -167,14 +167,6 @@ unsafe fn mouse_location_in(
             } else {
                 return KEYC_MOUSE_LOCATION_SCROLLBAR_DOWN;
             }
-        } else if pane_owner.is_floating()
-            && pane_owner.pane_lines() as ::core::ffi::c_uint
-                != PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
-            && (px == bdr_left
-                || py == yoff - 1 as ::core::ffi::c_int
-                || py == yoff + sy as ::core::ffi::c_int)
-        {
-            return KEYC_MOUSE_LOCATION_BORDER;
         } else {
             return KEYC_MOUSE_LOCATION_PANE;
         }
@@ -184,11 +176,7 @@ unsafe fn mouse_location_in(
             let (border_sx, border_sy, border_xoff, border_yoff) = border_pane.geometry();
             let border_scrollbar = &border_pane;
             examined = Some(border_pane.clone());
-            if !(!border_pane.is_visible())
-                && !(border_pane.is_floating()
-                    && border_pane.pane_lines() as ::core::ffi::c_uint
-                        == PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint)
-            {
+            if border_pane.is_visible() {
                 if border_scrollbar.scrollbar_reserved() {
                     sb_w = border_scrollbar.scrollbar_width();
                     sb_pad = border_scrollbar.scrollbar_pad();
@@ -214,9 +202,6 @@ unsafe fn mouse_location_in(
                     && py <= border_yoff + border_sy as ::core::ffi::c_int
                 {
                     if px == bdr_right {
-                        break;
-                    }
-                    if pane_owner.is_floating() && px == bdr_left {
                         break;
                     }
                 }

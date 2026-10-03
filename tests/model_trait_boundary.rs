@@ -430,27 +430,18 @@ fn migrated_name_and_window_notification_helpers_use_holders() {
                 "layout_resize_pane_grow",
                 "layout_resize_pane_shrink",
                 "layout_destroy_cell_with_limits",
-                "layout_remove_tile_with_limits",
                 "layout_resize_layout",
                 "layout_resize_pane",
                 "layout_replace_with_node",
-                "layout_floating_pane",
                 "layout_assign_pane",
                 "layout_get_tiled_cell",
-                "layout_get_floating_cell",
-                "layout_split_floating_cell",
                 "layout_resize_adjust_with_limits",
                 "layout_spread_cell_with_limits",
                 "layout_spread_out",
-                "layout_float_pane",
-                "layout_tile_pane",
-                "layout_insert_tile_with_limits",
-                "layout_resize_set_size_with_limits",
                 "layout_fix_offsets",
                 "layout_init",
                 "layout_free",
                 "layout_resize",
-                "layout_floating_args_parse",
             ][..],
         ),
         (
@@ -467,7 +458,6 @@ fn migrated_name_and_window_notification_helpers_use_holders() {
                 "format_cb_pane_unzoomed_width",
                 "format_cb_pane_unzoomed_height",
                 "format_cb_window_linked_sessions",
-                "format_cb_window_modal_pane",
                 "format_cb_window_name",
                 "format_cb_window_zoomed_flag",
             ][..],
@@ -477,10 +467,6 @@ fn migrated_name_and_window_notification_helpers_use_holders() {
             &["format_add_window_neighbour"][..],
         ),
         ("src/window_pane/input.rs", &["input_exit_rename"][..]),
-        (
-            "src/cmd/entries/break_pane.rs",
-            &["cmd_break_pane_float"][..],
-        ),
         (
             "src/cmd/entries/resize_pane.rs",
             &["cmd_resize_pane_mouse_resize_tiled"][..],
@@ -493,24 +479,19 @@ fn migrated_name_and_window_notification_helpers_use_holders() {
             "src/window_panes.rs",
             &[
                 "window_panes_pane_geometry",
-                "window_panes_pane_floating",
                 "window_panes_pane_visible",
                 "window_panes_scaled_geometry",
                 "window_panes_get_geometry",
                 "window_panes_get_border_cell",
                 "window_panes_mark_pane_status_borders",
-                "window_panes_get_floating_borders",
-                "window_panes_clip_floating_pane",
                 "window_panes_draw_borders",
-                "window_panes_draw_floating_border",
-                "window_panes_clear_floating_area",
                 "window_panes_draw_format",
             ][..],
         ),
         ("src/spawn.rs", &["initialize_spawned_window"][..]),
         (
             "src/cmd/entries/join_pane.rs",
-            &["cmd_join_pane_finish", "cmd_join_pane_tile"][..],
+            &["cmd_join_pane_finish"][..],
         ),
         ("src/session/mod.rs", &["session_is_linked"][..]),
         ("src/monitor.rs", &["monitor_check_window"][..]),
@@ -819,13 +800,7 @@ fn window_state_is_private_and_pane_implementation_is_a_sibling_module() {
     for item in &syntax.items {
         let Item::Fn(function) = item else { continue };
         let name = function.sig.ident.to_string();
-        let order_edit = [
-            "window_pane_list_",
-            "window_pane_z_insert_",
-            "window_pane_z_remove",
-        ]
-        .iter()
-        .any(|prefix| name.starts_with(prefix));
+        let order_edit = name.starts_with("window_pane_list_");
         let whole_model_query = matches!(
             name.as_str(),
             "windows_find"
@@ -834,11 +809,8 @@ fn window_state_is_private_and_pane_implementation_is_a_sibling_module() {
                 | "window_winlinks_next"
                 | "window_has_pane"
                 | "window_zoomed_pane"
-                | "window_count_panes"
                 | "window_pane_first"
                 | "window_pane_last"
-                | "window_pane_z_first"
-                | "window_pane_z_last"
                 | "window_pane_stack_first"
                 | "window_pane_stack_next"
                 | "window_get_pane_lines"

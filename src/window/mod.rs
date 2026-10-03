@@ -6,7 +6,7 @@ use crate::src::window_pane::WindowPane as _;
 use std::time::SystemTime;
 mod alerts;
 mod api;
-pub use api::{LayoutView, PaneOrder, Window, WindowIndex};
+pub use api::{LayoutView, Window, WindowIndex};
 
 mod model;
 pub use crate::src::window_pane::*;
@@ -36,9 +36,7 @@ use crate::src::grid::grid_cells_look_equal;
 use crate::src::grid::view::grid_view_string_cells_bytes;
 use crate::src::input::{input_parse_buffer, input_parse_pane};
 use crate::src::input_keys::input_key_pane;
-use crate::src::layout::{
-    layout_assign_pane, layout_fix_panes, layout_floating_pane, layout_free, layout_init,
-};
+use crate::src::layout::{layout_fix_panes, layout_free, layout_init};
 use crate::src::log::{fatal, fatalx, log_cstr, log_cstr_n, log_debug};
 use crate::src::menu::{menu_destroy, menu_resize};
 use crate::src::options::options_owner_ptr;
@@ -115,10 +113,9 @@ use crate::src::shared::pane::{
 };
 use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resizes, PANE_CHANGED, PANE_DESTROYED,
-    PANE_EMPTY, PANE_EXITED, PANE_FLOATOVERZOOM, PANE_FOCUSED, PANE_INPUTOFF, PANE_REDRAW,
-    PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT,
-    PANE_SCROLLBARS_MODAL, PANE_STATUSREADY, PANE_STATUS_BOTTOM, PANE_STATUS_BOTTOM_FLOATING,
-    PANE_STATUS_OFF, PANE_STATUS_TOP, PANE_STATUS_TOP_FLOATING, PANE_STYLECHANGED,
+    PANE_EMPTY, PANE_EXITED, PANE_FOCUSED, PANE_INPUTOFF, PANE_REDRAW, PANE_REDRAWSCROLLBAR,
+    PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT, PANE_SCROLLBARS_MODAL,
+    PANE_STATUSREADY, PANE_STATUS_BOTTOM, PANE_STATUS_OFF, PANE_STATUS_TOP, PANE_STYLECHANGED,
     PANE_THEMECHANGED, PANE_UNSEENCHANGES, PANE_ZOOMED,
 };
 use crate::src::shared::posix_io::FNM_CASEFOLD;
@@ -130,7 +127,7 @@ use crate::src::shared::screen::{screen, MODE_BRACKETPASTE, MODE_FOCUSON, MODE_T
 use crate::src::shared::session::session;
 use crate::src::shared::signal::SIGCHLD;
 use crate::src::shared::spawn::spawn_editor_state;
-use crate::src::shared::spawn::{SPAWN_BEFORE, SPAWN_FLOATING, SPAWN_FULLSIZE};
+use crate::src::shared::spawn::{SPAWN_BEFORE, SPAWN_FULLSIZE};
 use crate::src::shared::status::status_prompt_input_cb;
 use crate::src::shared::style::*;
 use crate::src::shared::tree::{RB_INF, RB_NEGINF};
@@ -378,7 +375,6 @@ unsafe fn window_create(
     let w = owner.get();
     (*w).flags = 0 as ::core::ffi::c_int;
     (*w).panes = window_panes::default();
-    (*w).z_index = window_panes::default();
     (*w).last_panes = window_pane_history::default();
     (*w).set_active(None);
     (*w).lastlayout = -(1 as ::core::ffi::c_int);
@@ -568,9 +564,6 @@ unsafe fn window_set_active_pane(
     if (*w).active.ptr_eq(&observer) {
         return 0;
     }
-    if (*w).modal.upgrade().is_some() && !(*w).modal.ptr_eq(&observer) {
-        return 0;
-    }
     if window.is_zoomed() && !pane.is_visible() {
         window.unzoom(true);
     }
@@ -608,11 +601,6 @@ unsafe fn window_redraw_active_switch(
     previous: Option<&Rc<UnsafeCell<window_pane>>>,
 ) {
     let state = window.get();
-    if (*state).modal.upgrade().is_some()
-        && !previous.is_some_and(|pane| (*state).modal.ptr_eq(&Rc::downgrade(pane)))
-    {
-        return;
-    }
     let active = (*state).active_pane();
     if previous.is_some_and(|pane| {
         active
@@ -623,12 +611,6 @@ unsafe fn window_redraw_active_switch(
     }
     if let Some(previous) = previous {
         previous.redraw_selection_change();
-        if previous.is_floating() {
-            window_pane_z_remove(&mut *state, previous);
-            window_pane_z_insert_front(&mut *state, previous);
-            previous.request_redraw(false);
-            (*state).invalidate_scene();
-        }
     }
     if let Some(active) = active {
         active.redraw_selection_change();
@@ -646,15 +628,9 @@ unsafe fn window_get_active_at(
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     pane_status = window_get_pane_status(&*w);
-    if let Some(modal) = (*w).modal.upgrade() {
-        if modal.contains(x, y) {
-            return Some(modal);
-        }
-        return None;
-    }
     if pane_status == PANE_STATUS_TOP {
-        for candidate in (*w).z_index.snapshot() {
-            if !(!candidate.is_visible() || candidate.is_floating()) {
+        for candidate in (*w).panes.snapshot() {
+            if candidate.is_visible() {
                 (xoff, yoff, sx, sy) = candidate.outer_geometry();
                 if !((x as ::core::ffi::c_int) < xoff || x > (xoff as u_int).wrapping_add(sx))
                     && y as ::core::ffi::c_int == yoff - 1 as ::core::ffi::c_int
@@ -664,52 +640,23 @@ unsafe fn window_get_active_at(
             }
         }
     }
-    let mut current_block_15: u64;
-    for candidate in (*w).z_index.snapshot() {
-        if !(!candidate.is_visible()) {
-            (xoff, yoff, sx, sy) = candidate.outer_geometry();
-            if !candidate.is_floating() {
-                if (x as ::core::ffi::c_int) < xoff || x > (xoff as u_int).wrapping_add(sx) {
-                    current_block_15 = 12349973810996921269;
-                } else if pane_status == PANE_STATUS_TOP {
-                    if (y as ::core::ffi::c_int) < yoff - 1 as ::core::ffi::c_int
-                        || y > (yoff as u_int).wrapping_add(sy)
-                    {
-                        current_block_15 = 12349973810996921269;
-                    } else {
-                        current_block_15 = 8693738493027456495;
-                    }
-                } else if (y as ::core::ffi::c_int) < yoff || y > (yoff as u_int).wrapping_add(sy) {
-                    current_block_15 = 12349973810996921269;
-                } else {
-                    current_block_15 = 8693738493027456495;
-                }
-            } else if candidate.pane_lines() as ::core::ffi::c_uint
-                == PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                if (x as ::core::ffi::c_int) < xoff
-                    || x as ::core::ffi::c_int >= xoff + sx as ::core::ffi::c_int
-                    || ((y as ::core::ffi::c_int) < yoff
-                        || y as ::core::ffi::c_int >= yoff + sy as ::core::ffi::c_int)
-                {
-                    current_block_15 = 12349973810996921269;
-                } else {
-                    current_block_15 = 8693738493027456495;
-                }
-            } else if (x as ::core::ffi::c_int) < xoff - 1 as ::core::ffi::c_int
-                || x > (xoff as u_int).wrapping_add(sx)
-                || ((y as ::core::ffi::c_int) < yoff - 1 as ::core::ffi::c_int
-                    || y > (yoff as u_int).wrapping_add(sy))
-            {
-                current_block_15 = 12349973810996921269;
-            } else {
-                current_block_15 = 8693738493027456495;
-            }
-            match current_block_15 {
-                12349973810996921269 => {}
-                _ => return Some(candidate),
-            }
+    for candidate in (*w).panes.snapshot() {
+        if !candidate.is_visible() {
+            continue;
         }
+        (xoff, yoff, sx, sy) = candidate.outer_geometry();
+        if (x as ::core::ffi::c_int) < xoff || x > (xoff as u_int).wrapping_add(sx) {
+            continue;
+        }
+        let top = if pane_status == PANE_STATUS_TOP {
+            yoff - 1
+        } else {
+            yoff
+        };
+        if (y as ::core::ffi::c_int) < top || y > (yoff as u_int).wrapping_add(sy) {
+            continue;
+        }
+        return Some(candidate);
     }
     None
 }
@@ -767,17 +714,10 @@ unsafe fn window_zoom(pane: &Rc<UnsafeCell<window_pane>>) -> i32 {
 
 unsafe fn window_zoom_in(window: &WindowRef, pane: &Rc<UnsafeCell<window_pane>>) -> i32 {
     let w = window.get();
-    if (*w).flags & WINDOW_ZOOMED != 0 || window_count_panes(&*w, 1) == 1 {
+    if (*w).flags & WINDOW_ZOOMED != 0 || (*w).panes.storage.len() == 1 {
         return -1;
     }
-    let active = (*w).active_pane();
-    if !active
-        .as_ref()
-        .is_some_and(|active| Rc::ptr_eq(active, pane))
-        && !active
-            .as_ref()
-            .is_some_and(|active| active.floats_over_zoom() && active.is_floating())
-    {
+    if !(*w).active.ptr_eq(&Rc::downgrade(pane)) {
         window_set_active_pane(window, pane, 1);
     }
     pane.mark_zoomed();
@@ -786,34 +726,6 @@ unsafe fn window_zoom_in(window: &WindowRef, pane: &Rc<UnsafeCell<window_pane>>)
     }
     (*w).saved_layout_root = (*w).layout_root.take();
     layout_init(window, pane);
-    for owner in (*w).panes.snapshot() {
-        let saved = owner.layout_identity(true).and_then(|id| {
-            (*w).saved_layout_root
-                .as_deref()
-                .and_then(|root| root.find(id))
-                .map(|cell| (cell.flags, cell.g))
-        });
-        if !Rc::ptr_eq(&owner, pane)
-            && owner.floats_over_zoom()
-            && saved.is_some_and(|(flags, _)| flags & LAYOUT_CELL_FLOATING != 0)
-        {
-            let mut geometry = saved.unwrap().1;
-            let cell = layout_floating_pane(window, Some(pane), &raw mut geometry);
-            layout_assign_pane(window, cell, &owner, 0);
-        }
-    }
-    if pane
-        .layout_identity(true)
-        .and_then(|id| {
-            (*w).saved_layout_root
-                .as_deref()
-                .and_then(|root| root.find(id))
-        })
-        .is_some_and(|cell| cell.flags & LAYOUT_CELL_FLOATING != 0)
-    {
-        window_pane_z_remove(&mut *w, pane);
-        window_pane_z_insert_back(&mut *w, pane);
-    }
     (*w).flags |= WINDOW_ZOOMED;
     events_fire_window(c"window-zoomed".as_ptr(), window.clone());
     events_fire_window(c"window-layout-changed".as_ptr(), window.clone());
@@ -830,52 +742,11 @@ unsafe fn window_unzoom_internal(window: &WindowRef, notify: i32, resize_panes: 
     if (*w).flags & WINDOW_ZOOMED == 0 {
         return -1;
     }
-    let mut zoomed = None;
-    for pane in (*w).panes.snapshot() {
-        if pane.is_zoomed() {
-            zoomed = Some(pane.clone());
-        }
-        if pane.floats_over_zoom() && !pane.is_zoomed() {
-            let geometry = pane.layout_identity(false).and_then(|id| {
-                (*w).layout_root
-                    .as_deref()
-                    .and_then(|root| root.find(id))
-                    .map(|cell| (cell.g, cell.fg))
-            });
-            if let (Some(saved), Some((geometry, floating))) =
-                (pane.layout_identity(true), geometry)
-            {
-                if let Some(cell) = (*w)
-                    .saved_layout_root
-                    .as_deref_mut()
-                    .and_then(|root| root.find_mut(saved))
-                {
-                    cell.g = geometry;
-                    cell.fg = floating;
-                }
-            }
-        }
-    }
     (*w).flags &= !WINDOW_ZOOMED;
     layout_free(window);
     (*w).layout_root = (*w).saved_layout_root.take();
     for pane in (*w).panes.snapshot() {
         pane.restore_layout_after_zoom();
-    }
-    if let Some(zoomed) = zoomed.filter(|pane| pane.is_floating()) {
-        window_pane_z_remove(&mut *w, &zoomed);
-        if (*w).active.ptr_eq(&Rc::downgrade(&zoomed)) {
-            window_pane_z_insert_front(&mut *w, &zoomed);
-        } else if let Some(before) = (*w)
-            .z_index
-            .snapshot()
-            .into_iter()
-            .find(|pane| !pane.is_floating())
-        {
-            window_pane_z_insert_before(&mut *w, &before, &zoomed);
-        } else {
-            window_pane_z_insert_back(&mut *w, &zoomed);
-        }
     }
     if resize_panes {
         layout_fix_panes(window, None);
@@ -892,20 +763,10 @@ unsafe fn window_zoomed_pane(w: &window) -> Option<Rc<std::cell::UnsafeCell<wind
     if w.flags & WINDOW_ZOOMED == 0 {
         return None;
     }
-    w.z_index.snapshot().into_iter().rev().find(|owner| {
-        owner
-            .layout_identity(false)
-            .and_then(|id| w.layout_root.as_deref().and_then(|root| root.find(id)))
-            .is_some_and(|cell| cell.flags & LAYOUT_CELL_FLOATING == 0)
-    })
-}
-unsafe fn window_active_pane_is_over_zoom(window: &WindowRef) -> i32 {
-    if !window.is_zoomed() {
-        return 0;
-    }
-    window
-        .active_pane()
-        .is_some_and(|pane| pane.floats_over_zoom() && pane.is_floating()) as i32
+    w.panes
+        .snapshot()
+        .into_iter()
+        .find(|owner| owner.is_zoomed())
 }
 unsafe fn window_push_zoom(
     w_owner: &WindowRef,
@@ -948,15 +809,10 @@ unsafe fn window_pop_zoom(w_owner: &WindowRef) -> ::core::ffi::c_int {
         (*w).flags &= !WINDOW_WASZOOMED;
         (*w).was_zoomed = std::rc::Weak::new();
         let active = (*w).active.upgrade();
-        if active
-            .as_ref()
-            .is_some_and(|owner| !owner.floats_over_zoom() || !owner.is_floating())
-        {
-            pane_owner = active.clone();
-        }
-        if pane_owner
-            .as_ref()
-            .is_none_or(|owner| !window_has_pane(&*w, &Rc::downgrade(owner)))
+        if active.is_some()
+            || pane_owner
+                .as_ref()
+                .is_none_or(|owner| !window_has_pane(&*w, &Rc::downgrade(owner)))
         {
             pane_owner = active;
         }
@@ -999,7 +855,7 @@ unsafe fn window_add_pane(
             (*w).id,
             pane.id()
         ));
-        if flags & (SPAWN_FULLSIZE | SPAWN_FLOATING) != 0 {
+        if flags & SPAWN_FULLSIZE != 0 {
             window_pane_list_insert_back(&mut *w, &pane);
         } else {
             window_pane_list_insert_after(
@@ -1008,13 +864,6 @@ unsafe fn window_add_pane(
                 &pane,
             );
         }
-    }
-    if flags & SPAWN_FLOATING == 0 {
-        window_pane_z_insert_back(&mut *w, &pane);
-    } else if let Some(modal) = (*w).modal.upgrade() {
-        window_pane_z_insert_after(&mut *w, &modal, &pane);
-    } else {
-        window_pane_z_insert_front(&mut *w, &pane);
     }
     (*w).invalidate_scene();
     pane
@@ -1033,26 +882,12 @@ unsafe fn window_lost_pane(window: &WindowRef, pane: &Rc<UnsafeCell<window_pane>
     {
         server_clear_marked();
     }
-    if (*w).modal_last.ptr_eq(&observer) {
-        (*w).modal_last = Weak::new();
-    }
     if (*w).was_zoomed.ptr_eq(&observer) {
         (*w).was_zoomed = Weak::new();
     }
     pane_history_remove(&mut (*w).last_panes, &observer);
     if (*w).active.ptr_eq(&observer) {
-        let mut replacement = if (*w).modal.ptr_eq(&observer) {
-            (*w).modal = Weak::new();
-            std::mem::take(&mut (*w).modal_last).upgrade()
-        } else {
-            None
-        };
-        if replacement
-            .as_ref()
-            .is_none_or(|owner| !window_has_pane(&*w, &Rc::downgrade(owner)))
-        {
-            replacement = crate::src::shared::pane::pane_history_first(&(*w).last_panes);
-        }
+        let mut replacement = crate::src::shared::pane::pane_history_first(&(*w).last_panes);
         if replacement.is_none() {
             replacement = (*w)
                 .panes
@@ -1066,9 +901,6 @@ unsafe fn window_lost_pane(window: &WindowRef, pane: &Rc<UnsafeCell<window_pane>
             window_fire_pane_changed(window, &replacement, Some(pane));
             window_update_focus(Some(window));
         }
-    } else if (*w).modal.ptr_eq(&observer) {
-        (*w).modal_last = Weak::new();
-        (*w).modal = Weak::new();
     }
     (*w).invalidate_scene();
 }
@@ -1081,24 +913,10 @@ unsafe fn window_remove_pane(window: &WindowRef, pane: &Rc<UnsafeCell<window_pan
         (*w).panes.remove(&observer),
         "pane is not in its window order"
     );
-    assert!(
-        (*w).z_index.remove(&observer),
-        "pane is not in its stacking order"
-    );
     (*w).invalidate_scene();
     pane.destroy();
 }
 
-unsafe fn window_count_panes(w: &window, with_floating: ::core::ffi::c_int) -> u_int {
-    w.panes.storage.iter().fold(0, |count, observer| {
-        let pane = observer.upgrade().expect("live pane in ordering");
-        if with_floating != 0 || !pane.is_floating() {
-            count.wrapping_add(1)
-        } else {
-            count
-        }
-    })
-}
 unsafe fn window_destroy_panes(window: &WindowRef) {
     let w = window.get();
     while let Some(pane) = pane_history_first(&(*w).last_panes) {
@@ -1106,7 +924,6 @@ unsafe fn window_destroy_panes(window: &WindowRef) {
     }
     while let Some(pane) = window_pane_first(w.as_ref()) {
         window_pane_list_remove(&mut *w, &pane);
-        window_pane_z_remove(&mut *w, &pane);
         pane.destroy();
     }
 }
@@ -1163,19 +980,6 @@ unsafe fn window_printable_flags(
         .window_handle()
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get()))
-    .modal
-    .upgrade()
-    .is_some()
-    {
-        let fresh10 = pos;
-        pos = pos.wrapping_add(1);
-        flags[fresh10 as usize] = 'O' as i32 as ::core::ffi::c_char;
-    }
-    if (*wl
-        .get_unchecked()
-        .window_handle()
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get()))
     .flags
         & WINDOW_ZOOMED
         != 0
@@ -1194,14 +998,6 @@ fn window_pane_first(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell<wind
 
 fn window_pane_last(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
     w?.panes.last()
-}
-
-fn window_pane_z_first(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    w?.z_index.first()
-}
-
-fn window_pane_z_last(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    w?.z_index.last()
 }
 
 fn window_pane_stack_first(w: Option<&window>) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
@@ -1248,39 +1044,6 @@ fn window_pane_list_insert_after(
         .insert_after(&Rc::downgrade(after), Rc::downgrade(wp));
 }
 
-fn window_pane_z_remove(w: &mut window, wp: &Rc<UnsafeCell<window_pane>>) {
-    assert!(
-        w.z_index.remove(&Rc::downgrade(wp)),
-        "pane is not in its stacking order"
-    );
-}
-
-fn window_pane_z_insert_front(w: &mut window, wp: &Rc<UnsafeCell<window_pane>>) {
-    w.z_index.push_front(Rc::downgrade(wp));
-}
-
-fn window_pane_z_insert_back(w: &mut window, wp: &Rc<UnsafeCell<window_pane>>) {
-    w.z_index.push_back(Rc::downgrade(wp));
-}
-
-fn window_pane_z_insert_before(
-    w: &mut window,
-    before: &Rc<UnsafeCell<window_pane>>,
-    wp: &Rc<UnsafeCell<window_pane>>,
-) {
-    w.z_index
-        .insert_before(&Rc::downgrade(before), Rc::downgrade(wp));
-}
-
-fn window_pane_z_insert_after(
-    w: &mut window,
-    after: &Rc<UnsafeCell<window_pane>>,
-    wp: &Rc<UnsafeCell<window_pane>>,
-) {
-    w.z_index
-        .insert_after(&Rc::downgrade(after), Rc::downgrade(wp));
-}
-
 unsafe fn window_get_pane_lines(w: &window) -> pane_lines {
     options_get_number_ref(
         w.options.as_deref().expect("window options"),
@@ -1289,14 +1052,10 @@ unsafe fn window_get_pane_lines(w: &window) -> pane_lines {
 }
 
 unsafe fn window_get_pane_status(w: &window) -> ::core::ffi::c_int {
-    let status = options_get_number_ref(
+    options_get_number_ref(
         w.options.as_deref().expect("window options"),
         c"pane-border-status",
-    ) as ::core::ffi::c_int;
-    if status == PANE_STATUS_TOP_FLOATING || status == PANE_STATUS_BOTTOM_FLOATING {
-        return 0;
-    }
-    status
+    ) as ::core::ffi::c_int
 }
 
 impl Drop for window {

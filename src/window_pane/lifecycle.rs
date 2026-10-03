@@ -60,9 +60,7 @@ use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::event::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::{
-    PANE_FLOATOVERZOOM, PANE_REDRAW, PANE_STATUSDRAWN, PANE_STATUSREADY,
-};
+use crate::src::shared::pane::{PANE_REDRAW, PANE_STATUSDRAWN, PANE_STATUSREADY};
 use crate::src::shared::screen::{screen, MODE_CURSOR};
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
@@ -144,7 +142,7 @@ pub(super) unsafe fn kill_process(pane_owner: &std::rc::Rc<std::cell::UnsafeCell
     } else {
         window_owner.release(c"server_kill_pane");
         std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window"))
-            .push_zoom(false, ((*wp).flags & PANE_FLOATOVERZOOM) != 0);
+            .push_zoom(false, false);
         ClientRef::forget_pane(pane_owner);
         layout_close_pane(pane_owner);
         std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window"))
@@ -285,7 +283,7 @@ pub(super) unsafe fn finish_process(
         server_fire_pane_exit(c"pane-exited".as_ptr(), pane_owner);
     }
     std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window"))
-        .push_zoom(false, ((*wp).flags & PANE_FLOATOVERZOOM) != 0);
+        .push_zoom(false, false);
     ClientRef::forget_pane(pane_owner);
     layout_close_pane(pane_owner);
     std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window"))

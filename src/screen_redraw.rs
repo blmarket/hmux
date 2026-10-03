@@ -248,32 +248,6 @@ unsafe fn redraw_pane_to_scene(
 ) -> ::core::ffi::c_int {
     let mut wx: ::core::ffi::c_int = wp.geometry().2 + px;
     let mut wy: ::core::ffi::c_int = wp.geometry().3 + py;
-    let mut left: ::core::ffi::c_int = 0;
-    let mut right: ::core::ffi::c_int = 0;
-    let mut top: ::core::ffi::c_int = 0;
-    let mut bottom: ::core::ffi::c_int = 0;
-    if wp.is_floating() as i32 != 0 {
-        left = wp.geometry().2 - 1 as ::core::ffi::c_int;
-        right = (wp.geometry().2 as u_int).wrapping_add(wp.geometry().0) as ::core::ffi::c_int;
-        top = wp.geometry().3 - 1 as ::core::ffi::c_int;
-        bottom = (wp.geometry().3 as u_int).wrapping_add(wp.geometry().1) as ::core::ffi::c_int;
-        if left < 0 as ::core::ffi::c_int && wx < 0 as ::core::ffi::c_int {
-            return 0 as ::core::ffi::c_int;
-        }
-        if right > ((*bctx).w).size().0 as ::core::ffi::c_int
-            && wx >= ((*bctx).w).size().0 as ::core::ffi::c_int
-        {
-            return 0 as ::core::ffi::c_int;
-        }
-        if top < 0 as ::core::ffi::c_int && wy < 0 as ::core::ffi::c_int {
-            return 0 as ::core::ffi::c_int;
-        }
-        if bottom > ((*bctx).w).size().1 as ::core::ffi::c_int
-            && wy >= ((*bctx).w).size().1 as ::core::ffi::c_int
-        {
-            return 0 as ::core::ffi::c_int;
-        }
-    }
     redraw_window_to_scene(bctx, wx, wy, x, y)
 }
 unsafe fn redraw_get_cell_type(mut mask: ::core::ffi::c_int) -> ::core::ffi::c_int {
@@ -306,9 +280,6 @@ unsafe fn redraw_check_two_pane_colours(w: &WindowRef) -> Option<layout_type> {
         let Some(cell) = tree.find(id) else {
             continue;
         };
-        if cell.flags & crate::src::shared::layout::LAYOUT_CELL_FLOATING != 0 {
-            continue;
-        }
         count += 1;
         if count > 2 || cell.parent.is_null() {
             return None;
@@ -432,7 +403,6 @@ unsafe fn redraw_mark_border_cell(
     mut bottom_owner: ::core::ffi::c_int,
     mut mask: ::core::ffi::c_int,
     mut pane_lines: pane_lines,
-    mut floating: ::core::ffi::c_int,
 ) {
     let mut bc: *mut redraw_build_cell = ::core::ptr::null_mut::<redraw_build_cell>();
     let mut x: u_int = 0;
@@ -442,23 +412,16 @@ unsafe fn redraw_mark_border_cell(
         return;
     }
     bc = redraw_get_build_cell(bctx, x, y);
-    if floating == 0 {
-        if (*bc).data.kind() as ::core::ffi::c_uint
-            == REDRAW_SPAN_EMPTY as ::core::ffi::c_int as ::core::ffi::c_uint
-            || (*bc).data.kind() as ::core::ffi::c_uint
-                == REDRAW_SPAN_OUTSIDE as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            reset = 1 as ::core::ffi::c_int;
-        } else if (*bc).data.kind() as ::core::ffi::c_uint
-            != REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            return;
-        }
-    } else if (*bc).data.kind() as ::core::ffi::c_uint
-        != REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
-        || !redraw_data_has_pane(&(*bc).data, &std::rc::Rc::downgrade(wp))
+    if (*bc).data.kind() as ::core::ffi::c_uint
+        == REDRAW_SPAN_EMPTY as ::core::ffi::c_int as ::core::ffi::c_uint
+        || (*bc).data.kind() as ::core::ffi::c_uint
+            == REDRAW_SPAN_OUTSIDE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
         reset = 1 as ::core::ffi::c_int;
+    } else if (*bc).data.kind() as ::core::ffi::c_uint
+        != REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
+    {
+        return;
     }
     if reset != 0 {
         (*bc).data = redraw_span_data::Border(Default::default());
@@ -613,13 +576,6 @@ unsafe fn redraw_mark_pane_borders(
     let mut mark_left: ::core::ffi::c_int = 0;
     let mut mark_right: ::core::ffi::c_int = 0;
     let mut mask: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    let mut floating: ::core::ffi::c_int = wp.is_floating() as i32;
-    if floating != 0
-        && pane_lines as ::core::ffi::c_uint
-            == PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return;
-    }
     pane_status = wp.border_status();
     left = wp.geometry().2 - 1 as ::core::ffi::c_int;
     right = (wp.geometry().2 as u_int).wrapping_add(wp.geometry().0) as ::core::ffi::c_int;
@@ -634,34 +590,16 @@ unsafe fn redraw_mark_pane_borders(
     bottom = (wp.geometry().3 as u_int).wrapping_add(wp.geometry().1) as ::core::ffi::c_int;
     mark_left = (left >= 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
     mark_top = (top >= 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
-    if floating != 0 {
-        mark_right = (right < ((*bctx).w).size().0 as ::core::ffi::c_int) as ::core::ffi::c_int;
-        mark_bottom = (bottom < ((*bctx).w).size().1 as ::core::ffi::c_int) as ::core::ffi::c_int;
-        if left < 0 as ::core::ffi::c_int {
-            left = 0 as ::core::ffi::c_int;
-        }
-        if right >= ((*bctx).w).size().0 as ::core::ffi::c_int {
-            right = ((*bctx).w).size().0 as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
-        }
-        if top < 0 as ::core::ffi::c_int {
-            top = 0 as ::core::ffi::c_int;
-        }
-        if bottom >= ((*bctx).w).size().1 as ::core::ffi::c_int {
-            bottom = ((*bctx).w).size().1 as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
-        }
-    } else {
-        mark_right = (right <= crate::src::layout::logical_size((*bctx).w).0 as ::core::ffi::c_int)
-            as ::core::ffi::c_int;
-        mark_bottom = (bottom
-            <= crate::src::layout::logical_size((*bctx).w).1 as ::core::ffi::c_int)
-            as ::core::ffi::c_int;
-        if pane_status == PANE_STATUS_TOP
-            && bottom < crate::src::layout::logical_size((*bctx).w).1 as ::core::ffi::c_int
-        {
-            mark_bottom = 0 as ::core::ffi::c_int;
-        } else if pane_status == PANE_STATUS_BOTTOM {
-            mark_top = 0 as ::core::ffi::c_int;
-        }
+    mark_right = (right <= crate::src::layout::logical_size((*bctx).w).0 as ::core::ffi::c_int)
+        as ::core::ffi::c_int;
+    mark_bottom = (bottom <= crate::src::layout::logical_size((*bctx).w).1 as ::core::ffi::c_int)
+        as ::core::ffi::c_int;
+    if pane_status == PANE_STATUS_TOP
+        && bottom < crate::src::layout::logical_size((*bctx).w).1 as ::core::ffi::c_int
+    {
+        mark_bottom = 0 as ::core::ffi::c_int;
+    } else if pane_status == PANE_STATUS_BOTTOM {
+        mark_top = 0 as ::core::ffi::c_int;
     }
     if mark_top != 0 {
         wx = left;
@@ -682,7 +620,6 @@ unsafe fn redraw_mark_pane_borders(
                 1 as ::core::ffi::c_int,
                 mask,
                 pane_lines,
-                floating,
             );
             wx += 1;
         }
@@ -706,7 +643,6 @@ unsafe fn redraw_mark_pane_borders(
                 0 as ::core::ffi::c_int,
                 mask,
                 pane_lines,
-                floating,
             );
             wx += 1;
         }
@@ -730,7 +666,6 @@ unsafe fn redraw_mark_pane_borders(
                 0 as ::core::ffi::c_int,
                 mask,
                 pane_lines,
-                floating,
             );
             wy += 1;
         }
@@ -754,7 +689,6 @@ unsafe fn redraw_mark_pane_borders(
                 0 as ::core::ffi::c_int,
                 mask,
                 pane_lines,
-                floating,
             );
             wy += 1;
         }
@@ -939,7 +873,7 @@ unsafe fn redraw_build_cells<'a>(
         }
         y = y.wrapping_add(1);
     }
-    for pane_owner in (*bctx).w.stacking_snapshot().into_iter().rev() {
+    for pane_owner in (*bctx).w.pane_snapshot().into_iter().rev() {
         redraw_mark_pane(bctx, &pane_owner);
     }
     redraw_mark_two_pane_colours(bctx);

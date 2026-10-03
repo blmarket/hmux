@@ -7,10 +7,7 @@ use crate::src::server_client::Client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::colour::colour_palette;
 use crate::src::shared::command::{cmd, cmd_retval};
-use crate::src::shared::pane::{
-    PANE_ACTIVITY, PANE_CAPTUREALLKEYS, PANE_CLOSEONCANCEL, PANE_CLOSEONCLICK, PANE_DROP,
-    PANE_MINIMUM, PANE_NEWSTATUS,
-};
+use crate::src::shared::pane::{PANE_ACTIVITY, PANE_DROP, PANE_MINIMUM, PANE_NEWSTATUS};
 use crate::src::shared::screen::MODE_SYNC;
 use crate::src::shared::window::{WindowRef, WindowWeak};
 use std::os::fd::AsRawFd;
@@ -29,9 +26,7 @@ pub trait WindowPane {
 
     /// Visible geometry including the reserved scrollbar area, copied for hit testing.
     unsafe fn outer_geometry(&self) -> (i32, i32, u32, u32);
-    unsafe fn is_floating(&self) -> bool;
     unsafe fn is_visible(&self) -> bool;
-    unsafe fn contains(&self, x: u32, y: u32) -> bool;
     unsafe fn pane_lines(&self) -> pane_lines;
     unsafe fn border_status(&self) -> i32;
     /// Minimum width for splitting this pane into two, using the caller's
@@ -127,10 +122,6 @@ pub trait WindowPane {
     unsafe fn matches_terminal_name(&self, name: &CStr) -> bool;
     unsafe fn close_after_key(&self, key: key_code) -> bool;
     unsafe fn has_exited(&self) -> bool;
-    unsafe fn closes_on_click(&self) -> bool;
-    unsafe fn closes_on_cancel(&self) -> bool;
-    /// Whether the pane consumes all nonmouse keys outside a mode.
-    unsafe fn captures_keys(&self) -> bool;
     unsafe fn has_modes(&self) -> bool;
     unsafe fn mode_entry(&self) -> refbox::Weak<window_mode_entry>;
     unsafe fn notify_style_changed(&self);
@@ -153,7 +144,6 @@ pub trait WindowPane {
     unsafe fn restore_layout_after_zoom(&self);
     unsafe fn mark_zoomed(&self);
     unsafe fn is_zoomed(&self) -> bool;
-    unsafe fn floats_over_zoom(&self) -> bool;
     unsafe fn minimum_layout_width(&self, reserve_scrollbar: bool) -> u32;
     /// Apply copied Window geometry, including pane border and scrollbar policy.
     /// Returns whether the visible geometry changed; resize callbacks run after
@@ -175,8 +165,6 @@ pub trait WindowPane {
     unsafe fn set_title(&self, title: &CStr) -> bool;
     /// Trim history below the base cursor when no mode owns the displayed screen.
     unsafe fn trim_history(&self);
-    /// Enable modal input behavior before publishing the new pane.
-    unsafe fn configure_modal(&self, capture_keys: bool, close_click: bool, close_cancel: bool);
     unsafe fn wait_until_close(&self, item: &Rc<UnsafeCell<cmdq_item>>);
     /// Start stdin delivery to an empty pane, retaining command waits in the file callback.
     unsafe fn start_input(&self, item: &Rc<UnsafeCell<cmdq_item>>) -> Result<i32, CString>;
@@ -474,16 +462,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn has_exited(&self) -> bool {
         (*self.get()).flags & PANE_EXITED != 0
-    }
-    unsafe fn closes_on_click(&self) -> bool {
-        (*self.get()).flags & crate::src::shared::pane::PANE_CLOSEONCLICK != 0
-    }
-    unsafe fn closes_on_cancel(&self) -> bool {
-        (*self.get()).flags & crate::src::shared::pane::PANE_CLOSEONCANCEL != 0
-    }
-    unsafe fn captures_keys(&self) -> bool {
-        let pane = &*self.get();
-        pane.flags & crate::src::shared::pane::PANE_CAPTUREALLKEYS != 0 && pane.modes.is_empty()
     }
     unsafe fn has_modes(&self) -> bool {
         !(*self.get()).modes.is_empty()
@@ -871,18 +849,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         pane.base.cy = pane.base.cy.wrapping_add(adjust);
         pane.flags |= PANE_REDRAW;
     }
-    unsafe fn configure_modal(&self, capture_keys: bool, close_click: bool, close_cancel: bool) {
-        let pane = &mut *self.get();
-        if capture_keys {
-            pane.flags |= PANE_CAPTUREALLKEYS;
-        }
-        if close_click {
-            pane.flags |= PANE_CLOSEONCLICK;
-        }
-        if close_cancel {
-            pane.flags |= PANE_CLOSEONCANCEL;
-        }
-    }
     unsafe fn wait_until_close(&self, item: &Rc<UnsafeCell<cmdq_item>>) {
         (*self.get()).wait_item = Rc::downgrade(item);
     }
@@ -919,9 +885,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     unsafe fn is_zoomed(&self) -> bool {
         (*self.get()).flags & PANE_ZOOMED != 0
     }
-    unsafe fn floats_over_zoom(&self) -> bool {
-        (*self.get()).flags & PANE_FLOATOVERZOOM != 0
-    }
     unsafe fn minimum_layout_width(&self, reserve_scrollbar: bool) -> u32 {
         if reserve_scrollbar {
             let style = &(*self.get()).scrollbar_style;
@@ -945,7 +908,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
             PANE_STATUS_BOTTOM => geometry.has_border(PANE_STATUS_BOTTOM),
             _ => false,
         };
-        if !geometry.is_floating() && has_border {
+        if has_border {
             if status == PANE_STATUS_TOP {
                 yoff += 1;
             }
@@ -1002,14 +965,8 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     unsafe fn outer_geometry(&self) -> (i32, i32, u32, u32) {
         window_pane_full_size_offset(self)
     }
-    unsafe fn is_floating(&self) -> bool {
-        window_pane_is_floating(&*self.get()) != 0
-    }
     unsafe fn is_visible(&self) -> bool {
         window_pane_is_visible(self) != 0
-    }
-    unsafe fn contains(&self, x: u32, y: u32) -> bool {
-        window_pane_contains(self, x, y) != 0
     }
     unsafe fn pane_lines(&self) -> pane_lines {
         window_pane_get_pane_lines(&*self.get())
@@ -1069,7 +1026,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
             window.release(c"unzoomed pane height");
             return None;
         };
-        let status = if geometry.is_saved() && !geometry.is_floating() {
+        let status = if geometry.is_saved() {
             window.pane_border_status()
         } else {
             self.border_status()
@@ -1080,7 +1037,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
             _ => false,
         };
         let height = geometry.g.sy;
-        let height = if !geometry.is_floating() && border && height > 1 {
+        let height = if border && height > 1 {
             height - 1
         } else {
             height

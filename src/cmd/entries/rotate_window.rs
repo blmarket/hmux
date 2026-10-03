@@ -68,10 +68,10 @@ unsafe fn cmd_rotate_window_panes(
     mut resize: impl FnMut(&Rc<UnsafeCell<window_pane>>, u32, u32),
 ) -> Rc<UnsafeCell<window_pane>> {
     let moved = window
-        .step_pane(crate::src::window::PaneOrder::Index, None, down)
+        .step_pane(None, down)
         .expect("rotation window has panes");
     {
-        let mut order = window.borrow_pane_order_mut(crate::src::window::PaneOrder::Index);
+        let mut order = window.borrow_pane_order_mut();
         let observer = Rc::downgrade(&moved);
         assert!(order.remove(&observer), "pane is not in its window order");
         if down {
@@ -83,15 +83,10 @@ unsafe fn cmd_rotate_window_panes(
     let saved_cell = moved.layout_identity(false);
     let (saved_sx, saved_sy, saved_x, saved_y) = moved.geometry();
     let mut cursor = window
-        .step_pane(crate::src::window::PaneOrder::Index, None, !down)
+        .step_pane(None, !down)
         .expect("rotation window has panes");
-    let next = |pane: &Rc<UnsafeCell<window_pane>>| {
-        window.step_pane(
-            crate::src::window::PaneOrder::Index,
-            Some(&Rc::downgrade(pane)),
-            !down,
-        )
-    };
+    let next =
+        |pane: &Rc<UnsafeCell<window_pane>>| window.step_pane(Some(&Rc::downgrade(pane)), !down);
     while let Some(neighbor) = next(&cursor) {
         let cell = neighbor.layout_identity(false);
         let (sx, sy, x, y) = neighbor.geometry();
@@ -104,15 +99,11 @@ unsafe fn cmd_rotate_window_panes(
     cursor.set_layout_offset(saved_x, saved_y);
     resize(&cursor, saved_sx, saved_sy);
     let active = window.active_pane();
-    let selected = active.as_ref().and_then(|pane| {
-        window.step_pane(
-            crate::src::window::PaneOrder::Index,
-            Some(&Rc::downgrade(pane)),
-            down,
-        )
-    });
+    let selected = active
+        .as_ref()
+        .and_then(|pane| window.step_pane(Some(&Rc::downgrade(pane)), down));
     selected
-        .or_else(|| window.step_pane(crate::src::window::PaneOrder::Index, None, down))
+        .or_else(|| window.step_pane(None, down))
         .expect("rotation window has an active candidate")
 }
 

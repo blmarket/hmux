@@ -981,9 +981,6 @@ unsafe fn format_cb_pane_x(ft: *mut format_tree) -> Option<CString> {
 unsafe fn format_cb_pane_y(ft: *mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_y", ft)
 }
-unsafe fn format_cb_pane_z(ft: *mut format_tree) -> Option<CString> {
-    pane_format_string(c"pane_z", ft)
-}
 unsafe fn format_cb_pane_zoomed_flag(ft: *mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_zoomed_flag", ft)
 }
@@ -1403,14 +1400,6 @@ unsafe fn format_cb_window_marked_flag(mut ft: *mut format_tree) -> Option<CStri
     }
     None
 }
-unsafe fn format_cb_window_modal_pane(ft: *mut format_tree) -> Option<CString> {
-    let window = (*ft).w.upgrade()?;
-    let value = window
-        .modal_pane()
-        .map(|modal| CString::new(format!("%{}", modal.id())).expect("formatted pane ID"));
-    window.release(c"format modal window pane");
-    value
-}
 
 unsafe fn format_cb_window_name(ft: *mut format_tree) -> Option<CString> {
     let window = (*ft).w.upgrade()?;
@@ -1437,7 +1426,7 @@ unsafe fn format_cb_window_offset_y(ft: *mut format_tree) -> Option<CString> {
 }
 unsafe fn format_cb_window_panes(ft: *mut format_tree) -> Option<CString> {
     let window = (*ft).w.upgrade()?;
-    let value = CString::new(window.pane_count(true).to_string())
+    let value = CString::new(window.pane_snapshot().len().to_string())
         .expect("formatted number contains no NUL");
     window.release(c"format window_panes");
     Some(value)
@@ -1682,7 +1671,7 @@ pub(crate) unsafe fn window_format_value(
     format_table_get(key)?.evaluate(context)
 }
 
-pub(super) static FORMAT_TABLE: [FormatTableEntry; 214] = [
+pub(super) static FORMAT_TABLE: [FormatTableEntry; 212] = [
     FormatTableEntry {
         key: c"active_window_index",
         callback: FormatCallback::String(format_cb_active_window_index),
@@ -2228,10 +2217,6 @@ pub(super) static FORMAT_TABLE: [FormatTableEntry; 214] = [
         callback: FormatCallback::String(format_cb_pane_y),
     },
     FormatTableEntry {
-        key: c"pane_z",
-        callback: FormatCallback::String(format_cb_pane_z),
-    },
-    FormatTableEntry {
         key: c"pane_zoomed_flag",
         callback: FormatCallback::String(format_cb_pane_zoomed_flag),
     },
@@ -2486,10 +2471,6 @@ pub(super) static FORMAT_TABLE: [FormatTableEntry; 214] = [
     FormatTableEntry {
         key: c"window_marked_flag",
         callback: FormatCallback::String(format_cb_window_marked_flag),
-    },
-    FormatTableEntry {
-        key: c"window_modal_pane",
-        callback: FormatCallback::String(format_cb_window_modal_pane),
     },
     FormatTableEntry {
         key: c"window_name",

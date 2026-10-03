@@ -25,7 +25,7 @@ use crate::src::format::bytes::xformat;
 use crate::src::format::format_single_cstring;
 use crate::src::input::input_free;
 use crate::src::layout::{
-    layout_assign_pane, layout_close_pane, layout_floating_pane, layout_free, layout_init,
+    layout_assign_pane, layout_close_pane, layout_free, layout_init, layout_split_pane,
 };
 use crate::src::log::{log_close, log_cstr, log_debug, log_hex};
 use crate::src::names::default_window_name_cstring;
@@ -75,13 +75,10 @@ use crate::src::shared::environment::{environ, environ_entry};
 use crate::src::shared::event::*;
 use crate::src::shared::input::input_ctx;
 use crate::src::shared::key::*;
-use crate::src::shared::layout::layout_geometry;
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::SIZE_MAX;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::{
-    PANE_EMPTY, PANE_EXITED, PANE_FLOATOVERZOOM, PANE_STATUSDRAWN, PANE_STATUSREADY,
-};
+use crate::src::shared::pane::{PANE_EMPTY, PANE_EXITED, PANE_STATUSDRAWN, PANE_STATUSREADY};
 use crate::src::shared::posix_io::{_PATH_BSHELL, STDERR_FILENO, STDIN_FILENO};
 use crate::src::shared::posix_terminal::{winsize, TCSANOW, VERASE};
 use crate::src::shared::screen::{MODE_CRLF, MODE_CURSOR};
@@ -89,8 +86,7 @@ use crate::src::shared::session::session;
 use crate::src::shared::signal::{__sigset_t, sigset_t, SIGCHLD, SIGHUP, SIG_BLOCK, SIG_SETMASK};
 use crate::src::shared::spawn::{spawn_editor_state, spawn_finish_edit_cb};
 use crate::src::shared::spawn::{
-    SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_FLOATING, SPAWN_FLOATOVERZOOM, SPAWN_KILL, SPAWN_MODAL,
-    SPAWN_NONOTIFY, SPAWN_RESPAWN, SPAWN_ZOOM,
+    SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_KILL, SPAWN_NONOTIFY, SPAWN_RESPAWN, SPAWN_ZOOM,
 };
 use crate::src::shared::stdio::FILE;
 use crate::src::shared::terminal::*;
@@ -228,23 +224,13 @@ pub(crate) unsafe fn prepare_respawn_window(
         let source_pane_owner = window.next_pane(None).expect("respawn window has a pane");
         (*sc).wp0 = std::rc::Rc::downgrade(&source_pane_owner);
         let source = std::rc::Rc::downgrade(&source_pane_owner);
-        for order in [
-            crate::src::window::PaneOrder::Index,
-            crate::src::window::PaneOrder::Stacking,
-        ] {
-            assert!(
-                window.borrow_pane_order_mut(order).remove(&source),
-                "pane is not in its window order"
-            );
-        }
+        assert!(
+            window.borrow_pane_order_mut().remove(&source),
+            "pane is not in its window order"
+        );
         layout_free(&window);
         window.destroy_panes();
-        window
-            .borrow_pane_order_mut(crate::src::window::PaneOrder::Index)
-            .push_front(source.clone());
-        window
-            .borrow_pane_order_mut(crate::src::window::PaneOrder::Stacking)
-            .push_back(source);
+        window.borrow_pane_order_mut().push_front(source);
         let (sx, sy) = window.size();
         source_pane_owner.resize(sx, sy);
         layout_init(&window, &source_pane_owner);
@@ -349,21 +335,12 @@ pub(crate) unsafe fn spawn_editor(
         .cloned()
         .expect("editor window");
     let result = (|| {
-        let mut lg: layout_geometry = layout_geometry {
-            sx: 0,
-            sy: 0,
-            xoff: 0,
-            yoff: 0,
-        };
         let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
         let mut cause: Option<CString> = None;
         let mut path: [::core::ffi::c_char; 19] =
             ::core::mem::transmute::<[u8; 19], [::core::ffi::c_char; 19]>(*b"/tmp/tmux.XXXXXXXX\0");
         let mut editor: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut fd: ::core::ffi::c_int = 0;
-        if original_window.modal_pane().is_some() {
-            return None;
-        }
         let editor_value = options_get_string(global_options, c"editor");
         editor = editor_value.as_ptr();
         fd = mkstemp(&raw mut path as *mut ::core::ffi::c_char);
@@ -385,35 +362,15 @@ pub(crate) unsafe fn spawn_editor(
         drop(stream);
         let mut owner = spawn_editor_state::new(CStr::from_ptr(path.as_ptr()).to_owned(), cb);
         es = &raw mut *owner;
-        lg.sx = ((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
-            .size()
-            .0
-            .wrapping_mul(9 as u_int)
-            .wrapping_div(10 as u_int);
-        lg.sy = ((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
-            .size()
-            .1
-            .wrapping_mul(9 as u_int)
-            .wrapping_div(10 as u_int);
-        lg.xoff = ((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
-            .size()
-            .0
-            .wrapping_div(2 as u_int)
-            .wrapping_sub(lg.sx.wrapping_div(2 as u_int)) as ::core::ffi::c_int;
-        lg.yoff = ((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
-            .size()
-            .1
-            .wrapping_div(2 as u_int)
-            .wrapping_sub(lg.sy.wrapping_div(2 as u_int)) as ::core::ffi::c_int;
-        std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
-            .push_zoom(false, true);
-        let layout_id = layout_floating_pane(
-            &std::rc::Rc::clone(
-                (wl.get_unchecked().window_handle().as_ref()).expect("live window"),
-            ),
-            None,
-            &raw mut lg,
-        );
+        // The editor runs in a temporary pane split from the active one; it
+        // closes when the editor exits and selection returns to that pane.
+        original_window.push_zoom(false, true);
+        let source = original_window.active_pane().expect("editor source pane");
+        let Some(layout_id) = layout_split_pane(&source, LAYOUT_TOPBOTTOM, -1, 0) else {
+            original_window.pop_zoom();
+            unlink(&raw mut path as *mut ::core::ffi::c_char);
+            return None;
+        };
         let cmd = CString::new(
             [
                 CStr::from_ptr(editor).to_bytes(),
@@ -426,13 +383,12 @@ pub(crate) unsafe fn spawn_editor(
         sc.s = std::rc::Rc::downgrade(&session_owner);
         sc.set_wl(wl.clone());
         sc.tc = std::rc::Rc::downgrade(client_owner);
-        sc.wp0 = original_window.active_pane_observer();
+        sc.wp0 = std::rc::Rc::downgrade(&source);
         sc.layout = Some(layout_id);
         sc.argv = vec![cmd];
         sc.environ = Some(environ_create());
         sc.idx = -(1 as ::core::ffi::c_int);
         sc.cwd = Some(c"/tmp/".to_owned());
-        sc.flags = SPAWN_FLOATING | SPAWN_MODAL | SPAWN_FLOATOVERZOOM;
         let spawned_pane = spawn_pane(&raw mut sc, &raw mut cause);
         let Some(pane) = spawned_pane else {
             std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window"))

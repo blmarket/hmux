@@ -2244,8 +2244,6 @@ pub(super) unsafe fn format_replace(
                     } else {
                         if !strchr((*fm).arg(0), 'i' as i32).is_null() {
                             (*sc).order = SORT_INDEX;
-                        } else if !strchr((*fm).arg(0), 'z' as i32).is_null() {
-                            (*sc).order = SORT_Z;
                         } else {
                             (*sc).order = SORT_CREATION;
                         }

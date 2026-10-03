@@ -2,7 +2,6 @@ use crate::src::arguments::{
     args_has, args_percentage_and_expand_result, args_strtonum_and_expand_result,
 };
 use crate::src::events::events_fire_window;
-use crate::src::ffi::libc::memcpy;
 use crate::src::log::{fatalx, log_cstr, log_cstr_width, log_debug, log_pointer};
 use crate::src::shared::abi::*;
 pub use crate::src::shared::arguments::args;
@@ -10,7 +9,6 @@ pub use crate::src::shared::command::cmdq_item;
 pub use crate::src::shared::environment::environ;
 pub use crate::src::shared::format::{format_job_tree, format_tree};
 pub use crate::src::shared::key::key_event;
-pub use crate::src::shared::layout::layout_geometry;
 use crate::src::shared::layout::*;
 pub use crate::src::shared::layout::{layout_cell, layout_cells};
 pub use crate::src::shared::limits::{INT_MAX, UINT_MAX};
@@ -18,26 +16,17 @@ pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::options;
 pub use crate::src::shared::pane::window_pane;
 pub use crate::src::shared::pane::{
-    PANE_MAXIMUM, PANE_MINIMUM, PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_LEFT,
+    PANE_MINIMUM, PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_LEFT,
     PANE_STATUS_BOTTOM, PANE_STATUS_TOP,
 };
-pub use crate::src::shared::spawn::{
-    SPAWN_BEFORE, SPAWN_FLOATOVERZOOM, SPAWN_FULLSIZE, SPAWN_HORIZONTAL, SPAWN_SPLIT, SPAWN_ZOOM,
-};
+pub use crate::src::shared::spawn::{SPAWN_BEFORE, SPAWN_FULLSIZE, SPAWN_HORIZONTAL, SPAWN_ZOOM};
 use crate::src::shared::style::*;
 pub use crate::src::shared::tty::tty_term;
 pub use crate::src::shared::window::window;
 use crate::src::shared::window::WindowRef;
 use crate::src::window::Window as _;
 use crate::src::window_pane::WindowPane as _;
-use std::ffi::{CStr, CString};
 
-unsafe fn layout_geometry_init(mut lg: *mut layout_geometry) {
-    (*lg).sx = UINT_MAX as u_int;
-    (*lg).sy = UINT_MAX as u_int;
-    (*lg).xoff = INT_MAX;
-    (*lg).yoff = INT_MAX;
-}
 pub fn layout_create_cell() -> Box<layout_cell> {
     layout_cell::new()
 }
@@ -200,72 +189,6 @@ pub unsafe fn layout_make_node(mut lc: *mut layout_cell, mut type_0: layout_type
     }
     (*lc).wp = std::rc::Weak::new();
 }
-pub unsafe fn layout_cell_is_tiled(mut lc: *mut layout_cell) -> ::core::ffi::c_int {
-    let mut is_leaf: ::core::ffi::c_int = ((*lc).type_0 as ::core::ffi::c_uint
-        == LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint)
-        as ::core::ffi::c_int;
-    let mut is_floating: ::core::ffi::c_int = (*lc).flags & LAYOUT_CELL_FLOATING;
-    (is_leaf != 0 && is_floating == 0) as ::core::ffi::c_int
-}
-pub unsafe fn layout_cell_has_tiled_child(mut lc: *mut layout_cell) -> ::core::ffi::c_int {
-    let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    if (*lc).type_0 as ::core::ffi::c_uint
-        == LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return 0 as ::core::ffi::c_int;
-    }
-    lcchild = layout_cells_first(&*lc);
-    while !lcchild.is_null() {
-        if layout_cell_is_tiled(lcchild) != 0 || layout_cell_has_tiled_child(lcchild) != 0 {
-            return 1 as ::core::ffi::c_int;
-        }
-        lcchild = layout_cell_next(lcchild);
-    }
-    0 as ::core::ffi::c_int
-}
-unsafe fn layout_cell_is_first_tiled(mut lc: *mut layout_cell) -> ::core::ffi::c_int {
-    let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut lcparent: *mut layout_cell = (*lc).parent;
-    if lcparent.is_null() {
-        return layout_cell_is_tiled(lc);
-    }
-    lcchild = layout_cells_first(&*lcparent);
-    while !lcchild.is_null() {
-        if layout_cell_is_tiled(lcchild) != 0 || layout_cell_has_tiled_child(lcchild) != 0 {
-            break;
-        }
-        lcchild = layout_cell_next(lcchild);
-    }
-    (lcchild == lc) as ::core::ffi::c_int
-}
-unsafe fn layout_cell_get_first_tiled(mut lc: *mut layout_cell) -> *mut layout_cell {
-    let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut lcchild2: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    if layout_cell_is_tiled(lc) != 0 {
-        return lc;
-    }
-    if (*lc).type_0 as ::core::ffi::c_uint
-        == LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return ::core::ptr::null_mut::<layout_cell>();
-    }
-    lcchild = layout_cells_first(&*lc);
-    while !lcchild.is_null() {
-        if layout_cell_is_tiled(lcchild) != 0 {
-            return lcchild;
-        }
-        if (*lcchild).type_0 as ::core::ffi::c_uint
-            != LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            lcchild2 = layout_cell_get_first_tiled(lcchild);
-            if !lcchild2.is_null() {
-                return lcchild2;
-            }
-        }
-        lcchild = layout_cell_next(lcchild);
-    }
-    ::core::ptr::null_mut::<layout_cell>()
-}
 unsafe fn layout_fix_offsets1(mut lc: *mut layout_cell) {
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut xoff: ::core::ffi::c_int = 0;
@@ -276,34 +199,30 @@ unsafe fn layout_fix_offsets1(mut lc: *mut layout_cell) {
         xoff = (*lc).g.xoff;
         lcchild = layout_cells_first(&*lc);
         while !lcchild.is_null() {
-            if !(layout_cell_is_tiled(lcchild) == 0 && layout_cell_has_tiled_child(lcchild) == 0) {
-                (*lcchild).g.xoff = xoff;
-                (*lcchild).g.yoff = (*lc).g.yoff;
-                if (*lcchild).type_0 as ::core::ffi::c_uint
-                    != LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
-                {
-                    layout_fix_offsets1(lcchild);
-                }
-                xoff = (xoff as u_int).wrapping_add((*lcchild).g.sx.wrapping_add(1 as u_int))
-                    as ::core::ffi::c_int as ::core::ffi::c_int;
+            (*lcchild).g.xoff = xoff;
+            (*lcchild).g.yoff = (*lc).g.yoff;
+            if (*lcchild).type_0 as ::core::ffi::c_uint
+                != LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
+            {
+                layout_fix_offsets1(lcchild);
             }
+            xoff = (xoff as u_int).wrapping_add((*lcchild).g.sx.wrapping_add(1 as u_int))
+                as ::core::ffi::c_int as ::core::ffi::c_int;
             lcchild = layout_cell_next(lcchild);
         }
     } else {
         yoff = (*lc).g.yoff;
         lcchild = layout_cells_first(&*lc);
         while !lcchild.is_null() {
-            if !(layout_cell_is_tiled(lcchild) == 0 && layout_cell_has_tiled_child(lcchild) == 0) {
-                (*lcchild).g.xoff = (*lc).g.xoff;
-                (*lcchild).g.yoff = yoff;
-                if (*lcchild).type_0 as ::core::ffi::c_uint
-                    != LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
-                {
-                    layout_fix_offsets1(lcchild);
-                }
-                yoff = (yoff as u_int).wrapping_add((*lcchild).g.sy.wrapping_add(1 as u_int))
-                    as ::core::ffi::c_int as ::core::ffi::c_int;
+            (*lcchild).g.xoff = (*lc).g.xoff;
+            (*lcchild).g.yoff = yoff;
+            if (*lcchild).type_0 as ::core::ffi::c_uint
+                != LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
+            {
+                layout_fix_offsets1(lcchild);
             }
+            yoff = (yoff as u_int).wrapping_add((*lcchild).g.sy.wrapping_add(1 as u_int))
+                as ::core::ffi::c_int as ::core::ffi::c_int;
             lcchild = layout_cell_next(lcchild);
         }
     };
@@ -311,27 +230,9 @@ unsafe fn layout_fix_offsets1(mut lc: *mut layout_cell) {
 pub unsafe fn layout_fix_offsets(w_owner: &WindowRef) {
     let mut tree = w_owner.borrow_layout_root_mut();
     let lc = tree.as_deref_mut().expect("layout root") as *mut layout_cell;
-    if (*lc).flags & LAYOUT_CELL_FLOATING != 0 {
-        return;
-    }
     (*lc).g.xoff = 0 as ::core::ffi::c_int;
     (*lc).g.yoff = 0 as ::core::ffi::c_int;
     layout_fix_offsets1(lc);
-}
-unsafe fn layout_cell_is_last_tiled(mut lc: *mut layout_cell) -> ::core::ffi::c_int {
-    let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut lcparent: *mut layout_cell = (*lc).parent;
-    if lcparent.is_null() {
-        return layout_cell_is_tiled(lc);
-    }
-    lcchild = layout_cells_last(&*lcparent);
-    while !lcchild.is_null() {
-        if layout_cell_is_tiled(lcchild) != 0 || layout_cell_has_tiled_child(lcchild) != 0 {
-            break;
-        }
-        lcchild = layout_cell_prev(lcchild);
-    }
-    (lcchild == lc) as ::core::ffi::c_int
 }
 unsafe fn layout_cell_is_top(
     mut root: *mut layout_cell,
@@ -345,7 +246,7 @@ unsafe fn layout_cell_is_top(
         }
         if (*next).type_0 as ::core::ffi::c_uint
             == LAYOUT_TOPBOTTOM as ::core::ffi::c_int as ::core::ffi::c_uint
-            && layout_cell_is_first_tiled(lc) == 0
+            && lc != layout_cells_first(&*next)
         {
             return 0 as ::core::ffi::c_int;
         }
@@ -365,7 +266,7 @@ unsafe fn layout_cell_is_bottom(
         }
         if (*next).type_0 as ::core::ffi::c_uint
             == LAYOUT_TOPBOTTOM as ::core::ffi::c_int as ::core::ffi::c_uint
-            && layout_cell_is_last_tiled(lc) == 0
+            && lc != layout_cells_last(&*next)
         {
             return 0 as ::core::ffi::c_int;
         }
@@ -414,23 +315,15 @@ pub unsafe fn layout_fix_panes(
     }
     changed
 }
-pub unsafe fn layout_count_cells(
-    mut lc: *mut layout_cell,
-    mut with_floating: ::core::ffi::c_int,
-) -> u_int {
+pub unsafe fn layout_count_cells(mut lc: *mut layout_cell) -> u_int {
     let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut count: u_int = 0 as u_int;
     match (*lc).type_0 as ::core::ffi::c_uint {
-        2 => {
-            if (*lc).flags & LAYOUT_CELL_FLOATING != 0 && with_floating == 0 {
-                return 0 as u_int;
-            }
-            1 as u_int
-        }
+        2 => 1 as u_int,
         0 | 1 => {
             lcchild = layout_cells_first(&*lc);
             while !lcchild.is_null() {
-                count = count.wrapping_add(layout_count_cells(lcchild, with_floating));
+                count = count.wrapping_add(layout_count_cells(lcchild));
                 lcchild = layout_cell_next(lcchild);
             }
             count
@@ -464,9 +357,6 @@ pub(super) unsafe fn layout_resize_check_with_limits(
     let mut minimum: u_int = 0;
     let mut status: ::core::ffi::c_int = 0;
     status = pane_status;
-    if layout_cell_is_tiled(lc) == 0 && layout_cell_has_tiled_child(lc) == 0 {
-        return 0 as u_int;
-    }
     if (*lc).type_0 as ::core::ffi::c_uint
         == LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
     {
@@ -505,17 +395,15 @@ pub(super) unsafe fn layout_resize_check_with_limits(
         minimum = UINT_MAX as u_int;
         lcchild = layout_cells_first(&*lc);
         while !lcchild.is_null() {
-            if !(layout_cell_is_tiled(lcchild) == 0 && layout_cell_has_tiled_child(lcchild) == 0) {
-                available = layout_resize_check_with_limits(
-                    root,
-                    pane_status,
-                    horizontal_minimum,
-                    lcchild,
-                    type_0,
-                );
-                if available < minimum {
-                    minimum = available;
-                }
+            available = layout_resize_check_with_limits(
+                root,
+                pane_status,
+                horizontal_minimum,
+                lcchild,
+                type_0,
+            );
+            if available < minimum {
+                minimum = available;
             }
             lcchild = layout_cell_next(lcchild);
         }
@@ -548,21 +436,16 @@ pub(super) unsafe fn layout_resize_adjust_with_limits(
     if (*lc).type_0 as ::core::ffi::c_uint != type_0 as ::core::ffi::c_uint {
         lcchild = layout_cells_first(&*lc);
         while !lcchild.is_null() {
-            if !(layout_cell_is_tiled(lcchild) == 0 && layout_cell_has_tiled_child(lcchild) == 0) {
-                layout_resize_adjust_with_limits(
-                    root,
-                    pane_status,
-                    horizontal_minimum,
-                    lcchild,
-                    type_0,
-                    change,
-                );
-            }
+            layout_resize_adjust_with_limits(
+                root,
+                pane_status,
+                horizontal_minimum,
+                lcchild,
+                type_0,
+                change,
+            );
             lcchild = layout_cell_next(lcchild);
         }
-        return;
-    }
-    if layout_cell_has_tiled_child(lc) == 0 {
         return;
     }
     while change != 0 as ::core::ffi::c_int {
@@ -572,37 +455,35 @@ pub(super) unsafe fn layout_resize_adjust_with_limits(
             if change == 0 as ::core::ffi::c_int {
                 break;
             }
-            if !(layout_cell_is_tiled(lcchild) == 0 && layout_cell_has_tiled_child(lcchild) == 0) {
-                if change > 0 as ::core::ffi::c_int {
-                    layout_resize_adjust_with_limits(
-                        root,
-                        pane_status,
-                        horizontal_minimum,
-                        lcchild,
-                        type_0,
-                        1 as ::core::ffi::c_int,
-                    );
-                    change -= 1;
-                    changed = 1 as ::core::ffi::c_int;
-                } else if layout_resize_check_with_limits(
+            if change > 0 as ::core::ffi::c_int {
+                layout_resize_adjust_with_limits(
                     root,
                     pane_status,
                     horizontal_minimum,
                     lcchild,
                     type_0,
-                ) > 0 as u_int
-                {
-                    layout_resize_adjust_with_limits(
-                        root,
-                        pane_status,
-                        horizontal_minimum,
-                        lcchild,
-                        type_0,
-                        -(1 as ::core::ffi::c_int),
-                    );
-                    change += 1;
-                    changed = 1 as ::core::ffi::c_int;
-                }
+                    1 as ::core::ffi::c_int,
+                );
+                change -= 1;
+                changed = 1 as ::core::ffi::c_int;
+            } else if layout_resize_check_with_limits(
+                root,
+                pane_status,
+                horizontal_minimum,
+                lcchild,
+                type_0,
+            ) > 0 as u_int
+            {
+                layout_resize_adjust_with_limits(
+                    root,
+                    pane_status,
+                    horizontal_minimum,
+                    lcchild,
+                    type_0,
+                    -(1 as ::core::ffi::c_int),
+                );
+                change += 1;
+                changed = 1 as ::core::ffi::c_int;
             }
             lcchild = layout_cell_next(lcchild);
         }
@@ -611,60 +492,16 @@ pub(super) unsafe fn layout_resize_adjust_with_limits(
         }
     }
 }
-unsafe fn layout_resize_set_size_with_limits(
-    root: *mut layout_cell,
-    pane_status: i32,
-    horizontal_minimum: u32,
-    cell: *mut layout_cell,
-    direction: layout_type,
-    size: u32,
-) {
-    let previous = if direction == LAYOUT_LEFTRIGHT {
-        (*cell).g.sx
-    } else {
-        (*cell).g.sy
-    };
-    layout_resize_adjust_with_limits(
-        root,
-        pane_status,
-        horizontal_minimum,
-        cell,
-        direction,
-        size.wrapping_sub(previous) as i32,
-    );
-}
-unsafe fn layout_cell_get_neighbour_dir(
-    mut lc: *mut layout_cell,
-    mut direction: ::core::ffi::c_int,
-) -> *mut layout_cell {
-    let mut lcn: *mut layout_cell = lc;
-    loop {
-        if direction != 0 {
-            lcn = layout_cell_next(lcn);
-        } else {
-            lcn = layout_cell_prev(lcn);
-        }
-        if lcn.is_null() || layout_cell_is_tiled(lcn) != 0 || layout_cell_has_tiled_child(lcn) != 0
-        {
-            return lcn;
-        }
-    }
-}
-pub unsafe fn layout_cell_get_neighbour(mut lc: *mut layout_cell) -> *mut layout_cell {
-    let mut lcother: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut lcparent: *mut layout_cell = (*lc).parent;
-    let mut direction: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
+pub unsafe fn layout_cell_get_neighbour(lc: *mut layout_cell) -> *mut layout_cell {
+    let lcparent: *mut layout_cell = (*lc).parent;
     if lcparent.is_null() {
         return ::core::ptr::null_mut::<layout_cell>();
     }
     if lc == layout_cells_last(&*lcparent) {
-        direction = (direction == 0) as ::core::ffi::c_int;
+        layout_cell_prev(lc)
+    } else {
+        layout_cell_next(lc)
     }
-    lcother = layout_cell_get_neighbour_dir(lc, direction);
-    if lcother.is_null() {
-        lcother = layout_cell_get_neighbour_dir(lc, (direction == 0) as ::core::ffi::c_int);
-    }
-    lcother
 }
 /// Removal from a detached parser-owned tree. Live Window removal uses the
 /// pure helper with policy copied before its root is borrowed.
@@ -673,12 +510,11 @@ pub unsafe fn layout_destroy_cell(
     cell: *mut layout_cell,
     root: &mut Option<Box<layout_cell>>,
 ) {
-    let (pane_status, horizontal_minimum) =
-        if !(*cell).parent.is_null() && layout_cell_is_tiled(cell) != 0 {
-            layout_resize_limits(window.expect("tiled cell removal requires a live window"))
-        } else {
-            (0, 0)
-        };
+    let (pane_status, horizontal_minimum) = if !(*cell).parent.is_null() {
+        layout_resize_limits(window.expect("cell removal requires a live window"))
+    } else {
+        (0, 0)
+    };
     layout_destroy_cell_with_limits(pane_status, horizontal_minimum, cell, root);
 }
 unsafe fn layout_destroy_cell_with_limits(
@@ -693,30 +529,21 @@ unsafe fn layout_destroy_cell_with_limits(
         drop(root.take());
         return;
     }
-    if layout_cell_is_tiled(lc) != 0 {
-        let other = layout_cell_get_neighbour(lc);
-        if !other.is_null() {
-            let change = if (*parent).type_0 == LAYOUT_LEFTRIGHT {
-                (*lc).g.sx.wrapping_add(1)
-            } else {
-                (*lc).g.sy.wrapping_add(1)
-            };
-            layout_resize_adjust_with_limits(
-                root.as_deref_mut().unwrap(),
-                pane_status,
-                horizontal_minimum,
-                other,
-                (*parent).type_0,
-                change as i32,
-            );
+    let other = layout_cell_get_neighbour(lc);
+    if !other.is_null() {
+        let change = if (*parent).type_0 == LAYOUT_LEFTRIGHT {
+            (*lc).g.sx.wrapping_add(1)
         } else {
-            layout_remove_tile_with_limits(
-                root.as_deref_mut().unwrap(),
-                pane_status,
-                horizontal_minimum,
-                parent,
-            );
-        }
+            (*lc).g.sy.wrapping_add(1)
+        };
+        layout_resize_adjust_with_limits(
+            root.as_deref_mut().unwrap(),
+            pane_status,
+            horizontal_minimum,
+            other,
+            (*parent).type_0,
+            change as i32,
+        );
     }
     drop(layout_cells_remove(parent, lc).expect("removed cell is owned"));
     if (*parent).cells.len() == 1 {
@@ -724,10 +551,8 @@ unsafe fn layout_destroy_cell_with_limits(
         let mut child_owner = layout_cells_remove(parent, child).expect("remaining child is owned");
         let grandparent = (*parent).parent;
         if grandparent.is_null() {
-            if layout_cell_is_tiled(child) != 0 {
-                child_owner.g.xoff = 0;
-                child_owner.g.yoff = 0;
-            }
+            child_owner.g.xoff = 0;
+            child_owner.g.yoff = 0;
             *root = Some(child_owner);
         } else {
             drop(layout_cells_replace(grandparent, parent, child_owner));
@@ -742,11 +567,7 @@ pub unsafe fn logical_size(w_owner: &WindowRef) -> (u32, u32) {
     let Some(root) = w_owner.borrow_layout_root(crate::src::window::LayoutView::Visible) else {
         return (sx, sy);
     };
-    let root = &*root as *const layout_cell as *mut layout_cell;
-    if layout_cell_is_tiled(root) == 0 && layout_cell_has_tiled_child(root) == 0 {
-        return (sx, sy);
-    }
-    (sx.max((*root).g.sx), sy.max((*root).g.sy))
+    (sx.max(root.g.sx), sy.max(root.g.sy))
 }
 
 pub unsafe fn layout_init(
@@ -767,115 +588,11 @@ pub unsafe fn layout_free(w_owner: &WindowRef) {
     let detached = w_owner.borrow_layout_root_mut().take();
     drop(detached);
 }
-unsafe fn layout_clamp_floating_panes(window: &WindowRef, sx: u_int, sy: u_int) {
-    let mut cursor = window.step_pane(crate::src::window::PaneOrder::Stacking, None, false);
-    while let Some(pane) = cursor {
-        let id = pane.layout_identity(false);
-        if let Some(id) = id {
-            let floating = {
-                window
-                    .borrow_layout_cell(id)
-                    .is_some_and(|cell| cell.flags & LAYOUT_CELL_FLOATING != 0)
-            };
-            if floating {
-                let pad = (pane.pane_lines() != PANE_LINES_NONE) as u32;
-                let mut cell = window
-                    .borrow_layout_cell_mut(id)
-                    .expect("floating pane belongs to layout");
-                layout_clamp_floating_cell(cell, sx, sy, pad);
-            }
-        }
-        cursor = window.step_pane(
-            crate::src::window::PaneOrder::Stacking,
-            Some(&std::rc::Rc::downgrade(&pane)),
-            false,
-        );
-    }
-}
-
-fn layout_clamp_floating_cell(cell: &mut layout_cell, sx: u32, sy: u32, pad: u32) {
-    let x_available = sx.saturating_sub(2 * pad);
-    if cell.g.sx > x_available {
-        cell.g.sx = x_available.max(PANE_MINIMUM as u32);
-    }
-    let y_available = sy.saturating_sub(2 * pad);
-    if cell.g.sy > y_available {
-        cell.g.sy = y_available.max(PANE_MINIMUM as u32);
-    }
-    if (cell.g.xoff as u32)
-        .wrapping_add(cell.g.sx)
-        .wrapping_add(pad)
-        > sx
-    {
-        cell.g.xoff = if cell.g.sx.wrapping_add(2 * pad) >= sx {
-            pad as i32
-        } else {
-            sx.wrapping_sub(cell.g.sx).wrapping_sub(pad) as i32
-        };
-    }
-    if (cell.g.yoff as u32)
-        .wrapping_add(cell.g.sy)
-        .wrapping_add(pad)
-        > sy
-    {
-        cell.g.yoff = if cell.g.sy.wrapping_add(2 * pad) >= sy {
-            pad as i32
-        } else {
-            sy.wrapping_sub(cell.g.sy).wrapping_sub(pad) as i32
-        };
-    }
-}
-
-#[cfg(test)]
-mod floating_clamp_tests {
-    use super::*;
-
-    #[test]
-    fn clamping_keeps_minimum_size_and_accounts_for_optional_borders() {
-        for (width, height, pad, expected) in [
-            (20, 12, 0, (20, 12, 0, 0)),
-            (20, 12, 1, (18, 10, 1, 1)),
-            (1, 1, 1, (1, 1, 1, 1)),
-        ] {
-            let mut cell = layout_create_cell();
-            cell.g = layout_geometry {
-                sx: 30,
-                sy: 22,
-                xoff: 25,
-                yoff: 17,
-            };
-            layout_clamp_floating_cell(&mut cell, width, height, pad);
-            assert_eq!((cell.g.sx, cell.g.sy, cell.g.xoff, cell.g.yoff), expected);
-        }
-        let mut cell = layout_create_cell();
-        cell.g = layout_geometry {
-            sx: 5,
-            sy: 3,
-            xoff: 18,
-            yoff: 10,
-        };
-        layout_clamp_floating_cell(&mut cell, 20, 12, 1);
-        assert_eq!(
-            (cell.g.sx, cell.g.sy, cell.g.xoff, cell.g.yoff),
-            (5, 3, 14, 8)
-        );
-    }
-}
 /// Fit the layout to an `sx` by `sy` window: arrange the sticky preset, or
 /// adjust the tree proportionally when there is none or it declines. Returns
 /// whether the tree or any pane moved.
 pub unsafe fn layout_resize(w_owner: &WindowRef, mut sx: u_int, mut sy: u_int) -> bool {
-    let floating_root = {
-        let mut tree = w_owner.borrow_layout_root_mut();
-        let root = tree.as_deref_mut().expect("layout root");
-        root.type_0 == LAYOUT_WINDOWPANE && root.flags & LAYOUT_CELL_FLOATING != 0
-    };
-    if floating_root {
-        layout_clamp_floating_panes(w_owner, sx, sy);
-        return layout_fix_panes(w_owner, None);
-    }
     if super::set::layout_set_arrange_sticky(w_owner, sx, sy) {
-        layout_clamp_floating_panes(w_owner, sx, sy);
         return layout_fix_panes(w_owner, None);
     }
     let (pane_status, horizontal_minimum) = layout_resize_limits(w_owner);
@@ -946,7 +663,6 @@ pub unsafe fn layout_resize(w_owner: &WindowRef, mut sx: u_int, mut sy: u_int) -
         adjusted = xchange != 0 || ychange != 0;
     }
     layout_fix_offsets(w_owner);
-    layout_clamp_floating_panes(w_owner, sx, sy);
     layout_fix_panes(w_owner, None) || adjusted
 }
 pub unsafe fn layout_resize_pane_to(
@@ -977,7 +693,7 @@ pub unsafe fn layout_resize_pane_to(
         } else {
             (*cell).g.sy
         };
-        Some(if layout_cell_is_last_tiled(cell) != 0 {
+        Some(if cell == layout_cells_last(&*parent) {
             size.wrapping_sub(new_size) as i32
         } else {
             new_size.wrapping_sub(size) as i32
@@ -1050,99 +766,6 @@ mod layout_cell_collection_tests {
     }
 }
 
-pub unsafe fn layout_resize_floating_pane_to(
-    pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    direction: layout_type,
-    mut size: u_int,
-) -> Result<(), std::ffi::CString> {
-    let window = pane
-        .window_observer()
-        .upgrade()
-        .expect("resized pane window");
-    let result = (|| {
-        let id = pane.layout_identity(false).expect("floating pane layout");
-        let floating = {
-            window
-                .borrow_layout_cell(id)
-                .expect("floating pane belongs to layout")
-                .flags
-                & LAYOUT_CELL_FLOATING
-                != 0
-        };
-        if !floating {
-            return Err(c"pane is not floating".to_owned());
-        }
-        if pane.pane_lines() != PANE_LINES_NONE && size >= (PANE_MINIMUM + 2) as u32 {
-            size -= 2;
-        }
-        if size < PANE_MINIMUM as u32 || size > PANE_MAXIMUM as u32 {
-            return Err(c"size is too big or too small".to_owned());
-        }
-        let changed = {
-            let mut guard = window
-                .borrow_layout_cell_mut(id)
-                .expect("floating pane belongs to layout");
-            let cell = &mut *guard;
-            let current = if direction == LAYOUT_TOPBOTTOM {
-                &mut cell.g.sy
-            } else {
-                &mut cell.g.sx
-            };
-            let changed = *current != size;
-            *current = size;
-            changed
-        };
-        if changed {
-            window.invalidate_scene();
-        }
-        Ok(())
-    })();
-    window.release(c"resize floating pane to size");
-    result
-}
-pub unsafe fn layout_resize_floating_pane(
-    pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    direction: layout_type,
-    change: ::core::ffi::c_int,
-    opposite: ::core::ffi::c_int,
-) -> Result<(), std::ffi::CString> {
-    let window = pane
-        .window_observer()
-        .upgrade()
-        .expect("resized pane window");
-    let result = (|| {
-        let id = pane.layout_identity(false).expect("floating pane layout");
-        {
-            let mut guard = window
-                .borrow_layout_cell_mut(id)
-                .expect("floating pane belongs to layout");
-            let cell = &mut *guard;
-            if cell.flags & LAYOUT_CELL_FLOATING == 0 {
-                return Err(c"pane is not floating".to_owned());
-            }
-            if change == 0 {
-                return Ok(());
-            }
-            let (current, offset) = if direction == LAYOUT_TOPBOTTOM {
-                (&mut cell.g.sy, &mut cell.g.yoff)
-            } else {
-                (&mut cell.g.sx, &mut cell.g.xoff)
-            };
-            let size = current.wrapping_add(change as u32);
-            if size < PANE_MINIMUM as u32 || size > PANE_MAXIMUM as u32 {
-                return Err(c"change is too big or too small".to_owned());
-            }
-            *current = size;
-            if opposite != 0 {
-                *offset -= change;
-            }
-        }
-        window.invalidate_scene();
-        Ok(())
-    })();
-    window.release(c"resize floating pane");
-    result
-}
 /// Resize a previously observed border. A callback may have removed it since
 /// observation; a stale identity is ignored, never resolved through an old address.
 pub unsafe fn layout_resize_layout(
@@ -1232,8 +855,8 @@ pub unsafe fn layout_resize_pane(
         if parent.is_null() {
             return None;
         }
-        if layout_cell_is_last_tiled(cell) != 0 {
-            cell = layout_cell_get_neighbour_dir(cell, 0);
+        if cell == layout_cells_last(&*parent) {
+            cell = layout_cell_prev(cell);
             if cell.is_null() {
                 return None;
             }
@@ -1258,7 +881,7 @@ unsafe fn layout_resize_pane_grow(
     let mut lcremove: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
     let mut size: u_int = 0 as u_int;
     lcadd = lc;
-    lcremove = layout_cell_get_neighbour_dir(lc, 1 as ::core::ffi::c_int);
+    lcremove = layout_cell_next(lc);
     while !lcremove.is_null() {
         size = layout_resize_check_with_limits(
             root,
@@ -1270,10 +893,10 @@ unsafe fn layout_resize_pane_grow(
         if size > 0 as u_int {
             break;
         }
-        lcremove = layout_cell_get_neighbour_dir(lcremove, 1 as ::core::ffi::c_int);
+        lcremove = layout_cell_next(lcremove);
     }
     if opposite != 0 && lcremove.is_null() {
-        lcremove = layout_cell_get_neighbour_dir(lc, 0 as ::core::ffi::c_int);
+        lcremove = layout_cell_prev(lc);
         while !lcremove.is_null() {
             size = layout_resize_check_with_limits(
                 root,
@@ -1285,7 +908,7 @@ unsafe fn layout_resize_pane_grow(
             if size > 0 as u_int {
                 break;
             }
-            lcremove = layout_cell_get_neighbour_dir(lcremove, 0 as ::core::ffi::c_int);
+            lcremove = layout_cell_prev(lcremove);
         }
     }
     if lcremove.is_null() {
@@ -1335,7 +958,7 @@ unsafe fn layout_resize_pane_shrink(
         if size != 0 as u_int {
             break;
         }
-        lcremove = layout_cell_get_neighbour_dir(lcremove, 0 as ::core::ffi::c_int);
+        lcremove = layout_cell_prev(lcremove);
         if lcremove.is_null() {
             break;
         }
@@ -1343,7 +966,7 @@ unsafe fn layout_resize_pane_shrink(
     if lcremove.is_null() {
         return 0 as ::core::ffi::c_int;
     }
-    lcadd = layout_cell_get_neighbour_dir(lc, 1 as ::core::ffi::c_int);
+    lcadd = layout_cell_next(lc);
     if lcadd.is_null() {
         return 0 as ::core::ffi::c_int;
     }
@@ -1545,17 +1168,15 @@ unsafe fn layout_resize_child_cells(
     prev = 0 as u_int;
     lcchild = layout_cells_first(&*lc);
     while !lcchild.is_null() {
-        if !(layout_cell_is_tiled(lcchild) == 0 && layout_cell_has_tiled_child(lcchild) == 0) {
-            count = count.wrapping_add(1);
-            if (*lc).type_0 as ::core::ffi::c_uint
-                == LAYOUT_LEFTRIGHT as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                prev = prev.wrapping_add((*lcchild).g.sx);
-            } else if (*lc).type_0 as ::core::ffi::c_uint
-                == LAYOUT_TOPBOTTOM as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                prev = prev.wrapping_add((*lcchild).g.sy);
-            }
+        count = count.wrapping_add(1);
+        if (*lc).type_0 as ::core::ffi::c_uint
+            == LAYOUT_LEFTRIGHT as ::core::ffi::c_int as ::core::ffi::c_uint
+        {
+            prev = prev.wrapping_add((*lcchild).g.sx);
+        } else if (*lc).type_0 as ::core::ffi::c_uint
+            == LAYOUT_TOPBOTTOM as ::core::ffi::c_int as ::core::ffi::c_uint
+        {
+            prev = prev.wrapping_add((*lcchild).g.sy);
         }
         lcchild = layout_cell_next(lcchild);
     }
@@ -1573,48 +1194,46 @@ unsafe fn layout_resize_child_cells(
     idx = 0 as u_int;
     lcchild = layout_cells_first(&*lc);
     while !lcchild.is_null() {
-        if !(layout_cell_is_tiled(lcchild) == 0 && layout_cell_has_tiled_child(lcchild) == 0) {
-            if (*lc).type_0 as ::core::ffi::c_uint
-                == LAYOUT_TOPBOTTOM as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                (*lcchild).g.sx = (*lc).g.sx;
-                (*lcchild).g.xoff = (*lc).g.xoff;
-            } else {
-                (*lcchild).g.sx = layout_new_pane_size(
-                    root,
-                    pane_status,
-                    horizontal_minimum,
-                    prev,
-                    lcchild,
-                    (*lc).type_0,
-                    (*lc).g.sx,
-                    count.wrapping_sub(idx),
-                    available,
-                );
-                available = available.wrapping_sub((*lcchild).g.sx.wrapping_add(1 as u_int));
-            }
-            if (*lc).type_0 as ::core::ffi::c_uint
-                == LAYOUT_LEFTRIGHT as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                (*lcchild).g.sy = (*lc).g.sy;
-                (*lcchild).g.yoff = (*lc).g.yoff;
-            } else {
-                (*lcchild).g.sy = layout_new_pane_size(
-                    root,
-                    pane_status,
-                    horizontal_minimum,
-                    prev,
-                    lcchild,
-                    (*lc).type_0,
-                    (*lc).g.sy,
-                    count.wrapping_sub(idx),
-                    available,
-                );
-                available = available.wrapping_sub((*lcchild).g.sy.wrapping_add(1 as u_int));
-            }
-            layout_resize_child_cells(root, pane_status, horizontal_minimum, lcchild);
-            idx = idx.wrapping_add(1);
+        if (*lc).type_0 as ::core::ffi::c_uint
+            == LAYOUT_TOPBOTTOM as ::core::ffi::c_int as ::core::ffi::c_uint
+        {
+            (*lcchild).g.sx = (*lc).g.sx;
+            (*lcchild).g.xoff = (*lc).g.xoff;
+        } else {
+            (*lcchild).g.sx = layout_new_pane_size(
+                root,
+                pane_status,
+                horizontal_minimum,
+                prev,
+                lcchild,
+                (*lc).type_0,
+                (*lc).g.sx,
+                count.wrapping_sub(idx),
+                available,
+            );
+            available = available.wrapping_sub((*lcchild).g.sx.wrapping_add(1 as u_int));
         }
+        if (*lc).type_0 as ::core::ffi::c_uint
+            == LAYOUT_LEFTRIGHT as ::core::ffi::c_int as ::core::ffi::c_uint
+        {
+            (*lcchild).g.sy = (*lc).g.sy;
+            (*lcchild).g.yoff = (*lc).g.yoff;
+        } else {
+            (*lcchild).g.sy = layout_new_pane_size(
+                root,
+                pane_status,
+                horizontal_minimum,
+                prev,
+                lcchild,
+                (*lc).type_0,
+                (*lc).g.sy,
+                count.wrapping_sub(idx),
+                available,
+            );
+            available = available.wrapping_sub((*lcchild).g.sy.wrapping_add(1 as u_int));
+        }
+        layout_resize_child_cells(root, pane_status, horizontal_minimum, lcchild);
+        idx = idx.wrapping_add(1);
         lcchild = layout_cell_next(lcchild);
     }
 }
@@ -1737,9 +1356,6 @@ pub unsafe fn layout_split_pane(
                 .find_pane_mut(&std::rc::Rc::downgrade(wp_owner))
                 .expect("split pane belongs to tree")
         };
-        if (*lc).flags & LAYOUT_CELL_FLOATING != 0 {
-            fatalx(|out| out.write_all(b"floating cells cannot be split"));
-        }
         sx = (*lc).g.sx;
         sy = (*lc).g.sy;
         xoff = (*lc).g.xoff as u_int;
@@ -1922,30 +1538,6 @@ pub unsafe fn layout_split_pane(
     window.release(c"split layout");
     result
 }
-pub unsafe fn layout_floating_pane(
-    window: &WindowRef,
-    pane: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
-    geometry: *mut layout_geometry,
-) -> *mut layout_cell {
-    let mut tree = window.borrow_layout_root_mut();
-    let root = tree.as_deref_mut().expect("floating layout root");
-    let cell = match pane {
-        Some(pane) => root
-            .find_pane_mut(&std::rc::Rc::downgrade(pane))
-            .expect("floating anchor belongs to tree"),
-        None => root,
-    } as *mut layout_cell;
-    let mut parent = (*cell).parent;
-    if parent.is_null() {
-        parent = layout_replace_with_node(tree, cell, LAYOUT_TOPBOTTOM);
-    }
-    let mut new_cell = layout_create_cell();
-    new_cell.flags |= LAYOUT_CELL_FLOATING;
-    new_cell.g = *geometry;
-    let id = new_cell.id();
-    layout_cells_insert_after(parent, cell, new_cell);
-    id
-}
 pub unsafe fn layout_close_pane(pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>) {
     // A logically destroyed pane may already have lost its parent Window. Keep
     // the legacy early return for a cleared Pane cell link.
@@ -1963,7 +1555,7 @@ pub unsafe fn layout_close_pane(pane: &std::rc::Rc<std::cell::UnsafeCell<window_
             .as_deref_mut()
             .and_then(|root| root.find_pane_mut(&observer))
             .expect("closing pane belongs to visible layout");
-        !cell.parent.is_null() && layout_cell_is_tiled(cell) != 0
+        !cell.parent.is_null()
     };
     let (pane_status, horizontal_minimum) = if needs_policy {
         layout_resize_limits(&window)
@@ -2012,14 +1604,7 @@ pub(super) unsafe fn layout_spread_cell_with_limits(
     let mut change: ::core::ffi::c_int = 0;
     let mut changed: ::core::ffi::c_int = 0;
     let mut status: ::core::ffi::c_int = 0;
-    number = 0 as u_int;
-    lc = layout_cells_first(&*parent);
-    while !lc.is_null() {
-        if layout_cell_is_tiled(lc) != 0 {
-            number = number.wrapping_add(1);
-        }
-        lc = layout_cell_next(lc);
-    }
+    number = (*parent).cells.len() as u_int;
     if number <= 1 as u_int {
         return 0 as ::core::ffi::c_int;
     }
@@ -2054,51 +1639,49 @@ pub(super) unsafe fn layout_spread_cell_with_limits(
     changed = 0 as ::core::ffi::c_int;
     lc = layout_cells_first(&*parent);
     while !lc.is_null() {
-        if !(layout_cell_is_tiled(lc) == 0) {
-            change = 0 as ::core::ffi::c_int;
-            if (*parent).type_0 as ::core::ffi::c_uint
-                == LAYOUT_LEFTRIGHT as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                change = each.wrapping_sub((*lc).g.sx as ::core::ffi::c_int as u_int)
-                    as ::core::ffi::c_int;
-                if remainder > 0 as u_int {
-                    change += 1;
-                    remainder = remainder.wrapping_sub(1);
-                }
-                layout_resize_adjust_with_limits(
-                    root,
-                    pane_status,
-                    horizontal_minimum,
-                    lc,
-                    LAYOUT_LEFTRIGHT,
-                    change,
-                );
-            } else if (*parent).type_0 as ::core::ffi::c_uint
-                == LAYOUT_TOPBOTTOM as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                if layout_add_horizontal_border(root, lc, status) != 0 {
-                    this = each.wrapping_add(1 as u_int);
-                } else {
-                    this = each;
-                }
-                if remainder > 0 as u_int {
-                    this = this.wrapping_add(1);
-                    remainder = remainder.wrapping_sub(1);
-                }
-                change = this.wrapping_sub((*lc).g.sy as ::core::ffi::c_int as u_int)
-                    as ::core::ffi::c_int;
-                layout_resize_adjust_with_limits(
-                    root,
-                    pane_status,
-                    horizontal_minimum,
-                    lc,
-                    LAYOUT_TOPBOTTOM,
-                    change,
-                );
+        change = 0 as ::core::ffi::c_int;
+        if (*parent).type_0 as ::core::ffi::c_uint
+            == LAYOUT_LEFTRIGHT as ::core::ffi::c_int as ::core::ffi::c_uint
+        {
+            change =
+                each.wrapping_sub((*lc).g.sx as ::core::ffi::c_int as u_int) as ::core::ffi::c_int;
+            if remainder > 0 as u_int {
+                change += 1;
+                remainder = remainder.wrapping_sub(1);
             }
-            if change != 0 as ::core::ffi::c_int {
-                changed = 1 as ::core::ffi::c_int;
+            layout_resize_adjust_with_limits(
+                root,
+                pane_status,
+                horizontal_minimum,
+                lc,
+                LAYOUT_LEFTRIGHT,
+                change,
+            );
+        } else if (*parent).type_0 as ::core::ffi::c_uint
+            == LAYOUT_TOPBOTTOM as ::core::ffi::c_int as ::core::ffi::c_uint
+        {
+            if layout_add_horizontal_border(root, lc, status) != 0 {
+                this = each.wrapping_add(1 as u_int);
+            } else {
+                this = each;
             }
+            if remainder > 0 as u_int {
+                this = this.wrapping_add(1);
+                remainder = remainder.wrapping_sub(1);
+            }
+            change =
+                this.wrapping_sub((*lc).g.sy as ::core::ffi::c_int as u_int) as ::core::ffi::c_int;
+            layout_resize_adjust_with_limits(
+                root,
+                pane_status,
+                horizontal_minimum,
+                lc,
+                LAYOUT_TOPBOTTOM,
+                change,
+            );
+        }
+        if change != 0 as ::core::ffi::c_int {
+            changed = 1 as ::core::ffi::c_int;
         }
         lc = layout_cell_next(lc);
     }
@@ -2112,29 +1695,13 @@ pub unsafe fn layout_spread_out(wp_owner: &std::rc::Rc<std::cell::UnsafeCell<win
     let pane = std::rc::Rc::downgrade(wp_owner);
     let can_spread = {
         let mut tree = window.borrow_layout_root_mut();
-        let cell = tree
+        !tree
             .as_deref_mut()
             .expect("spread root")
             .find_pane_mut(&pane)
-            .expect("spread pane cell");
-        let mut parent = cell.parent;
-        loop {
-            if parent.is_null() {
-                break false;
-            }
-            if (*parent)
-                .cells
-                .iter()
-                .filter(|cell| {
-                    layout_cell_is_tiled(&***cell as *const layout_cell as *mut layout_cell) != 0
-                })
-                .count()
-                > 1
-            {
-                break true;
-            }
-            parent = (*parent).parent;
-        }
+            .expect("spread pane cell")
+            .parent
+            .is_null()
     };
     if can_spread {
         let (pane_status, horizontal_minimum) = layout_resize_limits(&window);
@@ -2175,9 +1742,6 @@ pub unsafe fn layout_get_tiled_cell(
     let mut type_0: layout_type = LAYOUT_TOPBOTTOM;
     let mut curval: u_int = 0;
     let mut size: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
-    if wp_owner.is_floating() {
-        return Err(c"can't split a floating pane".to_owned());
-    }
     if flags & SPAWN_HORIZONTAL != 0 {
         type_0 = LAYOUT_LEFTRIGHT;
     }
@@ -2232,768 +1796,13 @@ pub unsafe fn layout_get_tiled_cell(
             }
         };
     }
-    if std::rc::Rc::clone(w_owner).active_pane_over_zoom() != 0 {
-        std::rc::Rc::clone(w_owner).push_zoom(false, true);
-    } else {
-        std::rc::Rc::clone(w_owner).push_zoom(true, (flags & SPAWN_ZOOM) != 0);
-    }
+    w_owner.push_zoom(true, (flags & SPAWN_ZOOM) != 0);
     layout_split_pane(wp_owner, type_0, size, flags)
         .ok_or_else(|| c"no space for a new pane".to_owned())
 }
-pub unsafe fn layout_get_floating_cell(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    mut args: *mut args,
-    mut lines: pane_lines,
-    w_owner: &WindowRef,
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    mut flags: ::core::ffi::c_int,
-) -> Result<*mut layout_cell, CString> {
-    let mut fg: layout_geometry = layout_geometry {
-        sx: 0,
-        sy: 0,
-        xoff: 0,
-        yoff: 0,
-    };
-    layout_geometry_init(&raw mut fg);
-    if flags & SPAWN_SPLIT != 0 {
-        let size = w_owner.size();
-        let mut tree = w_owner.borrow_layout_root_mut();
-        let cell = tree
-            .as_deref_mut()
-            .expect("floating split root")
-            .find_pane_mut(&std::rc::Rc::downgrade(wp_owner))
-            .expect("floating split pane belongs to tree");
-        layout_split_floating_cell(cell, size, &raw mut fg, lines, flags)?;
-    } else {
-        layout_floating_args_parse(item_handle, args, lines, w_owner, &mut fg)?;
-    }
-    let (unzoom, remember) =
-        if flags & SPAWN_FLOATOVERZOOM != 0 || w_owner.active_pane_over_zoom() != 0 {
-            (0, 1)
-        } else {
-            (1, flags & SPAWN_ZOOM)
-        };
-    let parent = wp_owner
-        .window_observer()
-        .upgrade()
-        .expect("floating pane window");
-    parent.push_zoom((unzoom) != 0, (remember) != 0);
-    parent.release(c"prepare floating layout");
-    Ok(layout_floating_pane(w_owner, Some(wp_owner), &raw mut fg))
-}
-fn layout_position_error(message: &CStr) -> CString {
-    let mut bytes = b"position ".to_vec();
-    bytes.extend_from_slice(message.to_bytes());
-    CString::new(bytes).expect("diagnostic contains no NUL")
-}
-
-pub unsafe fn layout_floating_args_parse(
-    item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    mut args: *mut args,
-    mut lines: pane_lines,
-    w_owner: &WindowRef,
-    lg: &mut layout_geometry,
-) -> Result<(), CString> {
-    let mut sx: ::core::ffi::c_int = 0;
-    let mut sy: ::core::ffi::c_int = 0;
-    let mut ox: ::core::ffi::c_int = 0;
-    let mut oy: ::core::ffi::c_int = 0;
-    sx = (if lg.sx == UINT_MAX {
-        (w_owner).size().0.wrapping_div(2 as u_int)
-    } else {
-        lg.sx
-    }) as ::core::ffi::c_int;
-    sy = (if lg.sy == UINT_MAX {
-        (w_owner).size().1.wrapping_div(4 as u_int)
-    } else {
-        lg.sy
-    }) as ::core::ffi::c_int;
-    ox = lg.xoff;
-    oy = lg.yoff;
-    if args_has(args, 'x' as i32 as u_char) != 0 {
-        sx = match args_percentage_and_expand_result(
-            args,
-            'x' as i32 as u_char,
-            0 as ::core::ffi::c_longlong,
-            PANE_MAXIMUM as ::core::ffi::c_longlong,
-            (w_owner).size().0 as ::core::ffi::c_longlong,
-            Some(item_handle),
-        ) {
-            Ok(value) => value as ::core::ffi::c_int,
-            Err(error) => {
-                return Err(layout_position_error(error.message()));
-            }
-        };
-        if lines as ::core::ffi::c_uint
-            != PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            sx -= 2 as ::core::ffi::c_int;
-        }
-    }
-    if args_has(args, 'y' as i32 as u_char) != 0 {
-        sy = match args_percentage_and_expand_result(
-            args,
-            'y' as i32 as u_char,
-            0 as ::core::ffi::c_longlong,
-            PANE_MAXIMUM as ::core::ffi::c_longlong,
-            (w_owner).size().1 as ::core::ffi::c_longlong,
-            Some(item_handle),
-        ) {
-            Ok(value) => value as ::core::ffi::c_int,
-            Err(error) => {
-                return Err(layout_position_error(error.message()));
-            }
-        };
-        if lines as ::core::ffi::c_uint
-            != PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            sy -= 2 as ::core::ffi::c_int;
-        }
-    }
-    if args_has(args, 'X' as i32 as u_char) != 0 {
-        ox = match args_percentage_and_expand_result(
-            args,
-            'X' as i32 as u_char,
-            -sx as ::core::ffi::c_longlong,
-            (w_owner).size().0 as ::core::ffi::c_longlong,
-            (w_owner).size().0 as ::core::ffi::c_longlong,
-            Some(item_handle),
-        ) {
-            Ok(value) => value as ::core::ffi::c_int,
-            Err(error) => {
-                return Err(layout_position_error(error.message()));
-            }
-        };
-    }
-    if args_has(args, 'Y' as i32 as u_char) != 0 {
-        oy = match args_percentage_and_expand_result(
-            args,
-            'Y' as i32 as u_char,
-            -sy as ::core::ffi::c_longlong,
-            (w_owner).size().1 as ::core::ffi::c_longlong,
-            (w_owner).size().1 as ::core::ffi::c_longlong,
-            Some(item_handle),
-        ) {
-            Ok(value) => value as ::core::ffi::c_int,
-            Err(error) => {
-                return Err(layout_position_error(error.message()));
-            }
-        };
-    }
-    let default_x = ox == INT_MAX;
-    let default_y = oy == INT_MAX;
-    (ox, oy) =
-        w_owner.resolve_floating_position((!default_x).then_some(ox), (!default_y).then_some(oy));
-    if !default_x && args_has(args, b'X') != 0 && lines != PANE_LINES_NONE {
-        ox += 1;
-    }
-    if !default_y && args_has(args, b'Y') != 0 && lines != PANE_LINES_NONE {
-        oy += 1;
-    }
-    if !(PANE_MINIMUM..=PANE_MAXIMUM).contains(&sx) {
-        return Err(c"invalid width".to_owned());
-    }
-    if !(PANE_MINIMUM..=PANE_MAXIMUM).contains(&sy) {
-        return Err(c"invalid height".to_owned());
-    }
-    lg.sx = sx as u_int;
-    lg.sy = sy as u_int;
-    lg.xoff = ox;
-    lg.yoff = oy;
-    Ok(())
-}
-unsafe fn layout_split_floating_cell(
-    mut lc: *mut layout_cell,
-    window_size: (u32, u32),
-    mut out: *mut layout_geometry,
-    mut lines: pane_lines,
-    mut flags: ::core::ffi::c_int,
-) -> Result<(), CString> {
-    let mut old: layout_geometry = layout_geometry {
-        sx: 0,
-        sy: 0,
-        xoff: 0,
-        yoff: 0,
-    };
-    let mut new: layout_geometry = layout_geometry {
-        sx: 0,
-        sy: 0,
-        xoff: 0,
-        yoff: 0,
-    };
-    let mut tborder: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-    let mut bborder: ::core::ffi::c_int =
-        window_size.1.wrapping_sub(1 as u_int) as ::core::ffi::c_int;
-    let mut lborder: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
-    let mut rborder: ::core::ffi::c_int =
-        window_size.0.wrapping_sub(3 as u_int) as ::core::ffi::c_int;
-    let mut border: ::core::ffi::c_int = if lines as ::core::ffi::c_uint
-        != PANE_LINES_NONE as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        1 as ::core::ffi::c_int
-    } else {
-        0 as ::core::ffi::c_int
-    };
-    let mut size: ::core::ffi::c_int = 0;
-    let mut space: ::core::ffi::c_int = 0;
-    memcpy(
-        &raw mut old as *mut ::core::ffi::c_void,
-        &raw mut (*lc).g as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<layout_geometry>() as size_t,
-    );
-    if lborder > old.xoff - border {
-        old.xoff = lborder + border;
-    }
-    if rborder < old.xoff + old.sx as ::core::ffi::c_int + border {
-        old.xoff = rborder - old.sx as ::core::ffi::c_int - border;
-    }
-    if tborder > old.yoff - border {
-        old.yoff = tborder + border;
-    }
-    if bborder < old.yoff + old.sy as ::core::ffi::c_int + border {
-        old.yoff = bborder - old.sy as ::core::ffi::c_int - border;
-    }
-    memcpy(
-        &raw mut new as *mut ::core::ffi::c_void,
-        &raw mut old as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<layout_geometry>() as size_t,
-    );
-    if flags & SPAWN_HORIZONTAL != 0 {
-        if flags & SPAWN_BEFORE != 0 {
-            new.xoff = (new.xoff as u_int).wrapping_sub(
-                old.sx
-                    .wrapping_add((2 as ::core::ffi::c_int * border) as u_int),
-            ) as ::core::ffi::c_int as ::core::ffi::c_int;
-        } else {
-            new.xoff = (new.xoff as u_int).wrapping_add(
-                old.sx
-                    .wrapping_add((2 as ::core::ffi::c_int * border) as u_int),
-            ) as ::core::ffi::c_int as ::core::ffi::c_int;
-        }
-    } else if flags & SPAWN_BEFORE != 0 {
-        new.yoff = (new.yoff as u_int).wrapping_sub(
-            old.sy
-                .wrapping_add((2 as ::core::ffi::c_int * border) as u_int),
-        ) as ::core::ffi::c_int as ::core::ffi::c_int;
-    } else {
-        new.yoff = (new.yoff as u_int).wrapping_add(
-            old.sy
-                .wrapping_add((2 as ::core::ffi::c_int * border) as u_int),
-        ) as ::core::ffi::c_int as ::core::ffi::c_int;
-    }
-    if lborder > new.xoff - border {
-        space = (old.xoff as u_int)
-            .wrapping_add(old.sx)
-            .wrapping_sub(lborder as u_int)
-            .wrapping_sub((3 as ::core::ffi::c_int * border) as u_int)
-            .wrapping_add(1 as u_int) as ::core::ffi::c_int;
-        size = space / 2 as ::core::ffi::c_int;
-        new.sx = size as u_int;
-        old.sx = size as u_int;
-        new.xoff = lborder + border;
-        old.xoff = (new.xoff as u_int)
-            .wrapping_add(new.sx)
-            .wrapping_add((2 as ::core::ffi::c_int * border) as u_int)
-            as ::core::ffi::c_int;
-        if space % 2 as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
-            old.sx = old.sx.wrapping_sub(1 as u_int);
-        }
-    } else if rborder < new.xoff + new.sx as ::core::ffi::c_int + border {
-        space = rborder - old.xoff - 3 as ::core::ffi::c_int * border + 1 as ::core::ffi::c_int;
-        size = space / 2 as ::core::ffi::c_int;
-        new.sx = size as u_int;
-        old.sx = size as u_int;
-        new.xoff = (old.xoff as u_int)
-            .wrapping_add(old.sx)
-            .wrapping_add((2 as ::core::ffi::c_int * border) as u_int)
-            as ::core::ffi::c_int;
-        if space % 2 as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
-            new.sx = new.sx.wrapping_sub(1 as u_int);
-        }
-    } else if tborder > new.yoff - border {
-        space = old
-            .sy
-            .wrapping_add(old.yoff as u_int)
-            .wrapping_sub(tborder as u_int)
-            .wrapping_sub((3 as ::core::ffi::c_int * border) as u_int)
-            .wrapping_add(1 as u_int) as ::core::ffi::c_int;
-        size = space / 2 as ::core::ffi::c_int;
-        new.sy = size as u_int;
-        old.sy = size as u_int;
-        new.yoff = tborder + border;
-        old.yoff = (new.yoff as u_int)
-            .wrapping_add(new.sy)
-            .wrapping_add((2 as ::core::ffi::c_int * border) as u_int)
-            as ::core::ffi::c_int;
-        if space % 2 as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
-            old.sy = old.sy.wrapping_sub(1 as u_int);
-        }
-    } else if bborder < new.yoff + new.sy as ::core::ffi::c_int + border {
-        space = bborder - old.yoff - 3 as ::core::ffi::c_int * border + 1 as ::core::ffi::c_int;
-        size = space / 2 as ::core::ffi::c_int;
-        new.sy = size as u_int;
-        old.sy = size as u_int;
-        new.yoff = (old.yoff as u_int)
-            .wrapping_add(old.sy)
-            .wrapping_add((2 as ::core::ffi::c_int * border) as u_int)
-            as ::core::ffi::c_int;
-        if space % 2 as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
-            new.sy = new.sy.wrapping_sub(1 as u_int);
-        }
-    }
-    if flags & SPAWN_FULLSIZE != 0 {
-        if flags & SPAWN_HORIZONTAL != 0 {
-            new.yoff = tborder + border;
-            new.sy = (bborder - tborder - 2 as ::core::ffi::c_int * border) as u_int;
-            if flags & SPAWN_BEFORE != 0 {
-                new.xoff = lborder + border;
-                new.sx = (old.xoff - new.xoff - 2 as ::core::ffi::c_int * border) as u_int;
-            } else {
-                new.sx = (rborder - new.xoff - border) as u_int;
-            }
-        } else {
-            new.xoff = lborder + border;
-            new.sx = (rborder - lborder - 2 as ::core::ffi::c_int * border) as u_int;
-            if flags & SPAWN_BEFORE != 0 {
-                new.yoff = tborder + border;
-                new.sy = (old.yoff - new.yoff - 2 as ::core::ffi::c_int * border) as u_int;
-            } else {
-                new.sy = (bborder - new.yoff - border) as u_int;
-            }
-        }
-    }
-    if new.sx < PANE_MINIMUM as u_int
-        || new.sy < PANE_MINIMUM as u_int
-        || old.sx < PANE_MINIMUM as u_int
-        || old.sy < PANE_MINIMUM as u_int
-    {
-        return Err(c"no space for a new pane".to_owned());
-    }
-    layout_set_size(lc, old.sx, old.sy, old.xoff, old.yoff);
-    memcpy(
-        out as *mut ::core::ffi::c_void,
-        &raw mut new as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<layout_geometry>() as size_t,
-    );
-    Ok(())
-}
-/// Convert the pane's current tile after argument expansion has finished.
-/// Neither the caller nor pane callbacks retain a pointer into the tree.
-pub unsafe fn layout_float_pane(
-    window: &WindowRef,
-    pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    geometry: layout_geometry,
-) {
-    let (pane_status, horizontal_minimum) = layout_resize_limits(window);
-    {
-        let mut tree = window.borrow_layout_root_mut();
-        let root = tree.as_deref_mut().expect("tile root") as *mut layout_cell;
-        let cell = (*root)
-            .find_pane_mut(&std::rc::Rc::downgrade(pane))
-            .expect("floating pane cell") as *mut layout_cell;
-        (*cell).fg = geometry;
-        layout_remove_tile_with_limits(root, pane_status, horizontal_minimum, cell);
-        layout_set_size(cell, geometry.sx, geometry.sy, geometry.xoff, geometry.yoff);
-        (*cell).flags |= LAYOUT_CELL_FLOATING;
-    }
-    let (sx, sy) = window.size();
-    super::set::layout_set_arrange_sticky(window, sx, sy);
-}
-unsafe fn layout_remove_tile_with_limits(
-    root: *mut layout_cell,
-    pane_status: i32,
-    horizontal_minimum: u32,
-    lc: *mut layout_cell,
-) -> i32 {
-    let mut lcneighbour: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut lcparent: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut type_0: layout_type = LAYOUT_LEFTRIGHT;
-    let mut change: ::core::ffi::c_int = 0;
-    if (*lc).flags & LAYOUT_CELL_FLOATING != 0 {
-        return -(1 as ::core::ffi::c_int);
-    }
-    lcneighbour = layout_cell_get_neighbour(lc);
-    if lcneighbour.is_null() {
-        if !(*lc).parent.is_null() {
-            layout_remove_tile_with_limits(root, pane_status, horizontal_minimum, (*lc).parent);
-        }
-    } else {
-        lcparent = (*lcneighbour).parent;
-        if !lcparent.is_null() {
-            type_0 = (*lcparent).type_0;
-            if type_0 as ::core::ffi::c_uint
-                == LAYOUT_TOPBOTTOM as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                change = (*lc).g.sy.wrapping_add(1 as u_int) as ::core::ffi::c_int;
-            } else {
-                change = (*lc).g.sx.wrapping_add(1 as u_int) as ::core::ffi::c_int;
-            }
-            layout_resize_adjust_with_limits(
-                root,
-                pane_status,
-                horizontal_minimum,
-                lcneighbour,
-                type_0,
-                change,
-            );
-        }
-    }
-    if !(*lc).parent.is_null() {
-        layout_set_size(
-            lc,
-            0 as u_int,
-            0 as u_int,
-            0 as ::core::ffi::c_int,
-            0 as ::core::ffi::c_int,
-        );
-    }
-    0 as ::core::ffi::c_int
-}
-/// Convert a floating pane using a fresh tree borrow. The saved floating
-/// geometry is updated even if its tiled neighbour has insufficient space.
-pub unsafe fn layout_tile_pane(
-    window: &WindowRef,
-    pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-) -> bool {
-    let (id, split_pane) = {
-        let mut tree = window.borrow_layout_root_mut();
-        let cell = tree
-            .as_deref_mut()
-            .expect("tiling root")
-            .find_pane_mut(&std::rc::Rc::downgrade(pane))
-            .expect("tiling pane belongs to tree") as *mut layout_cell;
-        (*cell).fg = (*cell).g;
-        if layout_cell_is_tiled(cell) != 0 {
-            return false;
-        }
-        // An all-floating branch inherits its eventual tiled size from its
-        // ancestors. Only the first ancestor with a tiled neighbour splits it.
-        let mut candidate = cell;
-        let split_pane = loop {
-            let parent = (*candidate).parent;
-            if parent.is_null() {
-                break None;
-            }
-            let neighbour = layout_cell_get_neighbour(candidate);
-            if !neighbour.is_null() {
-                let tiled = layout_cell_get_first_tiled(neighbour);
-                break Some((
-                    (*tiled).wp.clone(),
-                    (*parent).type_0,
-                    (*neighbour).id(),
-                    (*neighbour).flags & LAYOUT_CELL_FLOATING != 0,
-                ));
-            }
-            candidate = parent;
-        };
-        ((*cell).id(), split_pane)
-    };
-    let window_size = window.size();
-    let (mut pane_status, mut horizontal_minimum) = (0, 0);
-    let mut split_pane_status = 0;
-    let mut split_horizontal_minimum = 0;
-    let mut can_split = false;
-    if let Some((observer, direction, neighbour_id, floating_neighbour)) = split_pane {
-        if let Some(neighbour) = observer.upgrade() {
-            if floating_neighbour {
-                fatalx(|out| out.write_all(b"floating cells cannot be split"));
-            }
-            // A split's horizontal threshold uses the neighbour's scrollbar;
-            // recursive resizing uses the active pane's policy as before.
-            let parent = neighbour
-                .window_observer()
-                .upgrade()
-                .expect("split pane window");
-            split_pane_status = parent.pane_border_status();
-            split_horizontal_minimum = if direction == LAYOUT_LEFTRIGHT {
-                neighbour.split_minimum_width(parent.scrollbar_mode() == PANE_SCROLLBARS_ALWAYS)
-            } else {
-                0
-            };
-            parent.release(c"tile split policy");
-            neighbour.release(c"tile split policy");
-            can_split = {
-                let mut tree = window.borrow_layout_root_mut();
-                let root = tree.as_deref_mut().expect("tiling root") as *mut layout_cell;
-                let neighbour = (*root)
-                    .find_mut(neighbour_id)
-                    .expect("tiling neighbour belongs to tree")
-                    as *mut layout_cell;
-                layout_split_check_space_with_limits(
-                    root,
-                    neighbour,
-                    direction,
-                    split_pane_status,
-                    split_horizontal_minimum,
-                ) != 0
-            };
-            if can_split {
-                (pane_status, horizontal_minimum) = layout_resize_limits(window);
-            }
-        }
-    }
-    {
-        let mut tree = window.borrow_layout_root_mut();
-        let root = tree.as_deref_mut().expect("tiling root") as *mut layout_cell;
-        let cell = (*root).find_mut(id).expect("tiling cell belongs to tree") as *mut layout_cell;
-        if layout_insert_tile_with_limits(
-            root,
-            window_size,
-            pane_status,
-            horizontal_minimum,
-            split_pane_status,
-            split_horizontal_minimum,
-            can_split,
-            cell,
-        ) != 0
-        {
-            return false;
-        }
-        (*cell).flags &= !LAYOUT_CELL_FLOATING;
-    }
-    super::set::layout_set_arrange_sticky(window, window_size.0, window_size.1);
-    true
-}
-
-unsafe fn layout_insert_tile_with_limits(
-    root: *mut layout_cell,
-    window_size: (u32, u32),
-    pane_status: i32,
-    horizontal_minimum: u32,
-    split_pane_status: i32,
-    split_horizontal_minimum: u32,
-    can_split: bool,
-    lc: *mut layout_cell,
-) -> i32 {
-    let mut lcneighbour: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut lcparent: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut type_0: layout_type = LAYOUT_LEFTRIGHT;
-    let mut size1: u_int = 0;
-    let mut size2: u_int = 0;
-    let mut saved_size: u_int = 0;
-    if layout_cell_is_tiled(lc) != 0 {
-        return -(1 as ::core::ffi::c_int);
-    }
-    lcparent = (*lc).parent;
-    if lcparent.is_null() {
-        layout_set_size(
-            lc,
-            window_size.0,
-            window_size.1,
-            0 as ::core::ffi::c_int,
-            0 as ::core::ffi::c_int,
-        );
-        return 0 as ::core::ffi::c_int;
-    }
-    type_0 = (*lcparent).type_0;
-    lcneighbour = layout_cell_get_neighbour(lc);
-    if lcneighbour.is_null() {
-        layout_insert_tile_with_limits(
-            root,
-            window_size,
-            pane_status,
-            horizontal_minimum,
-            split_pane_status,
-            split_horizontal_minimum,
-            can_split,
-            lcparent,
-        );
-        if type_0 as ::core::ffi::c_uint
-            == LAYOUT_LEFTRIGHT as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            size1 = (*lcparent).g.sx;
-        } else {
-            size1 = (*lcparent).g.sy;
-        }
-        layout_resize_set_size_with_limits(
-            root,
-            pane_status,
-            horizontal_minimum,
-            lc,
-            type_0,
-            size1,
-        );
-    } else {
-        if !can_split
-            || layout_split_check_space_with_limits(
-                root,
-                lcneighbour,
-                type_0,
-                split_pane_status,
-                split_horizontal_minimum,
-            ) == 0
-        {
-            return -(1 as ::core::ffi::c_int);
-        }
-        layout_split_sizes(
-            lcneighbour,
-            -(1 as ::core::ffi::c_int),
-            0 as ::core::ffi::c_int,
-            type_0,
-            &raw mut size1,
-            &raw mut size2,
-            &raw mut saved_size,
-        );
-        layout_resize_set_size_with_limits(
-            root,
-            pane_status,
-            horizontal_minimum,
-            lc,
-            type_0,
-            size1,
-        );
-        layout_resize_set_size_with_limits(
-            root,
-            pane_status,
-            horizontal_minimum,
-            lcneighbour,
-            type_0,
-            size2,
-        );
-    }
-    if (*lcparent).type_0 as ::core::ffi::c_uint
-        == LAYOUT_LEFTRIGHT as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        size1 = (*lcparent).g.sy;
-        type_0 = LAYOUT_TOPBOTTOM;
-    } else {
-        size1 = (*lcparent).g.sx;
-        type_0 = LAYOUT_LEFTRIGHT;
-    }
-    layout_resize_set_size_with_limits(root, pane_status, horizontal_minimum, lc, type_0, size1);
-    0 as ::core::ffi::c_int
-}
-
 #[cfg(test)]
 mod geometry_policy_tests {
     use super::*;
-
-    #[test]
-    fn tiling_splits_the_neighbor_and_preserves_cell_identity() {
-        unsafe {
-            let mut root = layout_create_cell();
-            layout_make_node(&mut *root, LAYOUT_LEFTRIGHT);
-            layout_set_size(&mut *root, 17, 5, 0, 0);
-            let mut floating = layout_create_cell();
-            floating.flags = LAYOUT_CELL_FLOATING;
-            layout_set_size(&mut *floating, 30, 10, -2, 4);
-            let id = floating.id();
-            layout_cells_push_back(&mut *root, floating);
-            let mut tiled = layout_create_cell();
-            layout_set_size(&mut *tiled, 17, 5, 0, 0);
-            layout_cells_push_back(&mut *root, tiled);
-            let root_ptr = &mut *root as *mut layout_cell;
-            let cell = layout_cells_first(&root);
-            assert_eq!(
-                layout_insert_tile_with_limits(
-                    root_ptr,
-                    (17, 5),
-                    0,
-                    PANE_MINIMUM as u32,
-                    0,
-                    (PANE_MINIMUM * 2 + 1) as u32,
-                    true,
-                    cell
-                ),
-                0
-            );
-            assert_eq!(root.cells[0].id(), id);
-            assert_eq!((root.cells[0].g.sx, root.cells[0].g.sy), (8, 5));
-            assert_eq!((root.cells[1].g.sx, root.cells[1].g.sy), (8, 5));
-            // The outer operation changes the flag after successful insertion.
-            assert_ne!(root.cells[0].flags & LAYOUT_CELL_FLOATING, 0);
-        }
-    }
-
-    #[test]
-    fn tiling_an_all_floating_branch_splits_its_ancestors_neighbor() {
-        unsafe {
-            let mut root = layout_create_cell();
-            layout_make_node(&mut *root, LAYOUT_LEFTRIGHT);
-            layout_set_size(&mut *root, 17, 5, 0, 0);
-            let mut branch = layout_create_cell();
-            layout_make_node(&mut *branch, LAYOUT_TOPBOTTOM);
-            layout_set_size(&mut *branch, 0, 0, 0, 0);
-            let branch_id = branch.id();
-            let mut floating = layout_create_cell();
-            floating.flags = LAYOUT_CELL_FLOATING;
-            layout_set_size(&mut *floating, 30, 10, -2, 4);
-            let id = floating.id();
-            layout_cells_push_back(&mut *branch, floating);
-            let mut other = layout_create_cell();
-            other.flags = LAYOUT_CELL_FLOATING;
-            layout_set_size(&mut *other, 9, 4, 8, 6);
-            let other_id = other.id();
-            layout_cells_push_back(&mut *branch, other);
-            layout_cells_push_back(&mut *root, branch);
-            let mut tiled = layout_create_cell();
-            layout_set_size(&mut *tiled, 17, 5, 0, 0);
-            layout_cells_push_back(&mut *root, tiled);
-            let root_ptr = &mut *root as *mut layout_cell;
-            let cell = root.find_mut(id).unwrap() as *mut layout_cell;
-            assert_eq!(
-                layout_insert_tile_with_limits(
-                    root_ptr,
-                    (17, 5),
-                    0,
-                    PANE_MINIMUM as u32,
-                    0,
-                    (PANE_MINIMUM * 2 + 1) as u32,
-                    true,
-                    cell
-                ),
-                0
-            );
-            let cell = root.find(id).unwrap();
-            let branch = root.find(branch_id).unwrap();
-            let other = root.find(other_id).unwrap();
-            assert_eq!((cell.g.sx, cell.g.sy), (8, 5));
-            assert_eq!((branch.g.sx, branch.g.sy), (8, 5));
-            assert_eq!((root.cells[1].g.sx, root.cells[1].g.sy), (8, 5));
-            assert_eq!(
-                (other.g.sx, other.g.sy, other.g.xoff, other.g.yoff),
-                (9, 4, 8, 6)
-            );
-        }
-    }
-
-    #[test]
-    fn failed_tile_split_keeps_floating_and_neighbor_geometry() {
-        unsafe {
-            let mut root = layout_create_cell();
-            layout_make_node(&mut *root, LAYOUT_LEFTRIGHT);
-            layout_set_size(&mut *root, 2, 5, 0, 0);
-            let mut floating = layout_create_cell();
-            floating.flags = LAYOUT_CELL_FLOATING;
-            layout_set_size(&mut *floating, 30, 10, -2, 4);
-            layout_cells_push_back(&mut *root, floating);
-            let mut tiled = layout_create_cell();
-            layout_set_size(&mut *tiled, 2, 5, 0, 0);
-            layout_cells_push_back(&mut *root, tiled);
-            let root_ptr = &mut *root as *mut layout_cell;
-            let cell = layout_cells_first(&root);
-            assert_eq!(
-                layout_insert_tile_with_limits(
-                    root_ptr,
-                    (2, 5),
-                    0,
-                    PANE_MINIMUM as u32,
-                    0,
-                    (PANE_MINIMUM * 2 + 1) as u32,
-                    true,
-                    cell
-                ),
-                -1
-            );
-            let cell = &root.cells[0];
-            assert_eq!(
-                (cell.g.sx, cell.g.sy, cell.g.xoff, cell.g.yoff),
-                (30, 10, -2, 4)
-            );
-            assert_ne!(cell.flags & LAYOUT_CELL_FLOATING, 0);
-            assert_eq!((root.cells[1].g.sx, root.cells[1].g.sy), (2, 5));
-        }
-    }
 
     #[test]
     fn tiled_removal_reclaims_space_and_keeps_surviving_cell_identity() {
@@ -3023,34 +1832,7 @@ mod geometry_policy_tests {
     }
 
     #[test]
-    fn removing_last_tile_preserves_remaining_floating_geometry() {
-        unsafe {
-            let mut node = layout_create_cell();
-            layout_make_node(&mut *node, LAYOUT_LEFTRIGHT);
-            layout_set_size(&mut *node, 8, 5, 0, 0);
-            let mut tiled = layout_create_cell();
-            layout_set_size(&mut *tiled, 8, 5, 0, 0);
-            let removed = &mut *tiled as *mut layout_cell;
-            layout_cells_push_back(&mut *node, tiled);
-            let mut floating = layout_create_cell();
-            floating.flags = LAYOUT_CELL_FLOATING;
-            layout_set_size(&mut *floating, 30, 10, 5, 3);
-            let id = floating.id();
-            layout_cells_push_back(&mut *node, floating);
-            let mut tree = Some(node);
-            layout_destroy_cell_with_limits(0, 1, removed, &mut tree);
-            let root = tree.as_deref().unwrap();
-            assert_eq!(root.id(), id);
-            assert_eq!(
-                (root.g.sx, root.g.sy, root.g.xoff, root.g.yoff),
-                (30, 10, 5, 3)
-            );
-            assert!(root.parent.is_null());
-        }
-    }
-
-    #[test]
-    fn border_resize_transfers_space_between_tiles_and_preserves_floating_cells() {
+    fn border_resize_transfers_space_between_tiles() {
         unsafe {
             let mut root = layout_create_cell();
             layout_make_node(&mut *root, LAYOUT_LEFTRIGHT);
@@ -3060,10 +1842,6 @@ mod geometry_policy_tests {
                 layout_set_size(&mut *cell, 8, 5, x, 0);
                 layout_cells_push_back(&mut *root, cell);
             }
-            let mut floating = layout_create_cell();
-            floating.flags = LAYOUT_CELL_FLOATING;
-            layout_set_size(&mut *floating, 30, 10, 5, 3);
-            layout_cells_push_back(&mut *root, floating);
             let (pane_status, horizontal_minimum) = (0, 1);
             let root_ptr = &mut *root as *mut layout_cell;
             let left = layout_cells_first(&root);
@@ -3092,7 +1870,6 @@ mod geometry_policy_tests {
                 2
             );
             assert_eq!((root.cells[0].g.sx, root.cells[1].g.sx), (9, 7));
-            assert_eq!((root.cells[2].g.sx, root.cells[2].g.sy), (30, 10));
         }
     }
 
@@ -3179,7 +1956,7 @@ mod geometry_policy_tests {
     }
 
     #[test]
-    fn spread_and_shrink_preserve_floating_geometry_and_scrollbar_minimum() {
+    fn spread_and_shrink_preserve_scrollbar_minimum() {
         unsafe {
             let mut root = layout_create_cell();
             layout_make_node(&mut *root, LAYOUT_LEFTRIGHT);
@@ -3189,10 +1966,6 @@ mod geometry_policy_tests {
                 layout_set_size(&mut *cell, 1, 8, 0, 0);
                 layout_cells_push_back(&mut *root, cell);
             }
-            let mut floating = layout_create_cell();
-            floating.flags = LAYOUT_CELL_FLOATING;
-            layout_set_size(&mut *floating, 88, 9, 4, 2);
-            layout_cells_push_back(&mut *root, floating);
             let (pane_status, horizontal_minimum) = (0, 3);
             let root_ptr = &mut *root as *mut layout_cell;
             assert_eq!(
@@ -3201,7 +1974,7 @@ mod geometry_policy_tests {
             );
             assert_eq!(
                 root.cells.iter().map(|c| c.g.sx).collect::<Vec<_>>(),
-                [6, 6, 5, 88]
+                [6, 6, 5]
             );
             let available = layout_resize_check_with_limits(
                 root_ptr,
@@ -3222,15 +1995,7 @@ mod geometry_policy_tests {
             assert_eq!(root.g.sx, 11);
             assert_eq!(
                 root.cells.iter().map(|c| c.g.sx).collect::<Vec<_>>(),
-                [3, 3, 3, 88]
-            );
-            assert_eq!(
-                (
-                    root.cells[3].g.xoff,
-                    root.cells[3].g.yoff,
-                    root.cells[3].g.sy
-                ),
-                (4, 2, 9)
+                [3, 3, 3]
             );
             assert_eq!(
                 layout_resize_check_with_limits(

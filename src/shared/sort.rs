@@ -2,7 +2,6 @@
 
 pub type sort_order = ::core::ffi::c_uint;
 pub const SORT_END: sort_order = 8;
-pub const SORT_Z: sort_order = 7;
 pub const SORT_SIZE: sort_order = 6;
 pub const SORT_ORDER: sort_order = 5;
 pub const SORT_NAME: sort_order = 4;

@@ -29,9 +29,7 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
 use crate::src::format::format_single_cstring;
 use crate::src::input::input_free;
-use crate::src::layout::{
-    layout_assign_pane, layout_close_pane, layout_floating_pane, layout_free, layout_init,
-};
+use crate::src::layout::{layout_assign_pane, layout_close_pane, layout_free, layout_init};
 use crate::src::log::{log_close, log_cstr, log_debug, log_hex};
 use crate::src::names::default_window_name_cstring;
 use crate::src::options::options_owner_ptr;
@@ -71,12 +69,9 @@ use crate::src::shared::event::*;
 use crate::src::shared::input::input_ctx;
 use crate::src::shared::key::*;
 use crate::src::shared::layout::layout_geometry;
-use crate::src::shared::layout::*;
 use crate::src::shared::limits::SIZE_MAX;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::{
-    PANE_EMPTY, PANE_EXITED, PANE_FLOATOVERZOOM, PANE_STATUSDRAWN, PANE_STATUSREADY,
-};
+use crate::src::shared::pane::{PANE_EMPTY, PANE_EXITED, PANE_STATUSDRAWN, PANE_STATUSREADY};
 use crate::src::shared::posix_io::{_PATH_BSHELL, STDERR_FILENO, STDIN_FILENO};
 use crate::src::shared::posix_terminal::{winsize, TCSANOW, VERASE};
 use crate::src::shared::screen::{MODE_CRLF, MODE_CURSOR};
@@ -84,8 +79,7 @@ use crate::src::shared::session::session;
 use crate::src::shared::signal::{__sigset_t, sigset_t, SIGCHLD, SIGHUP, SIG_BLOCK, SIG_SETMASK};
 use crate::src::shared::spawn::{spawn_editor_state, spawn_finish_edit_cb};
 use crate::src::shared::spawn::{
-    SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_FLOATING, SPAWN_FLOATOVERZOOM, SPAWN_KILL, SPAWN_MODAL,
-    SPAWN_NONOTIFY, SPAWN_RESPAWN, SPAWN_ZOOM,
+    SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_KILL, SPAWN_NONOTIFY, SPAWN_RESPAWN, SPAWN_ZOOM,
 };
 use crate::src::shared::stdio::FILE;
 use crate::src::shared::terminal::*;
@@ -254,16 +248,6 @@ pub(super) unsafe fn spawn_pane(
             c = c_owner.clone();
         }
         spawn_log(c"spawn_pane".as_ptr(), sc);
-        if (*sc).flags & SPAWN_MODAL != 0 {
-            if !(*sc).flags & SPAWN_FLOATING != 0 {
-                set_spawn_cause(cause.as_mut(), &[b"modal pane must be floating"]);
-                return None;
-            }
-            if original_window.modal_pane().is_some() {
-                set_spawn_cause(cause.as_mut(), &[b"window already has a modal pane"]);
-                return None;
-            }
-        }
         if let Some(requested_cwd) = (*sc).cwd.as_ref() {
             if !item.is_null() {
                 cwd = Some(format_single_cstring(
@@ -400,25 +384,6 @@ pub(super) unsafe fn spawn_pane(
                         0 as ::core::ffi::c_int,
                     );
                 }
-            }
-            if (*sc).flags & SPAWN_FLOATING != 0 {
-                // Assignment resizes panes and may reenter. Preserve the fresh
-                // post-assignment lookup, then borrow the current owning tree.
-                let cell_id = (*new_wp).layout_cell.expect("spawned pane layout");
-                let window = new_pane_owner
-                    .window_observer()
-                    .upgrade()
-                    .expect("spawned pane window");
-                {
-                    let mut cell = window
-                        .borrow_layout_cell_mut(cell_id)
-                        .expect("spawned pane belongs to layout");
-                    cell.flags |= LAYOUT_CELL_FLOATING;
-                }
-                window.release(c"spawn floating pane layout");
-            }
-            if (*sc).flags & SPAWN_FLOATOVERZOOM != 0 {
-                (*new_wp).flags |= PANE_FLOATOVERZOOM;
             }
             if original_window.is_zoomed() {
                 (*new_wp).saved_layout_cell = (*new_wp).layout_cell;
@@ -765,44 +730,14 @@ pub(super) unsafe fn spawn_pane(
         if (*sc).flags & SPAWN_RESPAWN != 0 {
             return Some(new_pane_owner);
         }
-        if (*sc).flags & SPAWN_MODAL != 0 {
-            original_window.begin_modal_pane(&new_pane_owner);
-            std::rc::Rc::clone(
-                (((*sc).winlink_handle())
-                    .get_unchecked()
-                    .window_handle()
-                    .as_ref())
-                .expect("live window"),
-            )
-            .redraw_active_switch(Some(&new_pane_owner));
-            if (*sc).flags & SPAWN_NONOTIFY != 0 {
-                std::rc::Rc::clone(
-                    (((*sc).winlink_handle())
-                        .get_unchecked()
-                        .window_handle()
-                        .as_ref())
-                    .expect("live window"),
-                )
-                .select_pane(&new_pane_owner, false);
-            } else {
-                std::rc::Rc::clone(
-                    (((*sc).winlink_handle())
-                        .get_unchecked()
-                        .window_handle()
-                        .as_ref())
-                    .expect("live window"),
-                )
-                .select_pane(&new_pane_owner, true);
-            }
-        } else if (!(*sc).flags & SPAWN_DETACHED != 0
+        if !(*sc).flags & SPAWN_DETACHED != 0
             || ((((*sc).winlink_handle())
                 .get_unchecked()
                 .window_handle()
                 .as_ref())
             .expect("live window"))
             .active_pane()
-            .is_none())
-            && original_window.modal_pane().is_none()
+            .is_none()
         {
             if (*sc).flags & SPAWN_NONOTIFY != 0 {
                 std::rc::Rc::clone(
