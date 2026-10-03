@@ -18,6 +18,6 @@ pub use self::core::{
     cmd_list_append_all, cmd_list_copy, cmd_list_first, cmd_list_move, cmd_list_new,
     cmd_list_print, cmd_log_argv, cmd_mouse_at, cmd_mouse_pane, cmd_mouse_window, cmd_pack_argv,
     cmd_parse, cmd_print, cmd_table, cmdq_item, environ, format_job_tree, format_tree, key_event,
-    layout_cell, mouse_event, options, options_array_item, options_entry, tty_term,
-    CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS,
+    mouse_event, options, options_array_item, options_entry, tty_term, CMD_LIST_PRINT_ESCAPED,
+    CMD_LIST_PRINT_NO_GROUPS,
 };

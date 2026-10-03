@@ -53,7 +53,7 @@ unsafe fn control_window_layout_changed_cb(_name: &CStr, payload: &mut event_pay
     let Some(window) = event_payload_get_window(payload) else {
         return;
     };
-    if !window.next_winlink(None).is_alive() || !window.has_layout() {
+    if !window.next_winlink(None).is_alive() || window.next_pane(None).is_none() {
         return;
     }
     recipients(|client| {
@@ -67,8 +67,12 @@ unsafe fn control_window_layout_changed_cb(_name: &CStr, payload: &mut event_pay
         }
         let mut format = format_create(Some(client), None, FORMAT_NONE, 0);
         format_defaults(&mut *format, Some(client), Some(&session), link, None);
-        let message = format_expand_cstring(&mut *format,
-            c"%layout-change #{window_id} #{window_layout} #{window_visible_layout} #{window_raw_flags}".as_ptr());
+        // The protocol keeps its visible-layout field; without zoom it is the layout.
+        let message = format_expand_cstring(
+            &mut *format,
+            c"%layout-change #{window_id} #{window_layout} #{window_layout} #{window_raw_flags}"
+                .as_ptr(),
+        );
         format_free(format);
         client.notify(|out| out.write_all(message.as_bytes()));
     });

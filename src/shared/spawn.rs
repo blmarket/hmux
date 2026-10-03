@@ -5,15 +5,12 @@ use super::abi::pid_t;
 use super::client::client;
 use super::command::cmdq_item;
 use super::environment::environ;
-use super::layout::layout_cell;
 use super::pane::window_pane;
 use super::session::session;
 use super::window::winlink;
 use crate::src::shared::client::ClientWeak;
 use crate::src::shared::session::SessionWeak;
 pub const SPAWN_BEFORE: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const SPAWN_FULLSIZE: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
-pub const SPAWN_HORIZONTAL: ::core::ffi::c_int = 0x200 as ::core::ffi::c_int;
 pub const SPAWN_KILL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const SPAWN_DETACHED: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const SPAWN_EMPTY: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
@@ -87,8 +84,6 @@ pub struct spawn_context {
     /// Observe the target client; each spawn operation retains an upgrade while using it.
     pub tc: ClientWeak,
     pub wp0: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
-    /// A nonowning reservation, resolved under the Window layout borrow.
-    pub layout: Option<*mut layout_cell>,
     pub name: Option<std::ffi::CString>,
     pub argv: Vec<std::ffi::CString>,
     pub environ: Option<Box<environ>>,

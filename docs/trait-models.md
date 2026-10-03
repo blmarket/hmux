@@ -26,14 +26,14 @@ representation boundary.
 | Entity | External capabilities | Work kept inside the entity |
 | --- | --- | --- |
 | Session | Creation and lookup, identity, window navigation and membership, attachment/status decisions, configuration, grouping, lifetime | Index keys, current/last-used links, group synchronization, activity/lock timers, attached counts, status caches |
-| Window | Creation and lookup, pane ordering and membership, layout, sizing, focus, redraw, configuration, lifetime | Layout tree, pane history, pending resize state, alerts, scene invalidation |
+| Window | Creation and lookup, pane ordering and membership, strip arrangement, sizing, focus, redraw, configuration, lifetime | Strip arrangement (the only writer of pane geometry), pane history, pending resize state, alerts, scene invalidation |
 | WindowPane | Creation and lookup, geometry, input and modes, screen copying and rendering, output consumption, configuration, lifetime | Parser, screen selection, mode stack, stream offsets, pipe/process state, resize/sync queues, scrollbar state |
 | Client | Creation and registry traversal, attachment, focus/size decisions, input and output, redraw, UI installation, lifetime | TTY, status/prompt and control state, attachment history, redraw completion, timers, transport cleanup |
 
 SessionIndex and WindowIndex expose operations on the existing independent index
 headers. They preserve weak entry/index identities and retirement on the last
-removal. Supporting components such as winlinks, layout cells, screens and input
-contexts retain their own APIs; component APIs do not grant access to a core
+removal. Supporting components such as winlinks, screens and input contexts
+retain their own APIs; component APIs do not grant access to a core
 model's record.
 
 ## Borrow and callback contract
@@ -54,10 +54,9 @@ callbacks, parent replacement, freeing or escaped references/pointers while the
 loan remains active. These are unsafe caller obligations in the current storage
 implementation.
 
-A layout-cell pointer stays within its Window tree loan or an independently owned
-tree. Cross-operation reservations use LayoutCellId and resolve through the
-original Window. Options inheritance resolves owning-scope identities and carries
-owned values across parser/format calls. Rendering extracts and restores the exact
+Pane rectangles leave the Window only as copied geometry. Options inheritance
+resolves owning-scope identities and carries owned values across parser/format
+calls. Rendering extracts and restores the exact
 screen owner before terminal calls; it does not lend a pane screen through a raw
 result. Screen-write contexts keep their existing explicit stop requirement.
 
@@ -93,8 +92,8 @@ Reuse options, environ, termios, spawn_context, screen, mode/prompt descriptors,
 byte buffers, format_tree and FormatValue. Geometry tuples and copied decision
 records carry only values needed by callers. PaneScrollbar groups the related
 appearance and slider geometry needed across drawing calls without allocation.
-Layout/resize snapshots and typed identities prevent component loans from
-escaping; their definitions are reviewed in the migration report.
+Resize snapshots and typed identities prevent component loans from escaping;
+their definitions are reviewed in the migration report.
 
 Monitor sets have one RefBox owner in their control client or hook. Operations
 and timers carry refbox::Weak observers, release state borrows before formatting

@@ -45,12 +45,12 @@ pub static cmd_select_pane_entry: cmd_entry = {
         name: c"select-pane",
         alias: Some(c"selectp"),
         args: args_parse {
-            template: c"DdegLlMmP:RT:t:UZ",
+            template: c"DdegLlMmP:RT:t:U",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: c"[-DdeLlMmRUZ] [-T title] [-t target-pane]",
+        usage: c"[-DdeLlMmRU] [-T title] [-t target-pane]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -70,12 +70,12 @@ pub static cmd_last_pane_entry: cmd_entry = {
         name: c"last-pane",
         alias: Some(c"lastp"),
         args: args_parse {
-            template: c"det:Z",
+            template: c"det:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: c"[-deZ] [-t target-window]",
+        usage: c"[-de] [-t target-window]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

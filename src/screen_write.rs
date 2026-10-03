@@ -11,7 +11,6 @@ use crate::src::grid::{
     grid_cells_equal, grid_clear_history, grid_default_cell, grid_get_cell, grid_get_line,
     grid_get_line_mut,
 };
-use crate::src::layout::layout_fix_panes;
 use crate::src::log::{fatal, fatalx, log_bytes, log_debug, log_get_level};
 use crate::src::options::options_get_number;
 use crate::src::options::options_owner_ptr;

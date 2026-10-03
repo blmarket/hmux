@@ -515,18 +515,6 @@ pub(crate) fn tty_client_timer_callback(
     }
 }
 
-pub(crate) fn tty_mouse_client_callback(
-    owner: &ClientRef,
-    callback: unsafe fn(&ClientRef, *mut mouse_event),
-) -> impl FnMut(&mut mouse_event) {
-    let observer = std::rc::Rc::downgrade(owner);
-    move |mouse| {
-        if let Some(owner) = observer.upgrade() {
-            unsafe { callback(&owner, mouse) };
-        }
-    }
-}
-
 pub unsafe fn tty_open(owner: &ClientRef) -> Result<(), std::ffi::CString> {
     let (name, capabilities) = owner.terminal_description_source();
     let mut caps: Vec<_> = capabilities
@@ -1039,7 +1027,7 @@ pub unsafe fn tty_window_bigger(owner: &ClientRef) -> ::core::ffi::c_int {
         .window_handle()
         .cloned()
         .expect("current window");
-    let (sx, sy) = crate::src::layout::logical_size(&window);
+    let (sx, sy) = window.logical_size();
     let (tx, ty) = owner.terminal_size();
     (tx < sx || ty.wrapping_sub(status_line_size(owner)) < sy) as i32
 }
@@ -1060,7 +1048,7 @@ unsafe fn tty_window_offset1(owner: &ClientRef) -> tty_window_view {
         .window_handle()
         .cloned()
         .expect("current window");
-    let (sx, sy) = crate::src::layout::logical_size(&window);
+    let (sx, sy) = window.logical_size();
     let (tx, ty) = owner.terminal_size();
     let height = ty.wrapping_sub(status_line_size(owner));
     if tx >= sx && height >= sy {

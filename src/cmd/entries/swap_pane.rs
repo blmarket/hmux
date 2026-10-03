@@ -2,7 +2,6 @@ use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_get_source, cmdq_get_target};
 use crate::src::events::events_fire_window;
-use crate::src::layout::layout_fix_panes;
 use crate::src::server_client::Client as _;
 use crate::src::shared::client::ClientRef;
 use crate::src::window::Window as _;
@@ -21,12 +20,12 @@ pub static cmd_swap_pane_entry: cmd_entry = {
         name: c"swap-pane",
         alias: Some(c"swapp"),
         args: args_parse {
-            template: c"dDs:t:UZ",
+            template: c"dDs:t:U",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: c"[-dDUZ] [-s src-pane] [-t dst-pane]",
+        usage: c"[-dDU] [-s src-pane] [-t dst-pane]",
         source: cmd_entry_flag {
             flag: 's' as i32 as ::core::ffi::c_char,
             type_0: CMD_FIND_PANE,
@@ -65,55 +64,30 @@ unsafe fn cmd_swap_pane_exec(
             let previous = std::mem::replace(&mut src_window_owner, dst_window_owner.clone());
             previous.release(c"cmd_swap_pane_exec");
 
+            // The strip does not wrap; the last pane stays in place.
             src_pane_owner = dst_window_owner
                 .step_pane(Some(&Rc::downgrade(&dst_pane_owner)), false)
-                .or_else(|| dst_window_owner.step_pane(None, false))
-                .expect("swap target remains in its window");
+                .unwrap_or_else(|| dst_pane_owner.clone());
         } else if args_has(args, 'U' as i32 as u_char) != 0 {
             let previous = std::mem::replace(&mut src_window_owner, dst_window_owner.clone());
             previous.release(c"cmd_swap_pane_exec");
 
+            // The strip does not wrap; the first pane stays in place.
             src_pane_owner = dst_window_owner
                 .step_pane(Some(&Rc::downgrade(&dst_pane_owner)), true)
-                .or_else(|| dst_window_owner.step_pane(None, true))
-                .expect("swap target remains in its window");
+                .unwrap_or_else(|| dst_pane_owner.clone());
         }
         if !Rc::ptr_eq(&src_pane_owner, &dst_pane_owner) {
             ClientRef::forget_pane(&src_pane_owner);
             ClientRef::forget_pane(&dst_pane_owner);
+            // Options follow the new parents before the strips arrange them.
+            src_pane_owner.reparent(&dst_window_owner);
+            dst_pane_owner.reparent(&src_window_owner);
             dst_window_owner.swap_pane_order(
                 &Rc::downgrade(&dst_pane_owner),
                 &src_window_owner,
                 &Rc::downgrade(&src_pane_owner),
             );
-            let src_lc = src_pane_owner
-                .layout_identity()
-                .expect("swap source layout cell");
-            let dst_lc = dst_pane_owner
-                .layout_identity()
-                .expect("swap target layout cell");
-            {
-                let mut cell = src_window_owner
-                    .borrow_layout_cell_mut(src_lc)
-                    .expect("swap source cell belongs to its original window");
-                cell.wp = Rc::downgrade(&dst_pane_owner);
-            }
-            dst_pane_owner.place_in_layout(src_lc);
-            {
-                let mut cell = dst_window_owner
-                    .borrow_layout_cell_mut(dst_lc)
-                    .expect("swap target cell belongs to its original window");
-                cell.wp = Rc::downgrade(&src_pane_owner);
-            }
-            src_pane_owner.place_in_layout(dst_lc);
-            src_pane_owner.reparent(&dst_window_owner);
-            dst_pane_owner.reparent(&src_window_owner);
-            let (src_sx, src_sy, src_x, src_y) = src_pane_owner.geometry();
-            let (dst_sx, dst_sy, dst_x, dst_y) = dst_pane_owner.geometry();
-            src_pane_owner.set_layout_offset(dst_x, dst_y);
-            src_pane_owner.resize(dst_sx, dst_sy);
-            dst_pane_owner.set_layout_offset(src_x, src_y);
-            dst_pane_owner.resize(src_sx, src_sy);
             if args_has(args, 'd' as i32 as u_char) == 0 {
                 if !Rc::ptr_eq(&src_window_owner, &dst_window_owner) {
                     src_window_owner.select_pane(&dst_pane_owner, true);
@@ -146,12 +120,8 @@ unsafe fn cmd_swap_pane_exec(
                 );
                 src_pane_owner.refresh_palette();
                 dst_pane_owner.refresh_palette();
-                layout_fix_panes(&src_window_owner);
-                src_window_owner.invalidate_scene();
                 server_redraw_window(&src_window_owner);
             }
-            layout_fix_panes(&std::rc::Rc::clone(&(dst_window_owner)));
-            dst_window_owner.invalidate_scene();
             server_redraw_window(&(dst_window_owner));
             if !Rc::ptr_eq(&src_window_owner, &dst_window_owner) {
                 src_pane_owner.notify_moved(

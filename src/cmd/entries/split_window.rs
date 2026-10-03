@@ -15,7 +15,6 @@ use crate::src::events_payload::{
 };
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_single_cstring, format_single_from_target_cstring};
-use crate::src::layout::layout_close_pane;
 use crate::src::options::{options_set_number, options_set_string};
 
 use crate::src::server_client::Client as _;
@@ -32,9 +31,7 @@ use crate::src::shared::events::event_payload;
 use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::spawn::spawn_context;
-use crate::src::shared::spawn::{
-    SPAWN_BEFORE, SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_FULLSIZE, SPAWN_HORIZONTAL,
-};
+use crate::src::shared::spawn::{SPAWN_BEFORE, SPAWN_DETACHED, SPAWN_EMPTY};
 use crate::src::shared::window::winlink;
 use crate::src::window::Window;
 
@@ -46,12 +43,12 @@ pub static cmd_new_pane_entry: cmd_entry = {
         name: c"new-pane",
         alias: Some(c"newp"),
         args: args_parse {
-            template: c"bc:de:EfF:hIkl:m:p:PR:s:S:t:T:vWZ",
+            template: c"bc:de:EF:Ikm:PR:s:S:t:T:W",
             lower: 0 as ::core::ffi::c_int,
             upper: -(1 as ::core::ffi::c_int),
             cb: None,
         },
-        usage: c"[-bdefhIkPvWZ] [-c start-directory] [-e environment] [-F format] [-l size] [-m message] [-p percentage] [-s style] [-S active-border-style] [-R inactive-border-style] [-T title] [-t target-pane] [shell-command [argument ...]]",
+        usage: c"[-bdEIkPW] [-c start-directory] [-e environment] [-F format] [-m message] [-s style] [-S active-border-style] [-R inactive-border-style] [-T title] [-t target-pane] [shell-command [argument ...]]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -66,17 +63,19 @@ pub static cmd_new_pane_entry: cmd_entry = {
         exec: Some(cmd_split_window_exec),
     }
 };
+/// Historical alias for new-pane: the strip has no split direction or size,
+/// so -f, -h, -l, -p and -v are accepted and ignored.
 pub static cmd_split_window_entry: cmd_entry = {
     cmd_entry {
         name: c"split-window",
         alias: Some(c"splitw"),
         args: args_parse {
-            template: c"bc:de:EfF:hIkl:m:p:PR:s:S:t:T:vWZ",
+            template: c"bc:de:EfF:hIkl:m:p:PR:s:S:t:T:vW",
             lower: 0 as ::core::ffi::c_int,
             upper: -(1 as ::core::ffi::c_int),
             cb: None,
         },
-        usage: c"[-bdefhIkPvWZ] [-c start-directory] [-e environment] [-F format] [-l size] [-m message] [-p percentage] [-s style] [-S active-border-style] [-R inactive-border-style] [-T title] [-t target-pane] [shell-command [argument ...]]",
+        usage: c"[-bdEfhIkPvW] [-c start-directory] [-e environment] [-F format] [-l size] [-m message] [-p percentage] [-s style] [-S active-border-style] [-R inactive-border-style] [-T title] [-t target-pane] [shell-command [argument ...]]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -106,7 +105,6 @@ unsafe fn cmd_split_window_exec(
         wl: refbox::Weak::new(),
         tc: std::rc::Weak::new(),
         wp0: std::rc::Weak::new(),
-        layout: None,
         name: None,
         argv: Vec::new(),
         environ: None,
@@ -142,14 +140,8 @@ unsafe fn cmd_split_window_exec(
         let mut style: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut cause: Option<std::ffi::CString> = None;
         let mut count: u_int = args_count(args);
-        if args_has(args, 'h' as i32 as u_char) != 0 {
-            flags |= SPAWN_HORIZONTAL;
-        }
         if args_has(args, 'b' as i32 as u_char) != 0 {
             flags |= SPAWN_BEFORE;
-        }
-        if args_has(args, 'f' as i32 as u_char) != 0 {
-            flags |= SPAWN_FULLSIZE;
         }
         if args_has(args, 'd' as i32 as u_char) != 0 {
             flags |= SPAWN_DETACHED;
@@ -204,11 +196,10 @@ unsafe fn cmd_split_window_exec(
             .window_handle()
             .expect("target window")
             .clone();
-        let spawned_pane = match window_owner.split_pane(&mut sc, &mut *args, |error| {
-            cmdq_error(item_handle, |out| write_cstr(out, error.as_ptr()))
-        }) {
+        let spawned_pane = match window_owner.new_pane(&mut sc) {
             Ok(pane) => Some(pane),
-            Err(_) => {
+            Err(error) => {
+                cmdq_error(item_handle, |out| write_cstr(out, error.as_ptr()));
                 window_owner.release(c"cmd_split_window");
                 return CMD_RETURN_ERROR;
             }
@@ -463,7 +454,6 @@ unsafe fn cmd_split_window_exec(
         }
         if let Some(new_pane) = spawned_pane.as_ref() {
             ClientRef::forget_pane(new_pane);
-            layout_close_pane(new_pane);
             original_window.remove_pane(new_pane);
         }
         drop(sc.environ.take());

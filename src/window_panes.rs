@@ -12,7 +12,6 @@ use crate::src::format::bytes::{xformat, xformat_with};
 use crate::src::format::{format_create_defaults, format_free, format_single_cstring};
 use crate::src::format_draw::format_draw;
 use crate::src::grid::grid_default_cell;
-use crate::src::layout::layout_add_horizontal_border;
 use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::screen::{screen_free, screen_init, screen_resize};
@@ -39,7 +38,6 @@ use crate::src::shared::event::*;
 use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
-use crate::src::shared::layout::layout_cell;
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::mouse::mouse_event;
@@ -198,11 +196,14 @@ unsafe fn window_panes_add_area(
         sy,
     });
 }
-unsafe fn window_panes_pane_geometry(pane: &Rc<UnsafeCell<window_pane>>) -> Option<&layout_cell> {
+unsafe fn window_panes_pane_geometry(
+    pane: &Rc<UnsafeCell<window_pane>>,
+) -> Option<layout_geometry> {
     let window = pane.window_observer().upgrade()?;
-    let cell = window.pane_layout_cell(&Rc::downgrade(pane))? as *const layout_cell;
-    // The pane's window owns this cell throughout the immediate geometry query.
-    Some(&*cell)
+    window
+        .pane_cells()
+        .into_iter()
+        .find_map(|(candidate, cell)| Rc::ptr_eq(&candidate, pane).then_some(cell))
 }
 fn window_panes_scaled_geometry(
     geometry: &layout_geometry,
@@ -273,8 +274,7 @@ unsafe fn window_panes_get_geometry(
     let Some(geometry) = window_panes_pane_geometry(wp_owner) else {
         return 0;
     };
-    let Some((x, mut y, sx, mut sy)) =
-        window_panes_scaled_geometry(&geometry.g, osx, osy, dsx, dsy)
+    let Some((x, mut y, sx, mut sy)) = window_panes_scaled_geometry(&geometry, osx, osy, dsx, dsy)
     else {
         return 0;
     };
@@ -283,11 +283,8 @@ unsafe fn window_panes_get_geometry(
         .upgrade()
         .expect("live pane window")
         .pane_border_status();
-    let border = match status {
-        PANE_STATUS_TOP => geometry.has_border(PANE_STATUS_TOP),
-        PANE_STATUS_BOTTOM => geometry.has_border(PANE_STATUS_BOTTOM),
-        _ => false,
-    };
+    // Every strip pane spans the full height, so each has the status row.
+    let border = status == PANE_STATUS_TOP || status == PANE_STATUS_BOTTOM;
     if border && sy > 1 {
         if status == PANE_STATUS_TOP {
             y = y.wrapping_add(1);
@@ -440,55 +437,6 @@ unsafe fn window_panes_mark_hline(
         xx += 1;
     }
 }
-unsafe fn window_panes_mark_borders_cell(
-    mut map: *mut u_char,
-    mut lc: *mut layout_cell,
-    mut osx: u_int,
-    mut osy: u_int,
-    mut dsx: u_int,
-    mut dsy: u_int,
-) {
-    let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut lcnext: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut x: ::core::ffi::c_int = 0;
-    let mut y: ::core::ffi::c_int = 0;
-    let mut x2: ::core::ffi::c_int = 0;
-    let mut y2: ::core::ffi::c_int = 0;
-    if (*lc).type_0 as ::core::ffi::c_uint
-        == LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return;
-    }
-    lcchild = layout_cells_first(&*lc);
-    while !lcchild.is_null() {
-        window_panes_mark_borders_cell(map, lcchild, osx, osy, dsx, dsy);
-        lcnext = layout_cell_next(lcchild);
-        if !lcnext.is_null() {
-            if (*lc).type_0 as ::core::ffi::c_uint
-                == LAYOUT_LEFTRIGHT as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                x = window_panes_map_x(
-                    ((*lcchild).g.xoff as u_int).wrapping_add((*lcchild).g.sx),
-                    osx,
-                    dsx,
-                );
-                y = window_panes_map_y((*lc).g.yoff as u_int, osy, dsy);
-                y2 = window_panes_map_y(((*lc).g.yoff as u_int).wrapping_add((*lc).g.sy), osy, dsy);
-                window_panes_mark_vline(map, dsx, dsy, x, y, y2);
-            } else {
-                x = window_panes_map_x((*lc).g.xoff as u_int, osx, dsx);
-                x2 = window_panes_map_x(((*lc).g.xoff as u_int).wrapping_add((*lc).g.sx), osx, dsx);
-                y = window_panes_map_y(
-                    ((*lcchild).g.yoff as u_int).wrapping_add((*lcchild).g.sy),
-                    osy,
-                    dsy,
-                );
-                window_panes_mark_hline(map, dsx, dsy, x, x2, y);
-            }
-        }
-        lcchild = layout_cell_next(lcchild);
-    }
-}
 unsafe fn window_panes_mark_pane_status_borders(
     map: *mut u_char,
     window: &WindowRef,
@@ -502,32 +450,13 @@ unsafe fn window_panes_mark_pane_status_borders(
         return;
     }
     // No callbacks occur while collecting these copied geometry records.
-    for pane in window.pane_snapshot() {
-        let Some(geometry) = window_panes_pane_geometry(&pane) else {
-            continue;
-        };
-        let border = if status == PANE_STATUS_TOP {
-            geometry.has_border(PANE_STATUS_TOP)
-        } else {
-            geometry.has_border(PANE_STATUS_BOTTOM)
-        };
-        if !border {
-            continue;
-        }
-        let x = window_panes_map_x(geometry.g.xoff as u_int, osx, dsx);
-        let x2 = window_panes_map_x(
-            (geometry.g.xoff as u_int).wrapping_add(geometry.g.sx),
-            osx,
-            dsx,
-        );
+    for (_, geometry) in window.pane_cells() {
+        let x = window_panes_map_x(geometry.xoff as u_int, osx, dsx);
+        let x2 = window_panes_map_x((geometry.xoff as u_int).wrapping_add(geometry.sx), osx, dsx);
         let y = if status == PANE_STATUS_TOP {
-            window_panes_map_y(geometry.g.yoff as u_int, osy, dsy)
+            window_panes_map_y(geometry.yoff as u_int, osy, dsy)
         } else {
-            window_panes_map_y(
-                (geometry.g.yoff as u_int).wrapping_add(geometry.g.sy),
-                osy,
-                dsy,
-            ) - 1
+            window_panes_map_y((geometry.yoff as u_int).wrapping_add(geometry.sy), osy, dsy) - 1
         };
         window_panes_mark_hline(map, dsx, dsy, x, x2, y);
     }
@@ -552,164 +481,6 @@ unsafe fn window_panes_border_cell_type(mut mask: u_char) -> ::core::ffi::c_int 
         _ => {}
     }
     12 as ::core::ffi::c_int
-}
-unsafe fn window_panes_border_has_horizontal(mut mask: u_char) -> ::core::ffi::c_int {
-    (mask as ::core::ffi::c_int & (WINDOW_PANES_BORDER_L | WINDOW_PANES_BORDER_R)
-        != 0 as ::core::ffi::c_int) as ::core::ffi::c_int
-}
-unsafe fn window_panes_border_has_vertical(mut mask: u_char) -> ::core::ffi::c_int {
-    (mask as ::core::ffi::c_int & (WINDOW_PANES_BORDER_U | WINDOW_PANES_BORDER_D)
-        != 0 as ::core::ffi::c_int) as ::core::ffi::c_int
-}
-unsafe fn window_panes_mark_border_joins_cell(
-    mut map: *mut u_char,
-    mut lc: *mut layout_cell,
-    mut osx: u_int,
-    mut osy: u_int,
-    mut dsx: u_int,
-    mut dsy: u_int,
-) {
-    let mut lcchild: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut lcnext: *mut layout_cell = ::core::ptr::null_mut::<layout_cell>();
-    let mut x: ::core::ffi::c_int = 0;
-    let mut y: ::core::ffi::c_int = 0;
-    let mut x2: ::core::ffi::c_int = 0;
-    let mut y2: ::core::ffi::c_int = 0;
-    if (*lc).type_0 as ::core::ffi::c_uint
-        == LAYOUT_WINDOWPANE as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return;
-    }
-    lcchild = layout_cells_first(&*lc);
-    while !lcchild.is_null() {
-        window_panes_mark_border_joins_cell(map, lcchild, osx, osy, dsx, dsy);
-        lcnext = layout_cell_next(lcchild);
-        if !lcnext.is_null() {
-            if (*lc).type_0 as ::core::ffi::c_uint
-                == LAYOUT_LEFTRIGHT as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                x = window_panes_map_x(
-                    ((*lcchild).g.xoff as u_int).wrapping_add((*lcchild).g.sx),
-                    osx,
-                    dsx,
-                );
-                y = window_panes_map_y((*lc).g.yoff as u_int, osy, dsy);
-                y2 = window_panes_map_y(((*lc).g.yoff as u_int).wrapping_add((*lc).g.sy), osy, dsy);
-                if !(x < 0 as ::core::ffi::c_int || x as u_int >= dsx) {
-                    if y > 0 as ::core::ffi::c_int
-                        && window_panes_border_has_horizontal(
-                            *map.offset(
-                                ((y - 1 as ::core::ffi::c_int) as u_int)
-                                    .wrapping_mul(dsx)
-                                    .wrapping_add(x as u_int)
-                                    as isize,
-                            ),
-                        ) != 0
-                    {
-                        window_panes_mark_border(
-                            map,
-                            dsx,
-                            dsy,
-                            x as u_int,
-                            (y - 1 as ::core::ffi::c_int) as u_int,
-                            WINDOW_PANES_BORDER_D as u_char,
-                        );
-                        window_panes_mark_border(
-                            map,
-                            dsx,
-                            dsy,
-                            x as u_int,
-                            y as u_int,
-                            WINDOW_PANES_BORDER_U as u_char,
-                        );
-                    }
-                    if (y2 as u_int) < dsy
-                        && window_panes_border_has_horizontal(*map.offset(
-                            (y2 as u_int).wrapping_mul(dsx).wrapping_add(x as u_int) as isize,
-                        )) != 0
-                    {
-                        window_panes_mark_border(
-                            map,
-                            dsx,
-                            dsy,
-                            x as u_int,
-                            y2 as u_int,
-                            WINDOW_PANES_BORDER_U as u_char,
-                        );
-                        window_panes_mark_border(
-                            map,
-                            dsx,
-                            dsy,
-                            x as u_int,
-                            (y2 - 1 as ::core::ffi::c_int) as u_int,
-                            WINDOW_PANES_BORDER_D as u_char,
-                        );
-                    }
-                }
-            } else {
-                x = window_panes_map_x((*lc).g.xoff as u_int, osx, dsx);
-                x2 = window_panes_map_x(((*lc).g.xoff as u_int).wrapping_add((*lc).g.sx), osx, dsx);
-                y = window_panes_map_y(
-                    ((*lcchild).g.yoff as u_int).wrapping_add((*lcchild).g.sy),
-                    osy,
-                    dsy,
-                );
-                if !(y < 0 as ::core::ffi::c_int || y as u_int >= dsy) {
-                    if x > 0 as ::core::ffi::c_int
-                        && window_panes_border_has_vertical(
-                            *map.offset(
-                                (y as u_int)
-                                    .wrapping_mul(dsx)
-                                    .wrapping_add(x as u_int)
-                                    .wrapping_sub(1 as u_int)
-                                    as isize,
-                            ),
-                        ) != 0
-                    {
-                        window_panes_mark_border(
-                            map,
-                            dsx,
-                            dsy,
-                            (x - 1 as ::core::ffi::c_int) as u_int,
-                            y as u_int,
-                            WINDOW_PANES_BORDER_R as u_char,
-                        );
-                        window_panes_mark_border(
-                            map,
-                            dsx,
-                            dsy,
-                            x as u_int,
-                            y as u_int,
-                            WINDOW_PANES_BORDER_L as u_char,
-                        );
-                    }
-                    if (x2 as u_int) < dsx
-                        && window_panes_border_has_vertical(*map.offset(
-                            (y as u_int).wrapping_mul(dsx).wrapping_add(x2 as u_int) as isize,
-                        )) != 0
-                    {
-                        window_panes_mark_border(
-                            map,
-                            dsx,
-                            dsy,
-                            x2 as u_int,
-                            y as u_int,
-                            WINDOW_PANES_BORDER_L as u_char,
-                        );
-                        window_panes_mark_border(
-                            map,
-                            dsx,
-                            dsy,
-                            (x2 - 1 as ::core::ffi::c_int) as u_int,
-                            y as u_int,
-                            WINDOW_PANES_BORDER_R as u_char,
-                        );
-                    }
-                }
-            }
-        }
-        lcchild = layout_cell_next(lcchild);
-    }
 }
 unsafe fn window_panes_draw_borders(
     mut ctx: *mut screen_write_ctx,
@@ -742,23 +513,15 @@ unsafe fn window_panes_draw_borders(
     }
     let map_size = (dsx as usize).checked_mul(dsy as usize).unwrap();
     let mut map = vec![0; map_size];
-    {
-        let Some(root) = w_owner.borrow_layout_root() else {
-            return;
-        };
-        // These legacy tree walkers only read cells. Their local pointers end
-        // here, before Window queries and screen writes can reenter.
-        let cell = (root as *const layout_cell).cast_mut();
-        window_panes_mark_borders_cell(map.as_mut_ptr(), cell, osx, osy, dsx, dsy);
+    // A separator follows every pane but the last, across the full height.
+    for pair in w_owner.pane_cells().windows(2) {
+        let (_, geometry) = &pair[0];
+        let x = window_panes_map_x((geometry.xoff as u_int).wrapping_add(geometry.sx), osx, dsx);
+        let y = window_panes_map_y(geometry.yoff as u_int, osy, dsy);
+        let y2 = window_panes_map_y((geometry.yoff as u_int).wrapping_add(geometry.sy), osy, dsy);
+        window_panes_mark_vline(map.as_mut_ptr(), dsx, dsy, x, y, y2);
     }
     window_panes_mark_pane_status_borders(map.as_mut_ptr(), w_owner, osx, osy, dsx, dsy);
-    {
-        let Some(root) = w_owner.borrow_layout_root() else {
-            return;
-        };
-        let cell = (root as *const layout_cell).cast_mut();
-        window_panes_mark_border_joins_cell(map.as_mut_ptr(), cell, osx, osy, dsx, dsy);
-    }
     yy = 0 as u_int;
     while yy < dsy {
         xx = 0 as u_int;
@@ -1248,12 +1011,10 @@ unsafe fn window_panes_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         .upgrade()
         .expect("source window remains owned");
     (|| {
-        (osx, osy) = {
-            let Some(root) = window.borrow_layout_root() else {
-                return;
-            };
-            (root.g.sx, root.g.sy)
-        };
+        if window.next_pane(None).is_none() {
+            return;
+        }
+        (osx, osy) = window.logical_size();
         sx = (*data).screen.grid().sx;
         sy = (*data).screen.grid().sy;
         window_panes_free_areas(data);

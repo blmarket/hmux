@@ -49,7 +49,6 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::grid::grid_cells_look_equal;
 use crate::src::grid::view::grid_view_string_cells_bytes;
 use crate::src::input_keys::input_key_pane;
-use crate::src::layout::{layout_assign_pane, layout_fix_panes, layout_free, layout_init};
 use crate::src::log::{fatal, fatalx, log_cstr, log_cstr_n, log_debug};
 use crate::src::menu::{menu_destroy, menu_resize};
 use crate::src::options::options_owner_ptr;
@@ -113,7 +112,6 @@ use crate::src::shared::event::{EV_READ, EV_WRITE};
 use crate::src::shared::grid::*;
 use crate::src::shared::input::input_ctx;
 use crate::src::shared::key::*;
-use crate::src::shared::layout::layout_cell;
 use crate::src::shared::layout::layout_geometry;
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::{INT_MAX, UINT_MAX};
@@ -138,7 +136,7 @@ use crate::src::shared::screen::{screen, MODE_BRACKETPASTE, MODE_FOCUSON, MODE_T
 use crate::src::shared::session::session;
 use crate::src::shared::signal::SIGCHLD;
 use crate::src::shared::spawn::spawn_editor_state;
-use crate::src::shared::spawn::{SPAWN_BEFORE, SPAWN_FULLSIZE};
+use crate::src::shared::spawn::SPAWN_BEFORE;
 use crate::src::shared::status::status_prompt_input_cb;
 use crate::src::shared::style::*;
 use crate::src::shared::tree::{RB_INF, RB_NEGINF};
@@ -1070,9 +1068,9 @@ unsafe fn window_pane_set_mode(
     assert!(!mode_screen.is_null(), "active mode has a screen");
     (*wp).screen_source = PaneScreenSource::Mode((*wp).active_mode_entry());
     (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_CHANGED;
-    layout_fix_panes(&std::rc::Rc::clone(
-        ((*wp).window_handle().as_ref()).expect("live window"),
-    ));
+    ((*wp).window_handle().as_ref())
+        .expect("live window")
+        .refit();
     server_redraw_window_borders(((*wp).window_handle().as_ref()).expect("live window"));
     server_status_window(((*wp).window_handle().as_ref()).expect("live window"));
     window_fire_pane_mode_changed(
@@ -1147,9 +1145,9 @@ unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<window_pa
         next.get_unchecked().mode.name.as_ptr()
     };
     (*wp).flags |= PANE_REDRAW | PANE_REDRAWSCROLLBAR | PANE_CHANGED;
-    layout_fix_panes(&std::rc::Rc::clone(
-        ((*wp).window_handle().as_ref()).expect("live window"),
-    ));
+    ((*wp).window_handle().as_ref())
+        .expect("live window")
+        .refit();
     server_redraw_window_borders(((*wp).window_handle().as_ref()).expect("live window"));
     server_status_window(((*wp).window_handle().as_ref()).expect("live window"));
     window_fire_pane_mode_changed(
@@ -1711,7 +1709,7 @@ unsafe fn window_pane_find_up(
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     let window = (*wp).window_handle().expect("pane parent");
-    let (_width, height) = crate::src::layout::logical_size(&window);
+    let (_width, height) = window.logical_size();
     status = window.pane_border_status();
     (xoff, yoff, sx, sy) = window_pane_full_size_offset(source);
     edge = yoff;
@@ -1766,7 +1764,7 @@ unsafe fn window_pane_find_down(
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     let window = (*wp).window_handle().expect("pane parent");
-    let (_width, height) = crate::src::layout::logical_size(&window);
+    let (_width, height) = window.logical_size();
     status = window.pane_border_status();
     (xoff, yoff, sx, sy) = window_pane_full_size_offset(source);
     edge = yoff + sy as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
@@ -1820,7 +1818,7 @@ unsafe fn window_pane_find_left(
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     let window = (*wp).window_handle().expect("pane parent");
-    let (width, _height) = crate::src::layout::logical_size(&window);
+    let (width, _height) = window.logical_size();
     (xoff, yoff, sx, sy) = window_pane_full_size_offset(source);
     edge = xoff;
     if edge == 0 as ::core::ffi::c_int {
@@ -1865,7 +1863,7 @@ unsafe fn window_pane_find_right(
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     let window = (*wp).window_handle().expect("pane parent");
-    let (width, _height) = crate::src::layout::logical_size(&window);
+    let (width, _height) = window.logical_size();
     (xoff, yoff, sx, sy) = window_pane_full_size_offset(source);
     edge = xoff + sx as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
     if edge >= width as ::core::ffi::c_int {

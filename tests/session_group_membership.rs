@@ -168,7 +168,7 @@ fn break_pane_adopts_existing_process_instead_of_spawning_a_replacement() {
     let server = Server::new();
     server.success(&["new-session", "-d", "-s", "adopt", "sleep 30"]);
     let pane = server.success(&[
-        "split-window",
+        "new-pane",
         "-d",
         "-P",
         "-F",

@@ -57,8 +57,8 @@ impl Server {
             .to_owned()
     }
 
-    /// Start a manually sized window with `panes` side by side (or stacked).
-    pub fn start(&self, sx: u32, sy: u32, panes: usize, split: &str) {
+    /// Start a manually sized window with `panes` in its strip.
+    pub fn start(&self, sx: u32, sy: u32, panes: usize) {
         self.success(&[
             "new-session",
             "-d",
@@ -70,7 +70,7 @@ impl Server {
         ]);
         self.success(&["set", "-g", "window-size", "manual"]);
         for _ in 1..panes {
-            self.success(&["split-window", split, "sleep 60"]);
+            self.success(&["new-pane", "sleep 60"]);
         }
     }
 
@@ -80,11 +80,33 @@ impl Server {
         (sx.parse().unwrap(), sy.parse().unwrap())
     }
 
-    /// The tiled root's size, as layout strings report it.
+    /// The layout root's size: the strip, or a lone pane's cell.
     pub fn root_size(&self) -> (u32, u32) {
         let layout = self.display("#{window_layout}");
         let root = &layout[layout.find("\"L\":{").expect("layout root")..];
         (field(root, "\"w\":"), field(root, "\"h\":"))
+    }
+
+    /// Each pane's id, first column, width, top row and height, in strip order.
+    pub fn panes(&self) -> Vec<(String, u32, u32, u32, u32)> {
+        self.success(&[
+            "list-panes",
+            "-F",
+            "#{pane_id} #{pane_left} #{pane_width} #{pane_top} #{pane_height}",
+        ])
+        .lines()
+        .map(|line| {
+            let fields: Vec<_> = line.split(' ').collect();
+            let number = |index: usize| fields[index].parse().expect("numeric pane field");
+            (
+                fields[0].to_owned(),
+                number(1),
+                number(2),
+                number(3),
+                number(4),
+            )
+        })
+        .collect()
     }
 
     /// Count `window-layout-changed` and `window-resized` from here on.

@@ -3,8 +3,6 @@ use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::cmd_find_from_session;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_source, cmdq_get_state_owned, cmdq_get_target};
 use crate::src::events::events_fire_window;
-use crate::src::format::bytes::write_cstr;
-use crate::src::layout::{layout_assign_pane, layout_close_pane, layout_get_tiled_cell};
 use crate::src::options::options_set_parent;
 use crate::src::resize::recalculate_sizes;
 use crate::src::server_client::Client as _;
@@ -23,7 +21,6 @@ use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
-use crate::src::shared::spawn::{SPAWN_BEFORE, SPAWN_FULLSIZE, SPAWN_HORIZONTAL};
 use crate::src::shared::window::WindowRef;
 
 use crate::src::shared::window::{window, winlink};
@@ -33,12 +30,12 @@ pub static cmd_join_pane_entry: cmd_entry = {
         name: c"join-pane",
         alias: Some(c"joinp"),
         args: args_parse {
-            template: c"bdfhvp:l:s:t:",
+            template: c"bds:t:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: c"[-bdfhv] [-l size] [-s src-pane] [-t dst-pane]",
+        usage: c"[-bd] [-s src-pane] [-t dst-pane]",
         source: cmd_entry_flag {
             flag: 's' as i32 as ::core::ffi::c_char,
             type_0: CMD_FIND_PANE,
@@ -66,7 +63,6 @@ unsafe fn cmd_join_pane_exec(
     let mut dst_s: Option<SessionRef> = None;
     let mut src_wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut dst_wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut dst_idx: ::core::ffi::c_int = 0;
     dst_s = (*target).session_handle();
     dst_wl = (*target).winlink_handle();
@@ -89,48 +85,19 @@ unsafe fn cmd_join_pane_exec(
             });
             return CMD_RETURN_ERROR;
         }
-        if args_has(args, 'h' as i32 as u_char) != 0 {
-            flags |= SPAWN_HORIZONTAL;
+        // Moving within one strip keeps its pane count.
+        if !std::rc::Rc::ptr_eq(src_owner, &dst_window) && !dst_window.has_room_for_pane() {
+            cmdq_error(item_handle, |out| out.write_all(b"no space for a new pane"));
+            return CMD_RETURN_ERROR;
         }
-        if args_has(args, 'b' as i32 as u_char) != 0 {
-            flags |= SPAWN_BEFORE;
-        }
-        if args_has(args, 'f' as i32 as u_char) != 0 {
-            flags |= SPAWN_FULLSIZE;
-        }
-        let layout_id =
-            match layout_get_tiled_cell(item_handle, args, &dst_window, &dst_pane_owner, flags) {
-                Ok(cell) => cell,
-                Err(cause) => {
-                    cmdq_error(item_handle, |out| {
-                        out.write_all(b"size or position ")?;
-                        write_cstr(out, cause.as_ptr())
-                    });
-                    return CMD_RETURN_ERROR;
-                }
-            };
-        layout_close_pane(&src_pane_owner);
         ClientRef::forget_pane(&src_pane_owner);
-        src_owner.forget_pane(&src_pane_owner);
-        assert!(
-            src_owner
-                .borrow_pane_order_mut()
-                .remove(&std::rc::Rc::downgrade(&src_pane_owner)),
-            "pane is not in its window order"
-        );
+        src_owner.detach_pane(&src_pane_owner);
         src_pane_owner.reparent(&dst_window);
-        if flags & SPAWN_BEFORE != 0 {
-            dst_window.borrow_pane_order_mut().insert_before(
-                &std::rc::Rc::downgrade(&dst_pane_owner),
-                std::rc::Rc::downgrade(&src_pane_owner),
-            );
-        } else {
-            dst_window.borrow_pane_order_mut().insert_after(
-                &std::rc::Rc::downgrade(&dst_pane_owner),
-                std::rc::Rc::downgrade(&src_pane_owner),
-            );
-        }
-        layout_assign_pane(&dst_window, layout_id, &src_pane_owner);
+        dst_window.insert_pane(
+            &src_pane_owner,
+            &dst_pane_owner,
+            args_has(args, 'b' as i32 as u_char) != 0,
+        );
         src_pane_owner.refresh_palette();
         recalculate_sizes();
         server_redraw_window(src_owner);

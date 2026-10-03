@@ -17,7 +17,6 @@ pub use crate::src::shared::format::{format_job_tree, format_tree};
 use crate::src::shared::grid::*;
 use crate::src::shared::hyperlinks::hyperlinks_uri;
 pub use crate::src::shared::key::key_event;
-pub use crate::src::shared::layout::layout_cell;
 pub use crate::src::shared::limits::UINT_MAX;
 pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::options_table_entry;

@@ -507,7 +507,7 @@ impl Client for ClientRef {
         (*self.get()).pan_window = Weak::new();
     }
     unsafe fn apply_pan(&self, window: &WindowRef, view: &mut tty_window_view) -> bool {
-        let (sx, sy) = crate::src::layout::logical_size(window);
+        let (sx, sy) = window.logical_size();
         let observer = Rc::downgrade(window);
         let state = &mut *self.get();
         if !state.pan_window.ptr_eq(&observer) {
@@ -528,7 +528,7 @@ impl Client for ClientRef {
         true
     }
     unsafe fn pan_window(&self, window: &WindowRef, direction: PanDirection, amount: u32) {
-        let (width, height) = crate::src::layout::logical_size(window);
+        let (width, height) = window.logical_size();
         let observer = Rc::downgrade(window);
         let state = &mut *self.get();
         if !state.pan_window.ptr_eq(&observer) {

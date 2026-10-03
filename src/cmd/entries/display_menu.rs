@@ -519,7 +519,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
         .upgrade();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let window = (*target).window_handle().expect("menu target window");
-    let logical = crate::src::layout::logical_size(&window);
+    let logical = window.logical_size();
     let pane = (*target).pane_handle().expect("menu target pane");
     let mut xp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut yp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();

@@ -289,12 +289,6 @@ unsafe fn format_cb_pane_fg(ft: *mut format_tree) -> Option<CString> {
 unsafe fn format_cb_pane_flags(ft: *mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_flags", ft)
 }
-unsafe fn format_cb_pane_floating_flag(ft: *mut format_tree) -> Option<CString> {
-    pane_format_string(c"pane_floating_flag", ft)
-}
-unsafe fn format_cb_pane_modal_flag(ft: *mut format_tree) -> Option<CString> {
-    pane_format_string(c"pane_modal_flag", ft)
-}
 
 unsafe fn format_cb_pane_bg(ft: *mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_bg", ft)
@@ -963,9 +957,6 @@ unsafe fn format_cb_pane_x(ft: *mut format_tree) -> Option<CString> {
 unsafe fn format_cb_pane_y(ft: *mut format_tree) -> Option<CString> {
     pane_format_string(c"pane_y", ft)
 }
-unsafe fn format_cb_pane_zoomed_flag(ft: *mut format_tree) -> Option<CString> {
-    pane_format_string(c"pane_zoomed_flag", ft)
-}
 unsafe fn format_cb_scroll_region_lower(ft: *mut format_tree) -> Option<CString> {
     pane_format_string(c"scroll_region_lower", ft)
 }
@@ -1465,12 +1456,6 @@ unsafe fn format_cb_window_manual_width(ft: *mut format_tree) -> Option<CString>
     window.release(c"format manual window width");
     Some(value)
 }
-// Windows no longer zoom; the flag remains for configurations that test it.
-unsafe fn format_cb_window_zoomed_flag(ft: *mut format_tree) -> Option<CString> {
-    let window = (*ft).w.upgrade()?;
-    window.release(c"format window zoom flag");
-    Some(c"0".to_owned())
-}
 
 unsafe fn format_cb_wrap_flag(ft: *mut format_tree) -> Option<CString> {
     pane_format_string(c"wrap_flag", ft)
@@ -1653,7 +1638,7 @@ pub(crate) unsafe fn window_format_value(
     format_table_get(key)?.evaluate(context)
 }
 
-pub(super) static FORMAT_TABLE: [FormatTableEntry; 210] = [
+pub(super) static FORMAT_TABLE: [FormatTableEntry; 205] = [
     FormatTableEntry {
         key: c"active_window_index",
         callback: FormatCallback::String(format_cb_active_window_index),
@@ -2039,10 +2024,6 @@ pub(super) static FORMAT_TABLE: [FormatTableEntry; 210] = [
         callback: FormatCallback::String(format_cb_pane_flags),
     },
     FormatTableEntry {
-        key: c"pane_floating_flag",
-        callback: FormatCallback::String(format_cb_pane_floating_flag),
-    },
-    FormatTableEntry {
         key: c"pane_format",
         callback: FormatCallback::String(format_cb_pane_format),
     },
@@ -2093,10 +2074,6 @@ pub(super) static FORMAT_TABLE: [FormatTableEntry; 210] = [
     FormatTableEntry {
         key: c"pane_marked_set",
         callback: FormatCallback::String(format_cb_pane_marked_set),
-    },
-    FormatTableEntry {
-        key: c"pane_modal_flag",
-        callback: FormatCallback::String(format_cb_pane_modal_flag),
     },
     FormatTableEntry {
         key: c"pane_mode",
@@ -2189,10 +2166,6 @@ pub(super) static FORMAT_TABLE: [FormatTableEntry; 210] = [
     FormatTableEntry {
         key: c"pane_y",
         callback: FormatCallback::String(format_cb_pane_y),
-    },
-    FormatTableEntry {
-        key: c"pane_zoomed_flag",
-        callback: FormatCallback::String(format_cb_pane_zoomed_flag),
     },
     FormatTableEntry {
         key: c"pid",
@@ -2479,16 +2452,8 @@ pub(super) static FORMAT_TABLE: [FormatTableEntry; 210] = [
         callback: FormatCallback::String(format_cb_window_start_flag),
     },
     FormatTableEntry {
-        key: c"window_visible_layout",
-        callback: FormatCallback::String(format_cb_window_layout),
-    },
-    FormatTableEntry {
         key: c"window_width",
         callback: FormatCallback::String(format_cb_window_width),
-    },
-    FormatTableEntry {
-        key: c"window_zoomed_flag",
-        callback: FormatCallback::String(format_cb_window_zoomed_flag),
     },
     FormatTableEntry {
         key: c"wrap_flag",

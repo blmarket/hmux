@@ -24,9 +24,6 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
 use crate::src::format::format_single_cstring;
 use crate::src::input::input_free;
-use crate::src::layout::{
-    layout_assign_pane, layout_close_pane, layout_free, layout_init, layout_split_pane,
-};
 use crate::src::log::{log_close, log_cstr, log_debug, log_hex};
 use crate::src::names::default_window_name_cstring;
 use crate::src::options::options_owner_ptr;
@@ -223,18 +220,7 @@ pub(crate) unsafe fn prepare_respawn_window(
         }
         let source_pane_owner = window.next_pane(None).expect("respawn window has a pane");
         (*sc).wp0 = std::rc::Rc::downgrade(&source_pane_owner);
-        let source = std::rc::Rc::downgrade(&source_pane_owner);
-        assert!(
-            window.borrow_pane_order_mut().remove(&source),
-            "pane is not in its window order"
-        );
-        layout_free(&window);
-        window.destroy_panes();
-        window.borrow_pane_order_mut().push_front(source);
-        let (sx, sy) = window.size();
-        source_pane_owner.resize(sx, sy);
-        layout_init(&window, &source_pane_owner);
-        window.select_respawned_pane(&source_pane_owner);
+        window.reset_to_pane(&source_pane_owner);
         true
     })();
     window.release(c"prepare respawn window");
@@ -320,7 +306,6 @@ pub(crate) unsafe fn spawn_editor(
         wl: refbox::Weak::new(),
         tc: std::rc::Weak::new(),
         wp0: std::rc::Weak::new(),
-        layout: None,
         name: None,
         argv: Vec::new(),
         environ: None,
@@ -336,7 +321,6 @@ pub(crate) unsafe fn spawn_editor(
         .expect("editor window");
     let result = (|| {
         let mut f: *mut FILE = ::core::ptr::null_mut::<FILE>();
-        let mut cause: Option<CString> = None;
         let mut path: [::core::ffi::c_char; 19] =
             ::core::mem::transmute::<[u8; 19], [::core::ffi::c_char; 19]>(*b"/tmp/tmux.XXXXXXXX\0");
         let mut editor: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -362,13 +346,9 @@ pub(crate) unsafe fn spawn_editor(
         drop(stream);
         let mut owner = spawn_editor_state::new(CStr::from_ptr(path.as_ptr()).to_owned(), cb);
         es = &raw mut *owner;
-        // The editor runs in a temporary pane split from the active one; it
+        // The editor runs in a temporary pane beside the active one; it
         // closes when the editor exits and selection returns to that pane.
         let source = original_window.active_pane().expect("editor source pane");
-        let Some(layout_id) = layout_split_pane(&source, LAYOUT_TOPBOTTOM, -1, 0) else {
-            unlink(&raw mut path as *mut ::core::ffi::c_char);
-            return None;
-        };
         let cmd = CString::new(
             [
                 CStr::from_ptr(editor).to_bytes(),
@@ -382,15 +362,12 @@ pub(crate) unsafe fn spawn_editor(
         sc.set_wl(wl.clone());
         sc.tc = std::rc::Rc::downgrade(client_owner);
         sc.wp0 = std::rc::Rc::downgrade(&source);
-        sc.layout = Some(layout_id);
         sc.argv = vec![cmd];
         sc.environ = Some(environ_create());
         sc.idx = -(1 as ::core::ffi::c_int);
         sc.cwd = Some(c"/tmp/".to_owned());
-        let spawned_pane = spawn_pane(&raw mut sc, &raw mut cause);
-        let Some(pane) = spawned_pane else {
-            return None;
-        };
+        // A full strip or a failed spawn drops the owner, removing the file.
+        let pane = original_window.new_pane(&mut sc).ok()?;
         Some(pane.install_editor(owner))
     })();
     original_window.release(c"spawn editor");

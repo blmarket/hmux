@@ -420,43 +420,12 @@ fn migrated_name_and_window_notification_helpers_use_holders() {
             ][..],
         ),
         (
-            "src/layout/core.rs",
-            &[
-                "layout_resize_check_with_limits",
-                "layout_split_check_space_with_limits",
-                "layout_new_pane_size",
-                "layout_set_size_check",
-                "layout_resize_child_cells",
-                "layout_resize_pane_grow",
-                "layout_resize_pane_shrink",
-                "layout_destroy_cell_with_limits",
-                "layout_resize_layout",
-                "layout_resize_pane",
-                "layout_replace_with_node",
-                "layout_assign_pane",
-                "layout_get_tiled_cell",
-                "layout_resize_adjust_with_limits",
-                "layout_spread_cell_with_limits",
-                "layout_spread_out",
-                "layout_fix_offsets",
-                "layout_init",
-                "layout_free",
-                "layout_resize",
-            ][..],
-        ),
-        (
-            "src/layout/custom.rs",
-            &["layout_assign_from_ctx", "layout_parse_apply_ctx"][..],
-        ),
-        (
             "src/format/callbacks.rs",
             &[
                 "format_cb_window_layout",
-                "format_cb_pane_modal_flag",
                 "format_cb_pane_at_bottom",
                 "format_cb_window_linked_sessions",
                 "format_cb_window_name",
-                "format_cb_window_zoomed_flag",
             ][..],
         ),
         (
@@ -464,10 +433,6 @@ fn migrated_name_and_window_notification_helpers_use_holders() {
             &["format_add_window_neighbour"][..],
         ),
         ("src/window_pane/input.rs", &["input_exit_rename"][..]),
-        (
-            "src/cmd/entries/resize_pane.rs",
-            &["cmd_resize_pane_mouse_resize_tiled"][..],
-        ),
         (
             "src/window_tree.rs",
             &["window_tree_pull_item", "window_tree_border_cell"][..],
@@ -621,11 +586,8 @@ fn model_traits_do_not_return_raw_components_or_whole_models() {
                 };
                 struct Output;
                 impl<'ast> Visit<'ast> for Output {
-                    fn visit_type_ptr(&mut self, ty: &'ast syn::TypePtr) {
-                        assert!(
-                            matches!(&*ty.elem, Type::Path(path) if path.path.is_ident("layout_cell")),
-                            "raw component in model trait result"
-                        );
+                    fn visit_type_ptr(&mut self, _: &'ast syn::TypePtr) {
+                        panic!("raw component in model trait result");
                     }
                     fn visit_type_reference(&mut self, ty: &'ast syn::TypeReference) {
                         assert!(

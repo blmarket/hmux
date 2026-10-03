@@ -27,14 +27,14 @@ pub static cmd_choose_tree_entry: cmd_entry = {
         name: c"choose-tree",
         alias: None,
         args: args_parse {
-            template: c"F:f:GhK:kNO:rst:wyZ",
+            template: c"F:f:GhK:kNO:rst:wy",
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: Some(
                 cmd_choose_tree_args_parse
             ),
         },
-        usage: c"[-GhkNrswZ] [-F format] [-f filter] [-K key-format] [-O sort-order] [-t target-pane] [template]",
+        usage: c"[-GhkNrsw] [-F format] [-f filter] [-K key-format] [-O sort-order] [-t target-pane] [template]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -54,14 +54,14 @@ pub static cmd_choose_client_entry: cmd_entry = {
         name: c"choose-client",
         alias: None,
         args: args_parse {
-            template: c"F:f:hiK:kNO:rt:yZ",
+            template: c"F:f:hiK:kNO:rt:y",
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: Some(
                 cmd_choose_tree_args_parse
             ),
         },
-        usage: c"[-hikNrZ] [-F format] [-f filter] [-K key-format] [-O sort-order] [-t target-pane] [template]",
+        usage: c"[-hikNr] [-F format] [-f filter] [-K key-format] [-O sort-order] [-t target-pane] [template]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -81,14 +81,14 @@ pub static cmd_choose_buffer_entry: cmd_entry = {
         name: c"choose-buffer",
         alias: None,
         args: args_parse {
-            template: c"F:f:K:kNO:rt:yZ",
+            template: c"F:f:K:kNO:rt:y",
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: Some(
                 cmd_choose_tree_args_parse
             ),
         },
-        usage: c"[-kNrZ] [-F format] [-f filter] [-K key-format] [-O sort-order] [-t target-pane] [template]",
+        usage: c"[-kNr] [-F format] [-f filter] [-K key-format] [-O sort-order] [-t target-pane] [template]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -108,12 +108,12 @@ pub static cmd_customize_mode_entry: cmd_entry = {
         name: c"customize-mode",
         alias: None,
         args: args_parse {
-            template: c"F:f:kNt:yZ",
+            template: c"F:f:kNt:y",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: c"[-kNZ] [-F format] [-f filter] [-t target-pane]",
+        usage: c"[-kN] [-F format] [-f filter] [-t target-pane]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -133,12 +133,12 @@ pub static cmd_switch_mode_entry: cmd_entry = {
         name: c"switch-mode",
         alias: None,
         args: args_parse {
-            template: c"F:kst:wZ",
+            template: c"F:kst:w",
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: Some(cmd_choose_tree_args_parse),
         },
-        usage: c"[-kswZ] [-F format] [-t target-pane] [command]",
+        usage: c"[-ksw] [-F format] [-t target-pane] [command]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -158,12 +158,12 @@ pub static cmd_display_panes_entry: cmd_entry = {
         name: c"display-panes",
         alias: Some(c"displayp"),
         args: args_parse {
-            template: c"d:kNs:t:Z",
+            template: c"d:kNs:t:",
             lower: 0 as ::core::ffi::c_int,
             upper: 1 as ::core::ffi::c_int,
             cb: Some(cmd_choose_tree_args_parse),
         },
-        usage: c"[-kNZ] [-d duration] [-s source-window] [-t target-pane] [template]",
+        usage: c"[-kN] [-d duration] [-s source-window] [-t target-pane] [template]",
         source: cmd_entry_flag {
             flag: 's' as i32 as ::core::ffi::c_char,
             type_0: CMD_FIND_WINDOW,

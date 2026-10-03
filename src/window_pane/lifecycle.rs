@@ -12,7 +12,6 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
 use crate::src::format_draw::format_draw;
 use crate::src::grid::grid_default_cell;
-use crate::src::layout::layout_close_pane;
 use crate::src::log::log_debug;
 use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_get_number, options_get_string};
@@ -142,7 +141,6 @@ pub(super) unsafe fn kill_process(pane_owner: &std::rc::Rc<std::cell::UnsafeCell
     } else {
         window_owner.release(c"server_kill_pane");
         ClientRef::forget_pane(pane_owner);
-        layout_close_pane(pane_owner);
         std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window"))
             .remove_pane(pane_owner);
         server_redraw_window(((*wp).window_handle().as_ref()).expect("live window"));
@@ -280,7 +278,6 @@ pub(super) unsafe fn finish_process(
         server_fire_pane_exit(c"pane-exited".as_ptr(), pane_owner);
     }
     ClientRef::forget_pane(pane_owner);
-    layout_close_pane(pane_owner);
     std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window"))
         .remove_pane(pane_owner);
     if window_owner.next_pane(None).is_none() {

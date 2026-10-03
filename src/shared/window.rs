@@ -13,7 +13,6 @@ use super::command::{cmd_find_state, cmdq_item};
 use super::format::format_tree;
 use super::grid::grid_cell;
 use super::key::key_code;
-use super::layout::layout_cell;
 use super::mouse::mouse_event;
 use super::options::options;
 use super::pane::{window_pane, window_pane_history, window_panes, PANE_MINIMUM};

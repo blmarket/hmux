@@ -40,7 +40,6 @@ pub mod job;
 pub mod json;
 pub mod key_bindings;
 pub mod key_string;
-pub mod layout;
 pub mod log;
 pub mod menu;
 pub mod mode_tree;

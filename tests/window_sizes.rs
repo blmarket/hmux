@@ -1,5 +1,5 @@
-//! Window size is the `window-size` policy result; layout may extend past it
-//! without feeding back into it.
+//! Window size is the `window-size` policy result. Panes form one strip of
+//! half-width panes that may extend past it without feeding back into it.
 
 #![cfg(unix)]
 
@@ -7,87 +7,281 @@ mod common;
 
 use common::Server;
 
-#[test]
-fn narrow_window_keeps_policy_size_and_recalculation_is_silent() {
-    let server = Server::new();
-    server.start(20, 10, 4, "-h");
-    server.success(&["resize-window", "-x", "5"]);
-    assert_eq!(server.window_size(), (5, 10));
-    // Four one-column panes and three borders cannot fit in five columns.
-    assert_eq!(server.root_size(), (7, 10));
+fn columns(server: &Server) -> Vec<(u32, u32)> {
+    server
+        .panes()
+        .into_iter()
+        .map(|(_, left, width, _, _)| (left, width))
+        .collect()
+}
 
+fn ids(server: &Server) -> Vec<String> {
+    server.panes().into_iter().map(|(id, ..)| id).collect()
+}
+
+fn new_pane(server: &Server, args: &[&str]) -> String {
+    let id = server.success(
+        &[
+            &["new-pane", "-P", "-F", "#{pane_id}"][..],
+            args,
+            &["sleep 60"],
+        ]
+        .concat(),
+    );
+    id.trim_end().to_owned()
+}
+
+#[test]
+fn panes_are_half_width_in_one_row() {
+    let server = Server::new();
+    server.start(81, 10, 3);
+    // Two halves and their separator fill an odd width exactly.
+    assert_eq!(columns(&server), [(0, 40), (41, 40), (82, 40)]);
+    assert!(server
+        .panes()
+        .iter()
+        .all(|&(_, _, _, top, height)| (top, height) == (0, 10)));
+    assert_eq!(server.window_size(), (81, 10));
+    assert_eq!(server.root_size(), (122, 10));
+}
+
+#[test]
+fn even_width_leaves_a_spare_column_and_a_lone_pane_stays_half() {
+    let server = Server::new();
+    server.start(80, 10, 1);
+    assert_eq!(columns(&server), [(0, 39)]);
+    assert_eq!(server.root_size(), (39, 10));
+    server.success(&["new-pane", "sleep 60"]);
+    assert_eq!(columns(&server), [(0, 39), (40, 39)]);
+    assert_eq!(server.root_size(), (79, 10));
+    assert_eq!(server.window_size(), (80, 10));
+}
+
+#[test]
+fn new_pane_goes_after_its_target_or_before_it_with_b() {
+    let server = Server::new();
+    server.start(41, 10, 1);
+    let first = server.display("#{pane_id}");
+    let second = new_pane(&server, &[]);
+    assert_eq!(server.display("#{pane_id}"), second, "new pane is focused");
+    let third = new_pane(&server, &["-d", "-t", &first]);
+    assert_eq!(ids(&server), [&first, &third, &second].map(String::clone));
+    assert_eq!(server.display("#{pane_id}"), second, "-d keeps the focus");
+    let fourth = new_pane(&server, &["-b", "-t", &first]);
+    assert_eq!(
+        ids(&server),
+        [&fourth, &first, &third, &second].map(String::clone)
+    );
+    assert_eq!(server.display("#{pane_id}"), fourth);
+    assert_eq!(columns(&server), [(0, 20), (21, 20), (42, 20), (63, 20)]);
+}
+
+#[test]
+fn split_window_is_an_alias_for_insertion() {
+    let server = Server::new();
+    server.start(41, 10, 1);
+    let first = server.display("#{pane_id}");
+    for flags in [&["-h"][..], &["-v", "-l", "5"], &["-f", "-p", "30"]] {
+        server.success(
+            &[
+                &["split-window", "-t", first.as_str()][..],
+                flags,
+                &["sleep 60"],
+            ]
+            .concat(),
+        );
+    }
+    assert_eq!(columns(&server), [(0, 20), (21, 20), (42, 20), (63, 20)]);
+    assert_eq!(ids(&server)[0], first);
+    let output = server.run(&["new-pane", "-h", "sleep 60"]);
+    assert!(!output.status.success(), "new-pane takes no split flags");
+}
+
+#[test]
+fn removing_a_pane_closes_the_gap_without_resizing() {
+    let server = Server::new();
+    server.start(41, 10, 4);
+    let before = ids(&server);
     server.count_events();
-    // Each option change recalculates sizes; the refit cannot shrink further.
+
+    server.success(&["kill-pane", "-t", &before[1]]);
+    assert_eq!(
+        ids(&server),
+        [&before[0], &before[2], &before[3]].map(String::clone)
+    );
+    assert_eq!(columns(&server), [(0, 20), (21, 20), (42, 20)]);
+    let (layout_changed, resized) = server.events();
+    assert!(layout_changed > 0, "removal fired no window-layout-changed");
+    assert_eq!(resized, 0);
+    assert_eq!(server.window_size(), (41, 10));
+
+    // Removing the last pane moves nothing but still changes the layout.
+    server.count_events();
+    server.success(&["kill-pane", "-t", &before[3]]);
+    assert_eq!(columns(&server), [(0, 20), (21, 20)]);
+    assert!(server.events().0 > 0);
+}
+
+#[test]
+fn resizing_the_window_rearranges_the_strip() {
+    let server = Server::new();
+    server.start(41, 10, 3);
+    server.success(&["resize-window", "-x", "61", "-y", "7"]);
+    assert_eq!(columns(&server), [(0, 30), (31, 30), (62, 30)]);
+    assert!(server.panes().iter().all(|pane| pane.4 == 7));
+    // Tiny windows raise panes to the minimum width.
+    server.success(&["resize-window", "-x", "2"]);
+    assert_eq!(columns(&server), [(0, 1), (2, 1), (4, 1)]);
+    assert_eq!(server.window_size(), (2, 7));
+}
+
+#[test]
+fn recalculation_is_silent_when_nothing_moves() {
+    let server = Server::new();
+    server.start(41, 10, 4);
+    server.count_events();
     for _ in 0..3 {
         server.success(&["set", "-w", "window-size", "manual"]);
         server.success(&["set", "-w", "pane-border-status", "off"]);
     }
-    assert_eq!(server.window_size(), (5, 10));
-    assert_eq!(server.root_size(), (7, 10));
     assert_eq!(server.events(), (0, 0), "recalculation was not silent");
+    assert_eq!(columns(&server), [(0, 20), (21, 20), (42, 20), (63, 20)]);
 }
 
 #[test]
-fn closing_a_pane_refits_without_resizing() {
+fn border_status_takes_a_row_from_every_pane_without_resizing() {
     let server = Server::new();
-    server.start(20, 10, 4, "-h");
-    server.success(&["resize-window", "-x", "5"]);
+    server.start(41, 12, 3);
     server.count_events();
-
-    server.success(&["kill-pane"]);
-    assert_eq!(server.window_size(), (5, 10));
-    assert_eq!(server.root_size(), (5, 10));
-    let (layout_changed, resized) = server.events();
-    assert!(layout_changed > 0, "refit fired no window-layout-changed");
-    assert_eq!(resized, 0);
-}
-
-#[test]
-fn border_status_change_refits_without_resizing() {
-    let server = Server::new();
-    server.start(20, 12, 3, "-v");
     server.success(&["set", "-w", "pane-border-status", "top"]);
-    server.success(&["resize-window", "-y", "5"]);
-    assert_eq!(server.window_size(), (20, 5));
-    assert_eq!(server.root_size(), (20, 6));
-    server.count_events();
-
+    assert!(server
+        .panes()
+        .iter()
+        .all(|&(_, _, _, top, height)| (top, height) == (1, 11)));
+    server.success(&["set", "-w", "pane-border-status", "bottom"]);
+    assert!(server
+        .panes()
+        .iter()
+        .all(|&(_, _, _, top, height)| (top, height) == (0, 11)));
     server.success(&["set", "-w", "pane-border-status", "off"]);
-    assert_eq!(server.window_size(), (20, 5));
-    assert_eq!(server.root_size(), (20, 5));
+    assert!(server
+        .panes()
+        .iter()
+        .all(|&(_, _, _, top, height)| (top, height) == (0, 12)));
+    assert_eq!(server.window_size(), (41, 12));
     assert_eq!(server.events().1, 0);
 }
 
 #[test]
-fn imported_layout_is_arranged_to_window_size() {
+fn swapping_reorders_the_strip_and_stops_at_the_ends() {
     let server = Server::new();
-    server.start(30, 10, 2, "-h");
-    let wide = server.display("#{window_layout}");
-    server.success(&["resize-window", "-x", "20"]);
-    server.count_events();
+    server.start(41, 10, 3);
+    let before = ids(&server);
+    server.success(&["select-pane", "-t", &before[2]]);
 
-    server.success(&["select-layout", &wide]);
-    assert_eq!(server.window_size(), (20, 10));
-    assert_eq!(server.root_size(), (20, 10));
-    assert_eq!(server.events().1, 0, "import resized the window");
+    // The last pane has nothing to its right.
+    server.success(&["swap-pane", "-D"]);
+    assert_eq!(ids(&server), before);
+    server.success(&["swap-pane", "-U"]);
+    assert_eq!(
+        ids(&server),
+        [&before[0], &before[2], &before[1]].map(String::clone)
+    );
+    assert_eq!(
+        server.display("#{pane_id}"),
+        before[2],
+        "focus moves with the pane"
+    );
+    server.success(&["swap-pane", "-U"]);
+    assert_eq!(
+        ids(&server),
+        [&before[2], &before[0], &before[1]].map(String::clone)
+    );
+    server.success(&["swap-pane", "-U"]);
+    assert_eq!(
+        ids(&server),
+        [&before[2], &before[0], &before[1]].map(String::clone)
+    );
+    assert_eq!(columns(&server), [(0, 20), (21, 20), (42, 20)]);
+    assert_eq!(server.display("#{pane_left}"), "0");
 }
 
 #[test]
-fn zoom_flags_are_accepted_and_change_nothing() {
+fn rotation_rotates_the_strip_order() {
     let server = Server::new();
-    server.start(30, 12, 2, "-h");
-    let layout = server.display("#{window_layout}");
-    server.count_events();
+    server.start(41, 10, 3);
+    let before = ids(&server);
+    server.success(&["rotate-window"]);
+    assert_eq!(
+        ids(&server),
+        [&before[1], &before[2], &before[0]].map(String::clone)
+    );
+    server.success(&["rotate-window", "-D"]);
+    assert_eq!(ids(&server), before);
+    assert_eq!(columns(&server), [(0, 20), (21, 20), (42, 20)]);
+}
 
-    server.success(&["resize-pane", "-Z"]);
-    server.success(&["select-pane", "-Z", "-L"]);
-    server.success(&["select-pane", "-Z", "-R"]);
-    assert_eq!(server.display("#{window_zoomed_flag}"), "0");
-    assert_eq!(server.display("#{pane_zoomed_flag}"), "0");
-    assert_eq!(server.display("#{window_flags}"), "*");
-    assert_eq!(server.display("#{window_layout}"), layout);
-    assert_eq!(server.window_size(), (30, 12));
-    assert_eq!(server.events(), (0, 0));
+#[test]
+fn panes_move_between_strips() {
+    let server = Server::new();
+    server.start(41, 10, 2);
+    let source = ids(&server);
+    server.success(&["new-window", "sleep 60"]);
+    let target = server.display("#{pane_id}");
+
+    server.success(&["join-pane", "-s", &source[1], "-t", &target]);
+    assert_eq!(ids(&server), [&target, &source[1]].map(String::clone));
+    assert_eq!(columns(&server), [(0, 20), (21, 20)]);
+    server.success(&["join-pane", "-b", "-s", &source[0], "-t", &target]);
+    assert_eq!(
+        ids(&server),
+        [&source[0], &target, &source[1]].map(String::clone)
+    );
+    // The emptied window closed.
+    assert_eq!(server.display("#{session_windows}"), "1");
+
+    server.success(&["break-pane", "-s", &target]);
+    assert_eq!(ids(&server), [&target].map(String::clone));
+    assert_eq!(columns(&server), [(0, 20)]);
+    server.success(&["last-window"]);
+    assert_eq!(ids(&server), [&source[0], &source[1]].map(String::clone));
+    assert_eq!(columns(&server), [(0, 20), (21, 20)]);
+}
+
+#[test]
+fn insertion_is_refused_past_the_maximum_width() {
+    let server = Server::new();
+    server.start(10000, 10, 2);
+    let before = ids(&server);
+    let output = server.run(&["new-pane", "sleep 60"]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("no space for a new pane"));
+    assert_eq!(ids(&server), before);
+}
+
+#[test]
+fn layout_only_commands_and_flags_are_gone() {
+    let server = Server::new();
+    server.start(41, 10, 2);
+    for args in [
+        &["select-layout", "tiled"][..],
+        &["next-layout"],
+        &["previous-layout"],
+        &["resize-pane", "-x", "10"],
+        &["resize-pane", "-L"],
+        &["resize-pane", "-Z"],
+        &["select-pane", "-Z", "-L"],
+        &["join-pane", "-h", "-s", "{last}"],
+        &["set", "-w", "main-pane-width", "50"],
+        &["set", "-w", "sticky-layout", "on"],
+    ] {
+        assert!(
+            !server.run(args).status.success(),
+            "{args:?} still accepted"
+        );
+    }
+    assert_eq!(server.display("#{window_zoomed_flag}"), "");
+    server.success(&["resize-pane", "-T"]);
 }
 
 #[test]
@@ -102,13 +296,12 @@ fn window_size_follows_policy_across_clients() {
     server.success(&["set", "-w", "window-size", "smallest"]);
     server.wait_for_size((30, 10));
 
-    // Crowding the smallest client extends the layout, not the window.
+    // Adding panes extends the strip, not the window.
     for _ in 0..3 {
-        server.success(&["split-window", "-h", "sleep 60"]);
+        server.success(&["new-pane", "sleep 60"]);
     }
-    server.success(&["select-layout", "even-horizontal"]);
-    server.success(&["resize-pane", "-t", "{left}", "-x", "20"]);
     assert_eq!(server.window_size(), (30, 10));
+    assert_eq!(server.root_size(), (59, 10));
 
     server.success(&["set", "-w", "window-size", "manual"]);
     server.success(&["resize-window", "-x", "35", "-y", "11"]);

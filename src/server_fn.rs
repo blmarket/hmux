@@ -10,7 +10,6 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
 use crate::src::format_draw::format_draw;
 use crate::src::grid::grid_default_cell;
-use crate::src::layout::layout_close_pane;
 use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::proc::proc_send;

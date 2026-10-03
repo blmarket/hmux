@@ -11,7 +11,6 @@ use crate::src::format::format_expand_cstring;
 use crate::src::grid::grid_default_cell;
 use crate::src::input::input_set_buffer_size;
 use crate::src::key_string::{key_string_format, key_string_parse_cstr};
-use crate::src::layout::layout_fix_panes;
 use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::options_parse::{
     match_option_name, parse_array_index, parse_option_name, ArrayIndex, ArrayIndexError,
@@ -1705,7 +1704,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         let mut window_cursor = windows.first();
         while let Some(window_owner) = window_cursor.take() {
             window_owner.refresh_scrollbars();
-            layout_fix_panes(&window_owner);
+            window_owner.refit();
             window_cursor = window_owner.next_window();
             window_owner.release(c"window traversal");
         }
@@ -1725,7 +1724,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         }
         let mut window_cursor = windows.first();
         while let Some(window_owner) = window_cursor.take() {
-            layout_fix_panes(&window_owner);
+            window_owner.refit();
             window_cursor = window_owner.next_window();
             window_owner.release(c"window traversal");
         }

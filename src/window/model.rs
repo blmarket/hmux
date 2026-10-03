@@ -8,7 +8,6 @@ use crate::src::shared::event::Timer;
 use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::grid_cell;
 use crate::src::shared::key::key_code;
-use crate::src::shared::layout::layout_cell;
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::options::options;
 use crate::src::shared::pane::{window_pane, window_pane_history, window_panes, PANE_MINIMUM};
@@ -46,13 +45,10 @@ pub struct window {
     /// Current pane identity; the pane index owns the allocation.
     pub(super) active: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     pub(super) last_panes: window_pane_history,
+    /// The strip order; every pane's rectangle derives from it.
     pub(super) panes: window_panes,
-    pub(super) lastlayout: ::core::ffi::c_int,
-    /// Whether the preset in `lastlayout` is in force; only layout selection
-    /// writes it.
-    pub(super) sticky: bool,
-    pub(super) layout_root: Option<Box<layout_cell>>,
-    pub(super) old_layout: Option<std::ffi::CString>,
+    /// Columns the arranged strip occupies; written only by the arrange step.
+    pub(super) strip_width: u_int,
     pub(super) sx: u_int,
     pub(super) sy: u_int,
     pub(super) manual_sx: u_int,
@@ -94,10 +90,7 @@ impl Default for window {
             active: Default::default(),
             last_panes: Default::default(),
             panes: Default::default(),
-            lastlayout: Default::default(),
-            sticky: Default::default(),
-            layout_root: Default::default(),
-            old_layout: Default::default(),
+            strip_width: Default::default(),
             sx: Default::default(),
             sy: Default::default(),
             manual_sx: Default::default(),
@@ -146,9 +139,5 @@ impl window {
         let mut value = Self::default();
         value.lifecycle = WindowLifecycle::Live;
         std::rc::Rc::new(std::cell::UnsafeCell::new(value))
-    }
-
-    pub(super) fn layout_root_ptr(&mut self) -> Option<&mut layout_cell> {
-        self.layout_root.as_deref_mut()
     }
 }

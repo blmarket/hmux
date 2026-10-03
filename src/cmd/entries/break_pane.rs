@@ -8,7 +8,6 @@ use crate::src::cmd::queue::{
 use crate::src::events::events_fire_window;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
-use crate::src::layout::{layout_close_pane, layout_init};
 use crate::src::names::default_window_name_cstring;
 use crate::src::options::{options_get_number, options_set_number, options_set_parent};
 use crate::src::session::SessionIndex as _;
@@ -27,9 +26,6 @@ use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_FIND_WINDOW_INDEX;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::layout::layout_cell;
-use crate::src::shared::layout::layout_geometry;
-use crate::src::shared::layout::*;
 use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 
@@ -168,15 +164,7 @@ unsafe fn cmd_break_pane_exec(
                 return CMD_RETURN_ERROR;
             }
             ClientRef::forget_pane(&pane_owner);
-            // Select a replacement while the departing pane still has neighbors.
-            source_window.forget_pane(&pane_owner);
-            assert!(
-                source_window
-                    .borrow_pane_order_mut()
-                    .remove(&std::rc::Rc::downgrade(&pane_owner)),
-                "pane is not in its window order"
-            );
-            layout_close_pane(&pane_owner);
+            source_window.detach_pane(&pane_owner);
             let (sx, sy) = source_window.size();
             let (xpixel, ypixel) = source_window.cell_size();
             let window = crate::src::shared::window::WindowRef::create(sx, sy, xpixel, ypixel);
@@ -214,7 +202,6 @@ unsafe fn cmd_break_pane_exec(
                     return CMD_RETURN_ERROR;
                 }
             };
-            layout_init(&window, &pane_owner);
             pane_owner.mark_changed();
             pane_owner.refresh_palette();
             window.release(c"cmd_break_pane_exec");

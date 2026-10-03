@@ -4,7 +4,6 @@ use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target};
 use crate::src::format::{
     format_create_with_client, format_defaults, format_expand_cstring, format_free, format_true,
 };
-use crate::src::layout::layout_close_pane;
 use crate::src::server_client::Client as _;
 use crate::src::shared::client::ClientRef;
 use crate::src::window::Window as _;
@@ -103,7 +102,6 @@ unsafe fn cmd_kill_pane_all(
             ) != 0
         {
             ClientRef::forget_pane(&pane_owner);
-            layout_close_pane(&pane_owner);
             std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window"))
                 .remove_pane(&pane_owner);
         }

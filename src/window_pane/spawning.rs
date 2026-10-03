@@ -29,7 +29,6 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
 use crate::src::format::format_single_cstring;
 use crate::src::input::input_free;
-use crate::src::layout::{layout_assign_pane, layout_close_pane, layout_free, layout_init};
 use crate::src::log::{log_close, log_cstr, log_debug, log_hex};
 use crate::src::names::default_window_name_cstring;
 use crate::src::options::options_owner_ptr;
@@ -339,42 +338,22 @@ pub(super) unsafe fn spawn_pane(
             new_wp = new_pane_owner.get();
             (*new_wp).flags &= !(PANE_STATUSREADY | PANE_STATUSDRAWN);
         } else {
-            if (*sc).layout.is_none() {
-                new_pane_owner = std::rc::Rc::clone(
-                    (((*sc).winlink_handle())
-                        .get_unchecked()
-                        .window_handle()
-                        .as_ref())
-                    .expect("live window"),
-                )
-                .add_pane(None, hlimit, (*sc).flags);
-                new_wp = new_pane_owner.get();
-                layout_init(
-                    &std::rc::Rc::clone(
-                        (((*sc).winlink_handle())
-                            .get_unchecked()
-                            .window_handle()
-                            .as_ref())
-                        .expect("live window"),
-                    ),
-                    &new_pane_owner,
-                );
+            let window = std::rc::Rc::clone(
+                (((*sc).winlink_handle())
+                    .get_unchecked()
+                    .window_handle()
+                    .as_ref())
+                .expect("live window"),
+            );
+            // A new window's first pane has no neighbor; otherwise the pane
+            // goes beside its source.
+            let anchor = if window.next_pane(None).is_some() {
+                source_pane_owner.as_ref()
             } else {
-                new_pane_owner = std::rc::Rc::clone(
-                    (((*sc).winlink_handle())
-                        .get_unchecked()
-                        .window_handle()
-                        .as_ref())
-                    .expect("live window"),
-                )
-                .add_pane(source_pane_owner.as_ref(), hlimit, (*sc).flags);
-                new_wp = new_pane_owner.get();
-                layout_assign_pane(
-                    &original_window,
-                    (*sc).layout.expect("reserved pane layout"),
-                    &new_pane_owner,
-                );
-            }
+                None
+            };
+            new_pane_owner = window.add_pane(anchor, hlimit, (*sc).flags);
+            new_wp = new_pane_owner.get();
         }
         if (*sc).argv.is_empty() {
             if (*sc).flags & SPAWN_RESPAWN == 0 {
@@ -563,7 +542,6 @@ pub(super) unsafe fn spawn_pane(
                 (*new_wp).fd = None;
                 if !(*sc).flags & SPAWN_RESPAWN != 0 {
                     ClientRef::forget_pane(&new_pane_owner);
-                    layout_close_pane(&new_pane_owner);
                     std::rc::Rc::clone(
                         (((*sc).winlink_handle())
                             .get_unchecked()

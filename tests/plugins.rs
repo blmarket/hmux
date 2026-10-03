@@ -313,7 +313,7 @@ fn pane_loops_and_control_subscriptions_observe_cached_changes() {
     let first = server.pane(repo.to_str().unwrap());
     server.await_format(&first, "#{git_branch}", "main");
     let second = server.run(&[
-        "split-window",
+        "new-pane",
         "-d",
         "-t",
         &first,

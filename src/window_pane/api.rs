@@ -28,9 +28,6 @@ pub trait WindowPane {
     unsafe fn outer_geometry(&self) -> (i32, i32, u32, u32);
     unsafe fn pane_lines(&self) -> pane_lines;
     unsafe fn border_status(&self) -> i32;
-    /// Minimum width for splitting this pane into two, using the caller's
-    /// already-read scrollbar mode and this pane's own scrollbar dimensions.
-    unsafe fn split_minimum_width(&self, reserve_scrollbar: bool) -> u32;
     unsafe fn has_pending_change(&self) -> bool;
     unsafe fn acknowledge_change(&self);
     /// Derive an owned default Window name from this pane's command or shell.
@@ -132,24 +129,19 @@ pub trait WindowPane {
     unsafe fn mouse_location(&self, x: i32, y: i32, slider: &mut u32) -> key_code_mouse_location;
     unsafe fn update_scrollbar_hover(&self, x: i32, y: i32);
 
-    /// Stable, nonowning identity resolved only under the Window layout guard.
-    unsafe fn layout_identity(&self) -> Option<*mut layout_cell>;
-    unsafe fn place_in_layout(&self, cell: *mut layout_cell);
-    /// Clear placement only if this is still the cell that owns the pane.
-    unsafe fn detach_layout(&self, cell: *mut layout_cell);
+    /// Columns the strip must give this pane, including a reserved scrollbar.
     unsafe fn minimum_layout_width(&self, reserve_scrollbar: bool) -> u32;
-    /// Apply copied Window geometry, including pane border and scrollbar policy.
-    /// Returns whether the visible geometry changed; resize callbacks run after
-    /// the pane's placement fields have been released.
+    /// Apply a strip rectangle, including pane border and scrollbar policy.
+    /// Only the Window's arrange step calls this. Returns whether the visible
+    /// geometry changed; resize callbacks run after the pane's placement
+    /// fields have been released.
     unsafe fn apply_layout(
         &self,
-        geometry: *const layout_cell,
+        geometry: layout_geometry,
         scrollbars: &crate::src::shared::window::WindowRef,
     ) -> bool;
     /// Mark redraw when the cached active and inactive appearance differs.
     unsafe fn redraw_selection_change(&self);
-    /// Move the visible origin before resizing; dispatches no callbacks.
-    unsafe fn set_layout_offset(&self, x: i32, y: i32);
     unsafe fn refresh_palette(&self);
     unsafe fn mark_changed(&self);
     unsafe fn invalidate_style(&self);
@@ -180,7 +172,7 @@ pub trait WindowPane {
 
     unsafe fn resize(&self, sx: u32, sy: u32);
     unsafe fn update_focus(&self, focused: bool);
-    /// Return 0 for an unplaced pane, -1 for deferred drawing, or 1 after
+    /// Return 0 for a pane outside its window's strip, -1 for deferred drawing, or 1 after
     /// installing pane offsets. Client applies terminal/status offsets afterward.
     /// With `window_redraw` false, the pane is never changed; a disposable context
     /// can therefore probe placement even when dirty drawing would be deferred.
@@ -625,7 +617,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn window_size(&self) -> (u32, u32) {
         let window = self.window_observer().upgrade().expect("live pane parent");
-        let size = crate::src::layout::logical_size(&window);
+        let size = window.logical_size();
         window.release(c"pane window size");
         size
     }
@@ -675,11 +667,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         super::render::draw_prompt(self, context);
     }
 
-    unsafe fn set_layout_offset(&self, x: i32, y: i32) {
-        let pane = &mut *self.get();
-        pane.xoff = x;
-        pane.yoff = y;
-    }
     unsafe fn find_by_id(id: u32) -> Option<Self> {
         window_pane_find_by_id(id)
     }
@@ -846,17 +833,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     unsafe fn start_input(&self, item: &Rc<UnsafeCell<cmdq_item>>) -> Result<i32, CString> {
         window_pane_start_input(self, item)
     }
-    unsafe fn layout_identity(&self) -> Option<*mut layout_cell> {
-        (*self.get()).layout_cell
-    }
-    unsafe fn place_in_layout(&self, cell: *mut layout_cell) {
-        (*self.get()).layout_cell = Some(cell);
-    }
-    unsafe fn detach_layout(&self, cell: *mut layout_cell) {
-        if (*self.get()).layout_cell == Some(cell) {
-            (*self.get()).layout_cell = None;
-        }
-    }
     unsafe fn minimum_layout_width(&self, reserve_scrollbar: bool) -> u32 {
         if reserve_scrollbar {
             let style = &(*self.get()).scrollbar_style;
@@ -867,20 +843,15 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn apply_layout(
         &self,
-        geometry: *const layout_cell,
+        geometry: layout_geometry,
         scrollbars: &crate::src::shared::window::WindowRef,
     ) -> bool {
-        let geometry = &*geometry;
         let old_geometry = self.geometry();
-        let (mut sx, mut sy) = (geometry.g.sx, geometry.g.sy);
-        let (mut xoff, mut yoff) = (geometry.g.xoff, geometry.g.yoff);
+        let (mut sx, mut sy) = (geometry.sx, geometry.sy);
+        let (mut xoff, mut yoff) = (geometry.xoff, geometry.yoff);
+        // Every strip pane spans the full height, so each has the status row.
         let status = self.border_status();
-        let has_border = match status {
-            PANE_STATUS_TOP => geometry.has_border(PANE_STATUS_TOP),
-            PANE_STATUS_BOTTOM => geometry.has_border(PANE_STATUS_BOTTOM),
-            _ => false,
-        };
-        if has_border {
+        if status == PANE_STATUS_TOP || status == PANE_STATUS_BOTTOM {
             if status == PANE_STATUS_TOP {
                 yoff += 1;
             }
@@ -942,14 +913,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn border_status(&self) -> i32 {
         window_pane_get_pane_status(&*self.get())
-    }
-    unsafe fn split_minimum_width(&self, reserve_scrollbar: bool) -> u32 {
-        if reserve_scrollbar {
-            let style = &(*self.get()).scrollbar_style;
-            (PANE_MINIMUM * 2 + style.width + style.pad) as u32
-        } else {
-            (PANE_MINIMUM * 2 + 1) as u32
-        }
     }
     unsafe fn has_pending_change(&self) -> bool {
         (*self.get()).flags & PANE_CHANGED != 0
@@ -1109,7 +1072,10 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         window_redraw: bool,
     ) -> i32 {
         let pane = self.get();
-        if (*pane).layout_cell.is_none() {
+        if !(*pane)
+            .window_handle()
+            .is_some_and(|window| window.contains_pane(&Rc::downgrade(self)))
+        {
             return 0;
         }
         if (*pane).flags & (PANE_REDRAW | crate::src::shared::pane::PANE_DROP) != 0 {

@@ -48,9 +48,6 @@ use crate::src::cmd::entries::respawn_window::cmd_respawn_window_entry;
 use crate::src::cmd::entries::rotate_window::cmd_rotate_window_entry;
 use crate::src::cmd::entries::run_shell::cmd_run_shell_entry;
 use crate::src::cmd::entries::save_buffer::{cmd_save_buffer_entry, cmd_show_buffer_entry};
-use crate::src::cmd::entries::select_layout::{
-    cmd_next_layout_entry, cmd_previous_layout_entry, cmd_select_layout_entry,
-};
 use crate::src::cmd::entries::select_pane::{cmd_last_pane_entry, cmd_select_pane_entry};
 use crate::src::cmd::entries::select_window::{
     cmd_last_window_entry, cmd_next_window_entry, cmd_previous_window_entry,
@@ -95,7 +92,6 @@ use crate::src::shared::command::{CMD_READONLY, CMD_STARTSERVER};
 pub use crate::src::shared::environment::environ;
 pub use crate::src::shared::format::{format_job_tree, format_tree};
 pub use crate::src::shared::key::key_event;
-pub use crate::src::shared::layout::layout_cell;
 pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::{options, options_array_item, options_entry, options_value};
 pub use crate::src::shared::pane::window_pane;
@@ -112,7 +108,7 @@ pub const DQ: C2RustUnnamed_38 = 2;
 pub type C2RustUnnamed_38 = ::core::ffi::c_uint;
 pub const SQ: C2RustUnnamed_38 = 1;
 pub const NQ: C2RustUnnamed_38 = 0;
-pub static cmd_table: [&cmd_entry; 91] = {
+pub static cmd_table: [&cmd_entry; 88] = {
     [
         &cmd_attach_session_entry,
         &cmd_bind_key_entry,
@@ -160,11 +156,9 @@ pub static cmd_table: [&cmd_entry; 91] = {
         &cmd_new_pane_entry,
         &cmd_new_session_entry,
         &cmd_new_window_entry,
-        &cmd_next_layout_entry,
         &cmd_next_window_entry,
         &cmd_paste_buffer_entry,
         &cmd_pipe_pane_entry,
-        &cmd_previous_layout_entry,
         &cmd_previous_window_entry,
         &cmd_refresh_client_entry,
         &cmd_rename_session_entry,
@@ -176,7 +170,6 @@ pub static cmd_table: [&cmd_entry; 91] = {
         &cmd_rotate_window_entry,
         &cmd_run_shell_entry,
         &cmd_save_buffer_entry,
-        &cmd_select_layout_entry,
         &cmd_select_pane_entry,
         &cmd_select_window_entry,
         &cmd_send_keys_entry,

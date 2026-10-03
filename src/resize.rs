@@ -451,21 +451,13 @@ pub unsafe fn recalculate_size(w_owner: &WindowRef, mut now: ::core::ffi::c_int)
         tty_update_window_offset(w_owner);
     };
 }
-/// Arrange the tiled tree back into the window size, or arrange the sticky
-/// preset again, after its panes, their minimums or its options changed
-/// without a size change. Silent when nothing moves.
+/// Arrange the strip again after its panes' minimums or the options it reads
+/// changed without a size change. Silent when nothing moves.
 unsafe fn refit_layout(w_owner: &WindowRef) {
+    if !w_owner.refit() {
+        return;
+    }
     let (sx, sy) = w_owner.size();
-    if w_owner.sticky_layout().is_some() {
-        if w_owner.borrow_layout_root().is_none() {
-            return;
-        }
-    } else if crate::src::layout::logical_size(w_owner) == (sx, sy) {
-        return;
-    }
-    if !crate::src::layout::layout_resize(w_owner, sx, sy) {
-        return;
-    }
     log_debug(format_args!(
         "{}: @{} refit to {}x{}",
         "refit_layout",

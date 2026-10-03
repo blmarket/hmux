@@ -44,12 +44,12 @@ pub static cmd_switch_client_entry: cmd_entry = {
         name: c"switch-client",
         alias: Some(c"switchc"),
         args: args_parse {
-            template: c"c:EFlnO:pt:rT:Z",
+            template: c"c:EFlnO:pt:rT:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: c"[-ElnprZ] [-c target-client] [-t target-session] [-T key-table] [-O order]",
+        usage: c"[-Elnpr] [-c target-client] [-t target-session] [-T key-table] [-O order]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,

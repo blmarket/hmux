@@ -130,8 +130,9 @@ fn regex_search_spans_wrapped_lines_in_both_directions() {
     server.command(&[
         "new-session",
         "-d",
+        // A lone pane is half the window: ten columns.
         "-x",
-        "10",
+        "21",
         "-y",
         "8",
         "-s",

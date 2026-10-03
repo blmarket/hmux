@@ -66,8 +66,6 @@ unsafe fn evaluate(key: &CStr, context: &mut format_tree) -> Option<FormatValue>
         b"pane_tabs" => format_cb_pane_tabs(context).map(FormatValue::String),
         b"pane_fg" => format_cb_pane_fg(context).map(FormatValue::String),
         b"pane_flags" => format_cb_pane_flags(context).map(FormatValue::String),
-        b"pane_floating_flag" => format_cb_pane_floating_flag(context).map(FormatValue::String),
-        b"pane_modal_flag" => format_cb_pane_modal_flag(context).map(FormatValue::String),
         b"pane_bg" => format_cb_pane_bg(context).map(FormatValue::String),
         b"pane_in_mode" => format_cb_pane_in_mode(context).map(FormatValue::String),
         b"pane_at_top" => format_cb_pane_at_top(context).map(FormatValue::String),
@@ -151,7 +149,6 @@ unsafe fn evaluate(key: &CStr, context: &mut format_tree) -> Option<FormatValue>
         b"pane_width" => format_cb_pane_width(context).map(FormatValue::String),
         b"pane_x" => format_cb_pane_x(context).map(FormatValue::String),
         b"pane_y" => format_cb_pane_y(context).map(FormatValue::String),
-        b"pane_zoomed_flag" => format_cb_pane_zoomed_flag(context).map(FormatValue::String),
         b"scroll_region_lower" => format_cb_scroll_region_lower(context).map(FormatValue::String),
         b"scroll_region_upper" => format_cb_scroll_region_upper(context).map(FormatValue::String),
         b"wrap_flag" => format_cb_wrap_flag(context).map(FormatValue::String),
@@ -395,16 +392,6 @@ unsafe fn format_cb_pane_flags(mut ft: *mut format_tree) -> Option<CString> {
     None
 }
 
-// Floating and modal panes no longer exist; the flags remain for configurations
-// that test them.
-unsafe fn format_cb_pane_floating_flag(ft: *mut format_tree) -> Option<CString> {
-    (*ft).wp.upgrade().map(|_| c"0".to_owned())
-}
-
-unsafe fn format_cb_pane_modal_flag(ft: *mut format_tree) -> Option<CString> {
-    (*ft).wp.upgrade().map(|_| c"0".to_owned())
-}
-
 unsafe fn format_cb_pane_bg(mut ft: *mut format_tree) -> Option<CString> {
     let format_pane_owner = (*ft).wp.upgrade();
     let format_pane = format_pane_owner
@@ -467,8 +454,7 @@ unsafe fn format_cb_pane_at_bottom(ft: *mut format_tree) -> Option<CString> {
     let window = pane.window_observer().upgrade().expect("pane window");
     let status = pane.border_status();
     let (_, height, _, y) = pane.geometry();
-    let bottom = crate::src::layout::logical_size(&window).1 as i32
-        - if status == PANE_STATUS_BOTTOM { 1 } else { 0 };
+    let bottom = window.logical_size().1 as i32 - if status == PANE_STATUS_BOTTOM { 1 } else { 0 };
     Some(
         if y + height as i32 == bottom {
             c"1"
@@ -1044,10 +1030,10 @@ unsafe fn format_cb_pane_at_right(mut ft: *mut format_tree) -> Option<CString> {
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     if !format_pane.is_null() {
         if (*format_pane).xoff + (*format_pane).sx as ::core::ffi::c_int
-            == crate::src::layout::logical_size(
-                ((*format_pane).window_handle().as_ref()).expect("live window"),
-            )
-            .0 as ::core::ffi::c_int
+            == ((*format_pane).window_handle().as_ref())
+                .expect("live window")
+                .logical_size()
+                .0 as ::core::ffi::c_int
         {
             return Some(c"1".to_owned());
         }
@@ -1679,11 +1665,6 @@ unsafe fn format_cb_pane_y(mut ft: *mut format_tree) -> Option<CString> {
         );
     }
     None
-}
-
-// Panes no longer zoom; the flag remains for configurations that test it.
-unsafe fn format_cb_pane_zoomed_flag(ft: *mut format_tree) -> Option<CString> {
-    (*ft).wp.upgrade().map(|_| c"0".to_owned())
 }
 
 unsafe fn format_cb_scroll_region_lower(mut ft: *mut format_tree) -> Option<CString> {

@@ -60,7 +60,6 @@ unsafe fn cmd_respawn_pane_exec(
         wl: refbox::Weak::new(),
         tc: std::rc::Weak::new(),
         wp0: std::rc::Weak::new(),
-        layout: None,
         name: None,
         argv: Vec::new(),
         environ: None,
