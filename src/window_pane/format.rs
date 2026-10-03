@@ -484,7 +484,8 @@ unsafe fn format_cb_pane_at_bottom(ft: *mut format_tree) -> Option<CString> {
     let window = pane.window_observer().upgrade().expect("pane window");
     let status = pane.border_status();
     let (_, height, _, y) = pane.geometry();
-    let bottom = window.size().1 as i32 - if status == PANE_STATUS_BOTTOM { 1 } else { 0 };
+    let bottom = crate::src::layout::logical_size(&window).1 as i32
+        - if status == PANE_STATUS_BOTTOM { 1 } else { 0 };
     Some(
         if y + height as i32 == bottom {
             c"1"
@@ -1060,9 +1061,10 @@ unsafe fn format_cb_pane_at_right(mut ft: *mut format_tree) -> Option<CString> {
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     if !format_pane.is_null() {
         if (*format_pane).xoff + (*format_pane).sx as ::core::ffi::c_int
-            == (((*format_pane).window_handle().as_ref()).expect("live window"))
-                .size()
-                .0 as ::core::ffi::c_int
+            == crate::src::layout::logical_size(
+                ((*format_pane).window_handle().as_ref()).expect("live window"),
+            )
+            .0 as ::core::ffi::c_int
         {
             return Some(c"1".to_owned());
         }

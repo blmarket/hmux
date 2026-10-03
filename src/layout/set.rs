@@ -268,13 +268,11 @@ unsafe fn layout_set_even(w_owner: &WindowRef, mut type_0: layout_type) {
     } // All tree pointers and the component guard end before pane callbacks.
     layout_fix_offsets(w_owner);
     layout_fix_panes(w_owner, None);
-    let (layout_sx, layout_sy) = {
+    {
         let mut tree = w_owner.borrow_layout_root_mut();
         let root = tree.as_deref_mut().expect("preset layout root");
         layout_print_cell(root, c"layout_set_even".as_ptr(), 1);
-        (root.g.sx, root.g.sy)
-    };
-    w_owner.set_layout_size(layout_sx, layout_sy);
+    }
     events_fire_window(
         c"window-layout-changed".as_ptr(),
         std::rc::Rc::clone(w_owner),
@@ -482,13 +480,11 @@ unsafe fn layout_set_main_h(w_owner: &WindowRef) {
     } // All tree pointers and the component guard end before pane callbacks.
     layout_fix_offsets(w_owner);
     layout_fix_panes(w_owner, None);
-    let (layout_sx, layout_sy) = {
+    {
         let mut tree = w_owner.borrow_layout_root_mut();
         let root = tree.as_deref_mut().expect("preset layout root");
         layout_print_cell(root, c"layout_set_main_h".as_ptr(), 1);
-        (root.g.sx, root.g.sy)
-    };
-    w_owner.set_layout_size(layout_sx, layout_sy);
+    }
     events_fire_window(
         c"window-layout-changed".as_ptr(),
         std::rc::Rc::clone(w_owner),
@@ -669,13 +665,11 @@ unsafe fn layout_set_main_h_mirrored(w_owner: &WindowRef) {
     } // All tree pointers and the component guard end before pane callbacks.
     layout_fix_offsets(w_owner);
     layout_fix_panes(w_owner, None);
-    let (layout_sx, layout_sy) = {
+    {
         let mut tree = w_owner.borrow_layout_root_mut();
         let root = tree.as_deref_mut().expect("preset layout root");
         layout_print_cell(root, c"layout_set_main_h_mirrored".as_ptr(), 1);
-        (root.g.sx, root.g.sy)
-    };
-    w_owner.set_layout_size(layout_sx, layout_sy);
+    }
     events_fire_window(
         c"window-layout-changed".as_ptr(),
         std::rc::Rc::clone(w_owner),
@@ -856,13 +850,11 @@ unsafe fn layout_set_main_v(w_owner: &WindowRef) {
     } // All tree pointers and the component guard end before pane callbacks.
     layout_fix_offsets(w_owner);
     layout_fix_panes(w_owner, None);
-    let (layout_sx, layout_sy) = {
+    {
         let mut tree = w_owner.borrow_layout_root_mut();
         let root = tree.as_deref_mut().expect("preset layout root");
         layout_print_cell(root, c"layout_set_main_v".as_ptr(), 1);
-        (root.g.sx, root.g.sy)
-    };
-    w_owner.set_layout_size(layout_sx, layout_sy);
+    }
     events_fire_window(
         c"window-layout-changed".as_ptr(),
         std::rc::Rc::clone(w_owner),
@@ -1043,13 +1035,11 @@ unsafe fn layout_set_main_v_mirrored(w_owner: &WindowRef) {
     } // All tree pointers and the component guard end before pane callbacks.
     layout_fix_offsets(w_owner);
     layout_fix_panes(w_owner, None);
-    let (layout_sx, layout_sy) = {
+    {
         let mut tree = w_owner.borrow_layout_root_mut();
         let root = tree.as_deref_mut().expect("preset layout root");
         layout_print_cell(root, c"layout_set_main_v_mirrored".as_ptr(), 1);
-        (root.g.sx, root.g.sy)
-    };
-    w_owner.set_layout_size(layout_sx, layout_sy);
+    }
     events_fire_window(
         c"window-layout-changed".as_ptr(),
         std::rc::Rc::clone(w_owner),
@@ -1257,13 +1247,11 @@ unsafe fn layout_set_tiled(w_owner: &WindowRef) {
     } // All tree pointers and the component guard end before pane callbacks.
     layout_fix_offsets(w_owner);
     layout_fix_panes(w_owner, None);
-    let (layout_sx, layout_sy) = {
+    {
         let mut tree = w_owner.borrow_layout_root_mut();
         let root = tree.as_deref_mut().expect("preset layout root");
         layout_print_cell(root, c"layout_set_tiled".as_ptr(), 1);
-        (root.g.sx, root.g.sy)
-    };
-    w_owner.set_layout_size(layout_sx, layout_sy);
+    }
     events_fire_window(
         c"window-layout-changed".as_ptr(),
         std::rc::Rc::clone(w_owner),

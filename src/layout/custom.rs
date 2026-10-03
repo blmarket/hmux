@@ -7,7 +7,7 @@ use crate::src::json::{
 use crate::src::layout::{
     layout_cell_has_tiled_child, layout_cell_is_tiled, layout_count_cells, layout_create_cell,
     layout_destroy_cell, layout_fix_offsets, layout_fix_panes, layout_make_leaf, layout_print_cell,
-    layout_set_size, layout_take_leaf,
+    layout_resize, layout_set_size, layout_take_leaf,
 };
 use crate::src::resize::recalculate_sizes;
 use crate::src::shared::window::WindowRef;
@@ -409,11 +409,9 @@ pub unsafe fn layout_parse(
                         c"size mismatch after applying layout".as_ptr(),
                     );
                 } else {
-                    if layout_cell_is_tiled(lc) != 0 || layout_cell_has_tiled_child(lc) != 0 {
-                        w_owner.set_layout_size((*lc).g.sx, (*lc).g.sy);
-                    }
-                    // Resizing may dispatch callbacks. Acquire the current pane order
-                    // afterward, then keep all tree edits in one bounded borrow.
+                    let refit =
+                        layout_cell_is_tiled(lc) != 0 || layout_cell_has_tiled_child(lc) != 0;
+                    // Keep all tree edits in one bounded borrow.
                     let panes = w_owner.pane_snapshot();
                     {
                         let mut tree = w_owner.borrow_layout_root_mut();
@@ -445,8 +443,14 @@ pub unsafe fn layout_parse(
                     lc = std::ptr::null_mut();
                     lcchild = std::ptr::null_mut();
                     drop(panes);
-                    layout_fix_offsets(w_owner);
-                    layout_fix_panes(w_owner, None);
+                    if refit {
+                        // Arrange the parsed tree against the window size.
+                        let (sx, sy) = w_owner.size();
+                        layout_resize(w_owner, sx, sy);
+                    } else {
+                        layout_fix_offsets(w_owner);
+                        layout_fix_panes(w_owner, None);
+                    }
                     if pctx.version > 1 {
                         layout_parse_apply_ctx(w_owner, &mut pctx.cctxs);
                     }

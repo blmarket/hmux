@@ -14,6 +14,7 @@ pub use self::core::{
     layout_init, layout_make_leaf, layout_make_node, layout_print_cell, layout_resize,
     layout_resize_floating_pane, layout_resize_floating_pane_to, layout_resize_layout,
     layout_resize_pane, layout_resize_pane_to, layout_search_by_border, layout_set_size,
-    layout_spread_out, layout_take_leaf, layout_take_leaves, layout_tile_pane, mouse_event,
-    options, tty_term, PANE_MINIMUM, PANE_SCROLLBARS_ALWAYS, PANE_STATUS_BOTTOM, PANE_STATUS_TOP,
+    layout_spread_out, layout_take_leaf, layout_take_leaves, layout_tile_pane, logical_size,
+    mouse_event, options, tty_term, PANE_MINIMUM, PANE_SCROLLBARS_ALWAYS, PANE_STATUS_BOTTOM,
+    PANE_STATUS_TOP,
 };

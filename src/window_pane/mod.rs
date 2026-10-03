@@ -1809,7 +1809,7 @@ unsafe fn window_pane_find_up(
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     let window = (*wp).window_handle().expect("pane parent");
-    let (_width, height) = window.size();
+    let (_width, height) = crate::src::layout::logical_size(&window);
     status = window.pane_border_status();
     (xoff, yoff, sx, sy) = window_pane_full_size_offset(source);
     edge = yoff;
@@ -1864,7 +1864,7 @@ unsafe fn window_pane_find_down(
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     let window = (*wp).window_handle().expect("pane parent");
-    let (_width, height) = window.size();
+    let (_width, height) = crate::src::layout::logical_size(&window);
     status = window.pane_border_status();
     (xoff, yoff, sx, sy) = window_pane_full_size_offset(source);
     edge = yoff + sy as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
@@ -1918,7 +1918,7 @@ unsafe fn window_pane_find_left(
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     let window = (*wp).window_handle().expect("pane parent");
-    let (width, _height) = window.size();
+    let (width, _height) = crate::src::layout::logical_size(&window);
     (xoff, yoff, sx, sy) = window_pane_full_size_offset(source);
     edge = xoff;
     if edge == 0 as ::core::ffi::c_int {
@@ -1963,7 +1963,7 @@ unsafe fn window_pane_find_right(
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     let window = (*wp).window_handle().expect("pane parent");
-    let (width, _height) = window.size();
+    let (width, _height) = crate::src::layout::logical_size(&window);
     (xoff, yoff, sx, sy) = window_pane_full_size_offset(source);
     edge = xoff + sx as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
     if edge >= width as ::core::ffi::c_int {

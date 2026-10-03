@@ -201,8 +201,8 @@ unsafe fn redraw_get_build_cell(
 unsafe fn redraw_reset_cell(mut bctx: *mut redraw_build_ctx, mut x: u_int, mut y: u_int) {
     let mut bc: *mut redraw_build_cell = redraw_get_build_cell(bctx, x, y);
     (*bc).data = redraw_span_data::default();
-    if (*bctx).ox.wrapping_add(x) < ((*bctx).w).size().0
-        && (*bctx).oy.wrapping_add(y) < ((*bctx).w).size().1
+    if (*bctx).ox.wrapping_add(x) < crate::src::layout::logical_size((*bctx).w).0
+        && (*bctx).oy.wrapping_add(y) < crate::src::layout::logical_size((*bctx).w).1
     {
         (*bc).data = redraw_span_data::Empty;
     } else {
@@ -221,7 +221,9 @@ unsafe fn redraw_window_to_scene(
     if wx < 0 as ::core::ffi::c_int || wy < 0 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
-    if wx as u_int > ((*bctx).w).size().0 || wy as u_int > ((*bctx).w).size().1 {
+    if wx as u_int > crate::src::layout::logical_size((*bctx).w).0
+        || wy as u_int > crate::src::layout::logical_size((*bctx).w).1
+    {
         return 0 as ::core::ffi::c_int;
     }
     if wx < (*bctx).ox as ::core::ffi::c_int || wy < (*bctx).oy as ::core::ffi::c_int {
@@ -648,9 +650,14 @@ unsafe fn redraw_mark_pane_borders(
             bottom = ((*bctx).w).size().1 as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
         }
     } else {
-        mark_right = (right <= ((*bctx).w).size().0 as ::core::ffi::c_int) as ::core::ffi::c_int;
-        mark_bottom = (bottom <= ((*bctx).w).size().1 as ::core::ffi::c_int) as ::core::ffi::c_int;
-        if pane_status == PANE_STATUS_TOP && bottom < ((*bctx).w).size().1 as ::core::ffi::c_int {
+        mark_right = (right <= crate::src::layout::logical_size((*bctx).w).0 as ::core::ffi::c_int)
+            as ::core::ffi::c_int;
+        mark_bottom = (bottom
+            <= crate::src::layout::logical_size((*bctx).w).1 as ::core::ffi::c_int)
+            as ::core::ffi::c_int;
+        if pane_status == PANE_STATUS_TOP
+            && bottom < crate::src::layout::logical_size((*bctx).w).1 as ::core::ffi::c_int
+        {
             mark_bottom = 0 as ::core::ffi::c_int;
         } else if pane_status == PANE_STATUS_BOTTOM {
             mark_top = 0 as ::core::ffi::c_int;
@@ -825,7 +832,11 @@ unsafe fn redraw_mark_two_pane_colours(mut bctx: *mut redraw_build_ctx) {
                     && (*sd).border().left_wp.strong_count() != 0
                     && (*sd).border().right_wp.strong_count() != 0
                 {
-                    if wy <= ((*bctx).w).size().1.wrapping_div(2 as u_int) {
+                    if wy
+                        <= crate::src::layout::logical_size((*bctx).w)
+                            .1
+                            .wrapping_div(2 as u_int)
+                    {
                         (*sd).border_mut().style_wp = (*sd).border().left_wp.clone();
                     } else {
                         (*sd).border_mut().style_wp = (*sd).border().right_wp.clone();
@@ -835,7 +846,11 @@ unsafe fn redraw_mark_two_pane_colours(mut bctx: *mut redraw_build_ctx) {
                     && (*sd).border().top_wp.strong_count() != 0
                     && (*sd).border().bottom_wp.strong_count() != 0
                 {
-                    if wx <= ((*bctx).w).size().0.wrapping_div(2 as u_int) {
+                    if wx
+                        <= crate::src::layout::logical_size((*bctx).w)
+                            .0
+                            .wrapping_div(2 as u_int)
+                    {
                         (*sd).border_mut().style_wp = (*sd).border().top_wp.clone();
                     } else {
                         (*sd).border_mut().style_wp = (*sd).border().bottom_wp.clone();

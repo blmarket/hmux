@@ -425,6 +425,9 @@ pub unsafe fn recalculate_size(w_owner: &WindowRef, mut now: ::core::ffi::c_int)
             "recalculate_size",
             { (w_owner).id() }
         ));
+        if w_owner.pending_resize().is_none() {
+            refit_layout(w_owner);
+        }
         tty_update_window_offset(w_owner);
         return;
     }
@@ -447,6 +450,36 @@ pub unsafe fn recalculate_size(w_owner: &WindowRef, mut now: ::core::ffi::c_int)
         w_owner.defer_resize(sx, sy, xpixel, ypixel);
         tty_update_window_offset(w_owner);
     };
+}
+/// Arrange the tiled tree back into the window size after its panes or their
+/// minimums changed without a size change. Silent when nothing moves.
+unsafe fn refit_layout(w_owner: &WindowRef) {
+    let (sx, sy) = w_owner.size();
+    if crate::src::layout::logical_size(w_owner) == (sx, sy) {
+        return;
+    }
+    let root_size = || {
+        w_owner
+            .borrow_layout_root(crate::src::window::LayoutView::Visible)
+            .map(|root| (root.g.sx, root.g.sy))
+    };
+    let before = root_size();
+    crate::src::layout::layout_resize(w_owner, sx, sy);
+    if root_size() == before {
+        return;
+    }
+    log_debug(format_args!(
+        "{}: @{} refit to {}x{}",
+        "refit_layout",
+        { w_owner.id() },
+        sx,
+        sy
+    ));
+    crate::src::server_fn::server_redraw_window(w_owner);
+    crate::src::events::events_fire_window(
+        c"window-layout-changed".as_ptr(),
+        std::rc::Rc::clone(w_owner),
+    );
 }
 pub unsafe fn recalculate_sizes() {
     recalculate_sizes_now(0 as ::core::ffi::c_int);

@@ -733,6 +733,20 @@ unsafe fn layout_destroy_cell_with_limits(
     }
 }
 
+/// Area the arranged window occupies: per dimension, the larger of the
+/// window size and the visible tiled root. Clients clip and pan across it.
+pub unsafe fn logical_size(w_owner: &WindowRef) -> (u32, u32) {
+    let (sx, sy) = w_owner.size();
+    let Some(root) = w_owner.borrow_layout_root(crate::src::window::LayoutView::Visible) else {
+        return (sx, sy);
+    };
+    let root = &*root as *const layout_cell as *mut layout_cell;
+    if layout_cell_is_tiled(root) == 0 && layout_cell_has_tiled_child(root) == 0 {
+        return (sx, sy);
+    }
+    (sx.max((*root).g.sx), sy.max((*root).g.sy))
+}
+
 pub unsafe fn layout_init(
     w_owner: &WindowRef,
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,

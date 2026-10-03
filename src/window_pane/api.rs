@@ -656,7 +656,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn window_size(&self) -> (u32, u32) {
         let window = self.window_observer().upgrade().expect("live pane parent");
-        let size = window.size();
+        let size = crate::src::layout::logical_size(&window);
         window.release(c"pane window size");
         size
     }

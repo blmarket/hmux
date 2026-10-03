@@ -306,9 +306,6 @@ pub trait Window {
     unsafe fn cell_size(&self) -> (u32, u32);
     unsafe fn is_zoomed(&self) -> bool;
     unsafe fn resize(&self, sx: u32, sy: u32, xpixel: i32, ypixel: i32);
-    /// Adopt a parsed layout's dimensions without resizing the previous tree
-    /// or firing resize events. Preserve the terminal cell's pixel dimensions.
-    unsafe fn set_layout_size(&self, sx: u32, sy: u32);
     /// Preserve command precedence: cycle, spread, then named/saved layout.
     /// `cycle` is -1 (previous), 0, or 1 (next). `legacy_format` preserves the
     /// attached control client's old custom-layout serialization format.
@@ -603,16 +600,17 @@ impl Window for WindowRef {
         (*self.get()).menu.replace(menu)
     }
     unsafe fn place_menu(&self, (mut px, mut py): (u32, u32), (sx, sy): (u32, u32)) -> (u32, u32) {
+        let (wsx, wsy) = crate::src::layout::logical_size(self);
         let state = &mut *self.get();
-        if sx >= state.sx {
+        if sx >= wsx {
             px = 0;
-        } else if px.wrapping_add(sx) > state.sx {
-            px = state.sx.wrapping_sub(sx);
+        } else if px.wrapping_add(sx) > wsx {
+            px = wsx.wrapping_sub(sx);
         }
-        if sy >= state.sy {
+        if sy >= wsy {
             py = 0;
-        } else if py.wrapping_add(sy) > state.sy {
-            py = state.sy.wrapping_sub(sy);
+        } else if py.wrapping_add(sy) > wsy {
+            py = wsy.wrapping_sub(sy);
         }
         state.menu_last_px = px;
         state.menu_last_py = py;
@@ -1068,9 +1066,6 @@ impl Window for WindowRef {
     unsafe fn resize(&self, sx: u32, sy: u32, xpixel: i32, ypixel: i32) {
         resize_window(self, sx, sy, xpixel, ypixel);
     }
-    unsafe fn set_layout_size(&self, sx: u32, sy: u32) {
-        window_resize(self, sx, sy, -1, -1);
-    }
     unsafe fn select_layout(
         &self,
         name: Option<&CStr>,
@@ -1244,32 +1239,6 @@ unsafe fn resize_window(
         window_unzoom(w_owner, 1 as ::core::ffi::c_int);
     }
     layout_resize(w_owner, sx, sy);
-    if sx
-        < (*(*w)
-            .layout_root_ptr()
-            .map_or(std::ptr::null_mut(), |root| root))
-        .g
-        .sx
-    {
-        sx = (*(*w)
-            .layout_root_ptr()
-            .map_or(std::ptr::null_mut(), |root| root))
-        .g
-        .sx;
-    }
-    if sy
-        < (*(*w)
-            .layout_root_ptr()
-            .map_or(std::ptr::null_mut(), |root| root))
-        .g
-        .sy
-    {
-        sy = (*(*w)
-            .layout_root_ptr()
-            .map_or(std::ptr::null_mut(), |root| root))
-        .g
-        .sy;
-    }
     window_resize(w_owner, sx, sy, xpixel, ypixel);
     log_debug(format_args!(
         "{}: @{} resized to {}x{}; layout {}x{}",

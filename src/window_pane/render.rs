@@ -59,7 +59,7 @@ pub(super) unsafe fn prepare_write(
 pub(super) unsafe fn is_obscured(pane: &Rc<UnsafeCell<window_pane>>) -> bool {
     let (sx, sy, xoff, yoff) = pane.geometry();
     let window = pane.window_observer().upgrade().expect("live pane parent");
-    let (wsx, wsy) = window.size();
+    let (wsx, wsy) = crate::src::layout::logical_size(&window);
     let outside = xoff < 0
         || yoff < 0
         || (xoff as u32).wrapping_add(sx) > wsx
@@ -508,7 +508,7 @@ pub(super) unsafe fn visible_ranges(
         .window_observer()
         .upgrade()
         .expect("live pane parent");
-    let window_size = window.size();
+    let window_size = crate::src::layout::logical_size(&window);
     let scrollbars = &window;
     if py as u_int >= window_size.1 || px as u_int >= window_size.0 {
         window.release(c"visible pane range outside");

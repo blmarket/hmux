@@ -519,6 +519,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
         .upgrade();
     let mut wl: refbox::Weak<winlink> = (*target).winlink_handle();
     let window = (*target).window_handle().expect("menu target window");
+    let logical = crate::src::layout::logical_size(&window);
     let pane = (*target).pane_handle().expect("menu target pane");
     let mut xp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut yp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -531,13 +532,13 @@ unsafe fn cmd_display_menu_get_menu_pos(
     let mut mouse_x: ::core::ffi::c_long = 0 as ::core::ffi::c_long;
     let mut mouse_y: ::core::ffi::c_long = 0 as ::core::ffi::c_long;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
-    max_x = (if window.size().0 > w {
-        window.size().0.wrapping_sub(w)
+    max_x = (if logical.0 > w {
+        logical.0.wrapping_sub(w)
     } else {
         0 as u_int
     }) as ::core::ffi::c_long;
-    max_y = (if window.size().1 > h {
-        window.size().1.wrapping_sub(h)
+    max_y = (if logical.1 > h {
+        logical.1.wrapping_sub(h)
     } else {
         0 as u_int
     }) as ::core::ffi::c_long;
@@ -598,7 +599,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
                 });
             } else {
                 format_add(ft, c"popup_window_status_line_y", |out| {
-                    write!(out, "{}", { window.size().1 })
+                    write!(out, "{}", { logical.1 })
                 });
             }
         }
@@ -606,14 +607,13 @@ unsafe fn cmd_display_menu_get_menu_pos(
             format_add(ft, c"popup_status_line_y", |out| write!(out, "{}", { h }));
         } else {
             format_add(ft, c"popup_status_line_y", |out| {
-                write!(out, "{}", { window.size().1 })
+                write!(out, "{}", { logical.1 })
             });
         }
     }
     format_add(ft, c"popup_width", |out| write!(out, "{}", { w }));
     format_add(ft, c"popup_height", |out| write!(out, "{}", { h }));
-    n = (window.size().0 as ::core::ffi::c_long - 1 as ::core::ffi::c_long)
-        / 2 as ::core::ffi::c_long
+    n = (logical.0 as ::core::ffi::c_long - 1 as ::core::ffi::c_long) / 2 as ::core::ffi::c_long
         - w.wrapping_div(2 as u_int) as ::core::ffi::c_long;
     if n < 0 as ::core::ffi::c_long {
         format_add(ft, c"popup_centre_x", |out| {
@@ -624,10 +624,9 @@ unsafe fn cmd_display_menu_get_menu_pos(
             write!(out, "{}", (n) as ::core::ffi::c_long)
         });
     }
-    n = (window.size().1 as ::core::ffi::c_long - 1 as ::core::ffi::c_long)
-        / 2 as ::core::ffi::c_long
+    n = (logical.1 as ::core::ffi::c_long - 1 as ::core::ffi::c_long) / 2 as ::core::ffi::c_long
         + h.wrapping_div(2 as u_int) as ::core::ffi::c_long;
-    if n >= window.size().1 as ::core::ffi::c_long {
+    if n >= logical.1 as ::core::ffi::c_long {
         format_add(ft, c"popup_centre_y", |out| {
             write!(out, "{}", (max_y) as ::core::ffi::c_long)
         });
@@ -648,7 +647,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
             });
         }
         n = mouse_y - h.wrapping_div(2 as u_int) as ::core::ffi::c_long;
-        if n + h as ::core::ffi::c_long >= window.size().1 as ::core::ffi::c_long {
+        if n + h as ::core::ffi::c_long >= logical.1 as ::core::ffi::c_long {
             format_add(ft, c"popup_mouse_centre_y", |out| {
                 write!(out, "{}", (max_y) as ::core::ffi::c_long)
             });
@@ -658,9 +657,9 @@ unsafe fn cmd_display_menu_get_menu_pos(
             });
         }
         n = mouse_y + h as ::core::ffi::c_long;
-        if n >= window.size().1 as ::core::ffi::c_long {
+        if n >= logical.1 as ::core::ffi::c_long {
             format_add(ft, c"popup_mouse_top", |out| {
-                write!(out, "{}", { window.size().1.wrapping_sub(1 as u_int) })
+                write!(out, "{}", { logical.1.wrapping_sub(1 as u_int) })
             });
         } else {
             format_add(ft, c"popup_mouse_top", |out| {
@@ -680,7 +679,7 @@ unsafe fn cmd_display_menu_get_menu_pos(
     }
     let (pane_width, pane_height, pane_x, pane_y) = pane.geometry();
     n = (pane_y as u_int).wrapping_add(h) as ::core::ffi::c_long;
-    if n >= window.size().1 as ::core::ffi::c_long {
+    if n >= logical.1 as ::core::ffi::c_long {
         format_add(ft, c"popup_pane_top", |out| {
             write!(out, "{}", (max_y) as ::core::ffi::c_long)
         });

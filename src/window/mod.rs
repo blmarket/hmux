@@ -528,10 +528,11 @@ unsafe fn window_resize(
     (*w).sx = sx;
     (*w).sy = sy;
     if let Some(menu) = (*w).menu.as_ref().map(|menu| menu.downgrade()) {
+        let (menu_sx, menu_sy) = crate::src::layout::logical_size(w_owner);
         menu_resize(
             &mut menu.try_borrow_mut().expect("live unborrowed menu"),
-            sx,
-            sy,
+            menu_sx,
+            menu_sy,
         );
         server_redraw_window(w_owner);
     }
@@ -717,14 +718,15 @@ unsafe fn window_find_string(
     name: &CStr,
 ) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
     let w = window_owner.get();
+    let (wsx, wsy) = crate::src::layout::logical_size(window_owner);
     let s = name.as_ptr();
     let mut x: u_int = 0;
     let mut y: u_int = 0;
     let mut top: u_int = 0 as u_int;
-    let mut bottom: u_int = (*w).sy.wrapping_sub(1 as u_int);
+    let mut bottom: u_int = wsy.wrapping_sub(1 as u_int);
     let mut status: ::core::ffi::c_int = 0;
-    x = (*w).sx.wrapping_div(2 as u_int);
-    y = (*w).sy.wrapping_div(2 as u_int);
+    x = wsx.wrapping_div(2 as u_int);
+    y = wsy.wrapping_div(2 as u_int);
     status = window_get_pane_status(&*w);
     if status == PANE_STATUS_TOP {
         top = top.wrapping_add(1);
@@ -738,18 +740,18 @@ unsafe fn window_find_string(
     } else if strcasecmp(s, c"left".as_ptr()) == 0 as ::core::ffi::c_int {
         x = 0 as u_int;
     } else if strcasecmp(s, c"right".as_ptr()) == 0 as ::core::ffi::c_int {
-        x = (*w).sx.wrapping_sub(1 as u_int);
+        x = wsx.wrapping_sub(1 as u_int);
     } else if strcasecmp(s, c"top-left".as_ptr()) == 0 as ::core::ffi::c_int {
         x = 0 as u_int;
         y = top;
     } else if strcasecmp(s, c"top-right".as_ptr()) == 0 as ::core::ffi::c_int {
-        x = (*w).sx.wrapping_sub(1 as u_int);
+        x = wsx.wrapping_sub(1 as u_int);
         y = top;
     } else if strcasecmp(s, c"bottom-left".as_ptr()) == 0 as ::core::ffi::c_int {
         x = 0 as u_int;
         y = bottom;
     } else if strcasecmp(s, c"bottom-right".as_ptr()) == 0 as ::core::ffi::c_int {
-        x = (*w).sx.wrapping_sub(1 as u_int);
+        x = wsx.wrapping_sub(1 as u_int);
         y = bottom;
     } else {
         return None;
