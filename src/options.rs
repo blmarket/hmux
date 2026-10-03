@@ -904,9 +904,9 @@ pub enum OptionMatchFailure {
 pub unsafe fn options_match_owned(s: &CStr) -> Result<OwnedOptionName, OptionMatchFailure> {
     let mut parsed = options_parse_owned(s).ok_or(OptionMatchFailure::Parse)?;
 
-    let mut candidates: [&[u8]; 273] = [&[]; 273];
-    let mut entries: [*const options_table_entry; 273] =
-        [::core::ptr::null::<options_table_entry>(); 273];
+    let mut candidates: [&[u8]; 274] = [&[]; 274];
+    let mut entries: [*const options_table_entry; 274] =
+        [::core::ptr::null::<options_table_entry>(); 274];
     let mut candidate_count = 0usize;
     let mut oe = &raw const options_table as *const options_table_entry;
     while candidate_count < candidates.len() && !(*oe).name_ptr().is_null() {

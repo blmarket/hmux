@@ -386,10 +386,11 @@ pub unsafe fn layout_add_horizontal_border(
     }
     0 as ::core::ffi::c_int
 }
+/// Apply cell geometry to the panes; returns whether any pane changed.
 pub unsafe fn layout_fix_panes(
     window: &WindowRef,
     skip: Option<&std::rc::Rc<std::cell::UnsafeCell<window_pane>>>,
-) {
+) -> bool {
     let mut changed = false;
     let mut cursor = window.next_pane(None);
     while let Some(pane) = cursor {
@@ -411,6 +412,7 @@ pub unsafe fn layout_fix_panes(
     if changed {
         window.invalidate_scene();
     }
+    changed
 }
 pub unsafe fn layout_count_cells(
     mut lc: *mut layout_cell,
@@ -859,7 +861,10 @@ mod floating_clamp_tests {
         );
     }
 }
-pub unsafe fn layout_resize(w_owner: &WindowRef, mut sx: u_int, mut sy: u_int) {
+/// Fit the layout to an `sx` by `sy` window: arrange the sticky preset, or
+/// adjust the tree proportionally when there is none or it declines. Returns
+/// whether the tree or any pane moved.
+pub unsafe fn layout_resize(w_owner: &WindowRef, mut sx: u_int, mut sy: u_int) -> bool {
     let floating_root = {
         let mut tree = w_owner.borrow_layout_root_mut();
         let root = tree.as_deref_mut().expect("layout root");
@@ -867,10 +872,14 @@ pub unsafe fn layout_resize(w_owner: &WindowRef, mut sx: u_int, mut sy: u_int) {
     };
     if floating_root {
         layout_clamp_floating_panes(w_owner, sx, sy);
-        layout_fix_panes(w_owner, None);
-        return;
+        return layout_fix_panes(w_owner, None);
+    }
+    if super::set::layout_set_arrange_sticky(w_owner, sx, sy) {
+        layout_clamp_floating_panes(w_owner, sx, sy);
+        return layout_fix_panes(w_owner, None);
     }
     let (pane_status, horizontal_minimum) = layout_resize_limits(w_owner);
+    let adjusted;
     {
         let mut tree = w_owner.borrow_layout_root_mut();
         let lc = tree.as_deref_mut().expect("layout root") as *mut layout_cell;
@@ -934,10 +943,11 @@ pub unsafe fn layout_resize(w_owner: &WindowRef, mut sx: u_int, mut sy: u_int) {
                 ychange,
             );
         }
+        adjusted = xchange != 0 || ychange != 0;
     }
     layout_fix_offsets(w_owner);
     layout_clamp_floating_panes(w_owner, sx, sy);
-    layout_fix_panes(w_owner, None);
+    layout_fix_panes(w_owner, None) || adjusted
 }
 pub unsafe fn layout_resize_pane_to(
     pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
@@ -1371,6 +1381,8 @@ pub unsafe fn layout_assign_pane(
             .expect("reserved layout cell still belongs to window");
         layout_make_leaf(&mut *cell, pane);
     }
+    let (sx, sy) = window.size();
+    super::set::layout_set_arrange_sticky(window, sx, sy);
     layout_fix_panes(window, if do_not_resize != 0 { Some(pane) } else { None });
 }
 unsafe fn layout_new_pane_size(
@@ -1970,6 +1982,8 @@ pub unsafe fn layout_close_pane(pane: &std::rc::Rc<std::cell::UnsafeCell<window_
         tree.is_some()
     };
     if has_root {
+        let (sx, sy) = window.size();
+        super::set::layout_set_arrange_sticky(&window, sx, sy);
         layout_fix_offsets(&window);
         layout_fix_panes(&window, None);
     }
@@ -2571,15 +2585,19 @@ pub unsafe fn layout_float_pane(
     geometry: layout_geometry,
 ) {
     let (pane_status, horizontal_minimum) = layout_resize_limits(window);
-    let mut tree = window.borrow_layout_root_mut();
-    let root = tree.as_deref_mut().expect("tile root") as *mut layout_cell;
-    let cell = (*root)
-        .find_pane_mut(&std::rc::Rc::downgrade(pane))
-        .expect("floating pane cell") as *mut layout_cell;
-    (*cell).fg = geometry;
-    layout_remove_tile_with_limits(root, pane_status, horizontal_minimum, cell);
-    layout_set_size(cell, geometry.sx, geometry.sy, geometry.xoff, geometry.yoff);
-    (*cell).flags |= LAYOUT_CELL_FLOATING;
+    {
+        let mut tree = window.borrow_layout_root_mut();
+        let root = tree.as_deref_mut().expect("tile root") as *mut layout_cell;
+        let cell = (*root)
+            .find_pane_mut(&std::rc::Rc::downgrade(pane))
+            .expect("floating pane cell") as *mut layout_cell;
+        (*cell).fg = geometry;
+        layout_remove_tile_with_limits(root, pane_status, horizontal_minimum, cell);
+        layout_set_size(cell, geometry.sx, geometry.sy, geometry.xoff, geometry.yoff);
+        (*cell).flags |= LAYOUT_CELL_FLOATING;
+    }
+    let (sx, sy) = window.size();
+    super::set::layout_set_arrange_sticky(window, sx, sy);
 }
 unsafe fn layout_remove_tile_with_limits(
     root: *mut layout_cell,
@@ -2714,23 +2732,26 @@ pub unsafe fn layout_tile_pane(
             }
         }
     }
-    let mut tree = window.borrow_layout_root_mut();
-    let root = tree.as_deref_mut().expect("tiling root") as *mut layout_cell;
-    let cell = (*root).find_mut(id).expect("tiling cell belongs to tree") as *mut layout_cell;
-    if layout_insert_tile_with_limits(
-        root,
-        window_size,
-        pane_status,
-        horizontal_minimum,
-        split_pane_status,
-        split_horizontal_minimum,
-        can_split,
-        cell,
-    ) != 0
     {
-        return false;
+        let mut tree = window.borrow_layout_root_mut();
+        let root = tree.as_deref_mut().expect("tiling root") as *mut layout_cell;
+        let cell = (*root).find_mut(id).expect("tiling cell belongs to tree") as *mut layout_cell;
+        if layout_insert_tile_with_limits(
+            root,
+            window_size,
+            pane_status,
+            horizontal_minimum,
+            split_pane_status,
+            split_horizontal_minimum,
+            can_split,
+            cell,
+        ) != 0
+        {
+            return false;
+        }
+        (*cell).flags &= !LAYOUT_CELL_FLOATING;
     }
-    (*cell).flags &= !LAYOUT_CELL_FLOATING;
+    super::set::layout_set_arrange_sticky(window, window_size.0, window_size.1);
     true
 }
 

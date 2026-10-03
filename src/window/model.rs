@@ -55,6 +55,9 @@ pub struct window {
     pub(super) z_index: window_panes,
     pub(super) panes: window_panes,
     pub(super) lastlayout: ::core::ffi::c_int,
+    /// Whether the preset in `lastlayout` is in force; only layout selection
+    /// writes it.
+    pub(super) sticky: bool,
     pub(super) layout_root: Option<Box<layout_cell>>,
     pub(super) saved_layout_root: Option<Box<layout_cell>>,
     pub(super) old_layout: Option<std::ffi::CString>,
@@ -106,6 +109,7 @@ impl Default for window {
             z_index: Default::default(),
             panes: Default::default(),
             lastlayout: Default::default(),
+            sticky: Default::default(),
             layout_root: Default::default(),
             saved_layout_root: Default::default(),
             old_layout: Default::default(),

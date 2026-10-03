@@ -114,6 +114,14 @@ unsafe fn cmd_resize_pane_exec(
             server_redraw_window(wl.get_unchecked().window_handle().expect("resize window"));
             return CMD_RETURN_NORMAL;
         }
+        // The next arrangement would undo a manual size.
+        if original_window.sticky_layout().is_some()
+            && !pane_owner.is_floating()
+            && b"xyUDLR".iter().any(|&flag| args_has(args, flag) != 0)
+        {
+            cmdq_error(item_handle, |out| out.write_all(b"layout is sticky"));
+            return CMD_RETURN_ERROR;
+        }
         server_unzoom_window(wl.get_unchecked().window_handle().expect("resize window"));
         let cell_id = pane_owner
             .layout_identity(false)
@@ -607,6 +615,10 @@ unsafe fn cmd_resize_pane_mouse_resize_tiled(client_owner: &ClientRef, mut m: *m
         .cloned()
         .expect("mouse window");
     (|| {
+        // The next arrangement would undo a dragged border.
+        if window_owner.sticky_layout().is_some() {
+            return;
+        }
         y = (*m).y.wrapping_add((*m).oy);
         x = (*m).x.wrapping_add((*m).ox);
         if (*m).statusat == 0 as ::core::ffi::c_int && y >= (*m).statuslines {

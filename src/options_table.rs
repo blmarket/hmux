@@ -116,7 +116,7 @@ pub static options_other_names: [options_name_map; 8] = [
 pub const TMUX_LOCK_CMD: &std::ffi::CStr = c"lock -np";
 pub const TMUX_TERM: &std::ffi::CStr = c"tmux-256color";
 pub const TMUX_MOUSE: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub static options_table: [options_table_entry; 273] = [
+pub static options_table: [options_table_entry; 274] = [
         options_table_entry {
             name: Some(c"backspace"),
             alternative_name: None,
@@ -2873,6 +2873,23 @@ pub static options_table: [options_table_entry; 273] = [
             separator: Some(c","),
             pattern: None,
             text: Some(c"Style of matched characters in switch mode."),
+            unit: None,
+        },
+        options_table_entry {
+            name: Some(c"sticky-layout"),
+            alternative_name: None,
+            type_0: OPTIONS_TABLE_FLAG,
+            scope: OPTIONS_TABLE_WINDOW,
+            flags: 0,
+            minimum: 0,
+            maximum: 0,
+            choices: &[],
+            default_str: None,
+            default_num: 0 as ::core::ffi::c_longlong,
+            default_arr: None,
+            separator: None,
+            pattern: None,
+            text: Some(c"Whether selecting a preset layout keeps it in force, arranging panes again whenever they are added or removed, the window is resized or the options the layout reads change."),
             unit: None,
         },
         options_table_entry {

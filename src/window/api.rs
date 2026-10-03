@@ -305,6 +305,9 @@ pub trait Window {
     /// Pixel dimensions of a terminal cell, for the pane's PTY resize protocol.
     unsafe fn cell_size(&self) -> (u32, u32);
     unsafe fn is_zoomed(&self) -> bool;
+    /// The preset in force, which the layout engine arranges again whenever
+    /// the panes, the size or the options it reads change.
+    unsafe fn sticky_layout(&self) -> Option<u32>;
     unsafe fn resize(&self, sx: u32, sy: u32, xpixel: i32, ypixel: i32);
     /// Preserve command precedence: cycle, spread, then named/saved layout.
     /// `cycle` is -1 (previous), 0, or 1 (next). `legacy_format` preserves the
@@ -1063,6 +1066,10 @@ impl Window for WindowRef {
     unsafe fn is_zoomed(&self) -> bool {
         (*self.get()).flags & WINDOW_ZOOMED != 0
     }
+    unsafe fn sticky_layout(&self) -> Option<u32> {
+        let state = &*self.get();
+        state.sticky.then_some(state.lastlayout as u32)
+    }
     unsafe fn resize(&self, sx: u32, sy: u32, xpixel: i32, ypixel: i32) {
         resize_window(self, sx, sy, xpixel, ypixel);
     }
@@ -1075,15 +1082,22 @@ impl Window for WindowRef {
         legacy_format: bool,
     ) -> Result<(), CString> {
         assert!((-1..=1).contains(&cycle), "layout cycle direction");
+        if cycle == 0 && spread.is_some() && (*self.get()).sticky {
+            return Err(c"layout is sticky".to_owned());
+        }
         if self.unzoom(true) == 0 {
             server_redraw_window(self);
         }
         let new_layout = self.layout_string(LayoutView::Visible, legacy_format);
         let old_layout = window_replace_old_layout(self, new_layout);
+        let sticky =
+            self.with_options_mut(|options| options_get_number(options, c"sticky-layout")) != 0;
         if cycle > 0 {
             layout_set_next(self);
+            (*self.get()).sticky = sticky;
         } else if cycle < 0 {
             layout_set_previous(self);
+            (*self.get()).sticky = sticky;
         } else if let Some(pane) = spread {
             assert!(
                 window_has_pane(&*self.get(), &Rc::downgrade(pane)),
@@ -1107,9 +1121,14 @@ impl Window for WindowRef {
             };
             if preset != -1 {
                 layout_set_select(self, preset as u32);
+                (*self.get()).sticky = sticky;
             } else if let Some(name) = requested {
+                // Import refits through layout_resize, which must take the
+                // ordinary path.
+                let was_sticky = std::mem::take(&mut (*self.get()).sticky);
                 let mut cause = None;
                 if layout_parse(self, name.as_ptr(), &mut cause) == -1 {
+                    (*self.get()).sticky = was_sticky;
                     let mut message = cause
                         .expect("failed layout parse provides a diagnostic")
                         .into_bytes();

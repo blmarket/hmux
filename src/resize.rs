@@ -451,21 +451,24 @@ pub unsafe fn recalculate_size(w_owner: &WindowRef, mut now: ::core::ffi::c_int)
         tty_update_window_offset(w_owner);
     };
 }
-/// Arrange the tiled tree back into the window size after its panes or their
-/// minimums changed without a size change. Silent when nothing moves.
+/// Arrange the tiled tree back into the window size, or arrange the sticky
+/// preset again, after its panes, their minimums or its options changed
+/// without a size change. Silent when nothing moves.
 unsafe fn refit_layout(w_owner: &WindowRef) {
     let (sx, sy) = w_owner.size();
-    if crate::src::layout::logical_size(w_owner) == (sx, sy) {
+    if w_owner.sticky_layout().is_some() {
+        // While zoomed the arrangement is the saved tree.
+        if w_owner.is_zoomed()
+            || w_owner
+                .borrow_layout_root(crate::src::window::LayoutView::Visible)
+                .is_none()
+        {
+            return;
+        }
+    } else if crate::src::layout::logical_size(w_owner) == (sx, sy) {
         return;
     }
-    let root_size = || {
-        w_owner
-            .borrow_layout_root(crate::src::window::LayoutView::Visible)
-            .map(|root| (root.g.sx, root.g.sy))
-    };
-    let before = root_size();
-    crate::src::layout::layout_resize(w_owner, sx, sy);
-    if root_size() == before {
+    if !crate::src::layout::layout_resize(w_owner, sx, sy) {
         return;
     }
     log_debug(format_args!(
