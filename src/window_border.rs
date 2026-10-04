@@ -21,8 +21,11 @@ use crate::src::tty_acs::{tty_acs_double_borders, tty_acs_heavy_borders, tty_acs
 use crate::src::window::Window as _;
 
 /// Render `fill-character` into the cell that fills whatever no pane, scrollbar
-/// or separator covers.
-pub(crate) unsafe fn window_render_fill_cell(w_owner: &WindowRef) -> Option<grid_cell> {
+/// or separator covers, inside the window's extent or outside it.
+pub(crate) unsafe fn window_render_fill_cell(
+    w_owner: &WindowRef,
+    inside: bool,
+) -> Option<grid_cell> {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut s: screen = screen::empty();
     let mut ctx: screen_write_ctx = screen_write_ctx {
@@ -62,6 +65,10 @@ pub(crate) unsafe fn window_render_fill_cell(w_owner: &WindowRef) -> Option<grid
         (refbox::Weak::new()).clone(),
         w_owner.active_pane().as_ref(),
     );
+    format_add(ft, c"is_inside", |out| write!(out, "{}", (inside) as i32));
+    format_add(ft, c"is_outside", |out| {
+        write!(out, "{}", { (!inside) as ::core::ffi::c_int })
+    });
     let value = w_owner.with_options_mut(|options| options_get_string(options, c"fill-character"));
     let expanded = format_expand_cstring(ft, value.as_ptr());
     format_free(ft_owner);
@@ -81,7 +88,7 @@ pub(crate) unsafe fn window_render_fill_cell(w_owner: &WindowRef) -> Option<grid
     (new_gc.data.width == 1).then_some(new_gc)
 }
 pub unsafe fn window_set_fill_cells(w_owner: &WindowRef) {
-    w_owner.refresh_fill_cell();
+    w_owner.refresh_fill_cells();
 }
 
 unsafe fn window_copy_fill_cell(mut gc: *mut grid_cell, mut fill: *const grid_cell) {
@@ -99,8 +106,12 @@ unsafe fn window_copy_fill_cell(mut gc: *mut grid_cell, mut fill: *const grid_ce
         (*gc).us = (*fill).us;
     }
 }
-pub unsafe fn window_get_fill_cell(owner: &WindowRef, gc: *mut grid_cell) {
-    let fill = owner.fill_cell();
+pub unsafe fn window_get_fill_cell(
+    owner: &WindowRef,
+    inside: ::core::ffi::c_int,
+    gc: *mut grid_cell,
+) {
+    let fill = owner.fill_cell(inside != 0);
     window_copy_fill_cell(gc, &fill);
 }
 

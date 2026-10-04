@@ -65,8 +65,9 @@ use crate::src::window_border::{window_get_border_cell, window_get_fill_cell};
 use crate::src::window_copy::window_copy_get_current_offset;
 use std::cell::RefCell;
 
-pub const REDRAW_SPAN_SCROLLBAR: redraw_span_type = 3;
-pub const REDRAW_SPAN_BORDER: redraw_span_type = 2;
+pub const REDRAW_SPAN_SCROLLBAR: redraw_span_type = 4;
+pub const REDRAW_SPAN_BORDER: redraw_span_type = 3;
+pub const REDRAW_SPAN_EMPTY: redraw_span_type = 2;
 pub const REDRAW_SPAN_OUTSIDE: redraw_span_type = 1;
 pub const REDRAW_SPAN_PANE: redraw_span_type = 0;
 
@@ -96,13 +97,14 @@ pub struct redraw_build_ctx<'a> {
     pub cells: &'a mut [redraw_build_cell],
 }
 
-pub const REDRAW_SPAN_TYPES: ::core::ffi::c_int = 4 as ::core::ffi::c_int;
+pub const REDRAW_SPAN_TYPES: ::core::ffi::c_int = 5 as ::core::ffi::c_int;
 pub const REDRAW_BORDER_IS_ARROW: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const REDRAW_SCROLLBAR_LEFT: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const REDRAW_SCROLLBAR_RIGHT: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const REDRAW_SCROLLBAR_OVERLAY: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 pub const REDRAW_PANE: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const REDRAW_OUTSIDE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
+pub const REDRAW_EMPTY: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const REDRAW_PANE_BORDER: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 pub const REDRAW_PANE_SCROLLBAR: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
 pub const REDRAW_STATUS: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
@@ -180,12 +182,18 @@ unsafe fn redraw_get_build_cell(
     let index = y as usize * (*bctx).sx as usize + x as usize;
     &raw mut (*bctx).cells[index]
 }
-/// Whatever a pane, its scrollbar or a separator does not cover shows the
-/// outside fill: the blank extent beside the last pane as much as the area
-/// beyond a smaller window.
+/// Whatever a pane, its scrollbar or a separator does not cover is empty
+/// within the window's extent, such as the blank extent beside the last pane,
+/// and outside beyond it.
 unsafe fn redraw_reset_cell(mut bctx: *mut redraw_build_ctx, mut x: u_int, mut y: u_int) {
     let mut bc: *mut redraw_build_cell = redraw_get_build_cell(bctx, x, y);
-    (*bc).data = redraw_span_data::Outside;
+    if (*bctx).ox.wrapping_add(x) < (*bctx).w.logical_size().0
+        && (*bctx).oy.wrapping_add(y) < (*bctx).w.logical_size().1
+    {
+        (*bc).data = redraw_span_data::Empty;
+    } else {
+        (*bc).data = redraw_span_data::Outside;
+    }
 }
 unsafe fn redraw_window_to_scene(
     mut bctx: *mut redraw_build_ctx,
@@ -344,7 +352,9 @@ unsafe fn redraw_mark_border_cell(
     }
     let bc = redraw_get_build_cell(bctx, x, y);
     match (*bc).data.kind() {
-        REDRAW_SPAN_OUTSIDE => (*bc).data = redraw_span_data::Border(Default::default()),
+        REDRAW_SPAN_OUTSIDE | REDRAW_SPAN_EMPTY => {
+            (*bc).data = redraw_span_data::Border(Default::default())
+        }
         REDRAW_SPAN_BORDER => {}
         _ => return,
     }
@@ -494,7 +504,7 @@ fn redraw_compare_data(a: &redraw_build_cell, b: &redraw_build_cell) -> bool {
         (Pane(a), Pane(b)) => a.wp.ptr_eq(&b.wp) && a.py == b.py && a.px.wrapping_add(1) == b.px,
         (Border(a), Border(b)) => a == b && a.flags & REDRAW_BORDER_IS_ARROW == 0,
         (Scrollbar(a), Scrollbar(b)) => a == b,
-        (Outside, Outside) => true,
+        (Outside, Outside) | (Empty, Empty) => true,
         _ => false,
     }
 }
@@ -869,7 +879,8 @@ unsafe fn redraw_draw_border_span(
         if border {
             window_get_border_cell(None, pane_lines, &mut gc);
         } else {
-            window_get_fill_cell(&window_owner, &raw mut gc);
+            let inside = (span.data.kind() == REDRAW_SPAN_EMPTY) as ::core::ffi::c_int;
+            window_get_fill_cell(&window_owner, inside, &raw mut gc);
         }
     }
     if border && dctx.marked.strong_count() != 0 && redraw_data_has_pane(&span.data, &dctx.marked) {
@@ -930,7 +941,7 @@ unsafe fn redraw_draw_span(dctx: &mut redraw_draw_ctx<'_>, span: &redraw_span, m
         REDRAW_SPAN_PANE => {
             redraw_draw_pane_span(dctx, span, x, y, n);
         }
-        REDRAW_SPAN_BORDER | REDRAW_SPAN_OUTSIDE => {
+        REDRAW_SPAN_BORDER | REDRAW_SPAN_OUTSIDE | REDRAW_SPAN_EMPTY => {
             redraw_draw_border_span(dctx, span, x, y, n);
         }
         REDRAW_SPAN_SCROLLBAR => {
@@ -978,6 +989,7 @@ unsafe fn redraw_draw_lines(dctx: &mut redraw_draw_ctx<'_>, flags: ::core::ffi::
     let masks = [
         REDRAW_PANE,
         REDRAW_OUTSIDE,
+        REDRAW_EMPTY,
         REDRAW_PANE_BORDER,
         REDRAW_PANE_SCROLLBAR,
     ];

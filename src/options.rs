@@ -1617,7 +1617,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
     if strcmp(name, c"fill-character".as_ptr()) == 0 as ::core::ffi::c_int {
         let mut window_cursor = windows.first();
         while let Some(window_owner) = window_cursor.take() {
-            window_owner.refresh_fill_cell();
+            window_owner.refresh_fill_cells();
             window_cursor = window_owner.next_window();
             window_owner.release(c"window traversal");
         }

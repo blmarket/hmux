@@ -30,7 +30,7 @@ assumes the proposed answer to an open decision and marks it "proposed".
 | 3 | `join-pane` and `break-pane` between windows | Settled: keep, as remove plus insert | Step 3 |
 | 4 | `pane-border-status` (per-pane title row, off by default) | Settled: drop | Step 6 |
 | 5 | Active-pane indicator: half-coloured border on every separator, or tmux's rule | Settled: keep tmux's rule | Step 6 |
-| 6 | Blank area beside a trailing half pane: inside fill or outside fill | Settled: outside fill, as tmux paints beyond a smaller window | Step 6 |
+| 6 | Blank area beside a trailing half pane: inside fill or outside fill | Settled: inside fill; `fill-character` and its `is_inside`/`is_outside` variables stay as they were | Step 6 |
 | 7 | Menus and popups, the client overlays | Settled: delete, with the overlay mechanism | Done after step 5 |
 | 8 | `C-a`: replace the `C-b` prefix and its bindings, or add a key table beside them | Settled: keep `C-b` and its bindings unchanged; `C-a` enters a `strip` table | Step 7 |
 
@@ -60,8 +60,8 @@ them (see "Removed in step 3").
   halves on an even width show the last pane's border in the final column.
 - Borders are vertical separators as tall as the panes; nothing draws a
   horizontal border or a junction. Whatever no pane, scrollbar or separator
-  covers shows the outside fill, beside the last pane and below a shorter
-  window alike.
+  covers shows `fill-character`: the inside fill within the extent, beside the
+  last pane, and the outside fill beyond it, below a shorter window.
 - The active pane's separators take `pane-active-border-style` as in tmux: each
   separator beside the active pane is coloured whole, except that with exactly
   two panes their one separator is split, the top half taking the left pane's
@@ -221,16 +221,16 @@ cases.
   (`RedrawBorderSpan`, `src/shared/redraw.rs`); every separator draws the
   vertical glyph, so `window_get_border_cell` and `WindowPane::border_cell`
   lost their cell type. The `CELL_*` junctions stay for `screen_write` boxes.
-- Fill (decision 6): `redraw_reset_cell` (`src/screen_redraw.rs:186`) starts
-  every cell as outside, so whatever no pane, scrollbar or separator covers
-  shows the outside fill, past the last pane as much as below a shorter window.
-  The inside fill had no other use and went: the `Empty` span and
-  `REDRAW_EMPTY`, the Window's second fill cell (`fill_cell` in
-  `src/window/model.rs:68`, rendered by `Window::refresh_fill_cell`,
-  `src/window/api.rs:436`) and the `is_inside`/`is_outside` format variables.
-  The `fill-character` default is `#[fg=themelightgrey]#[acs]~`.
+- Fill (decision 6): unchanged from tmux's configuration. `redraw_reset_cell`
+  (`src/screen_redraw.rs:188`) starts a cell within the extent as empty and
+  one beyond it as outside, so the blank extent past the last pane shows the
+  inside fill and the rows below a shorter window the outside fill. The
+  Window keeps both fill cells (`Window::refresh_fill_cells`), the
+  `is_inside`/`is_outside` format variables and the `fill-character` default
+  `#{?is_inside,#[bg=themedarkgrey] ,#[fg=themelightgrey]#[acs]~}`. Step 6 had
+  removed the inside fill; that was reverted.
 - Indicator (decision 5): unchanged. `redraw_mark_two_pane_colours`
-  (`src/screen_redraw.rs:454`) still splits the one separator of a two-pane
+  (`src/screen_redraw.rs:464`) still splits the one separator of a two-pane
   window; with more panes every separator beside the active pane takes its
   style whole, and the last pane's trailing border, which has one neighbour,
   follows the same rule.
@@ -416,13 +416,14 @@ Done in step 5; see "Step 5" for the details.
 
 Done in step 6; see "Step 6" for the details.
 
-- `redraw_mark_pane_borders` (`src/screen_redraw.rs:389`) keeps the marking
+- `redraw_mark_pane_borders` (`src/screen_redraw.rs:399`) keeps the marking
   rule: left when there is a column before the pane, right when it is within
   the extent. Separators are as tall as the panes; there are no horizontal
   borders or junctions. The floating border and clipping code went in step 1.
-- Everything else is the outside fill (decision 6).
+- Everything else is the inside fill within the extent and the outside fill
+  beyond it (decision 6).
 - Active-pane indicator: tmux's rule (decision 5).
-  `redraw_check_two_pane_colours` (`src/screen_redraw.rs:230`) splits the
+  `redraw_check_two_pane_colours` (`src/screen_redraw.rs:238`) splits the
   separator of a two-pane window; otherwise the separators beside the active
   pane take its style whole.
 - No pane status rows (decision 4).
@@ -532,8 +533,8 @@ tree still exists, so step 3 replaces a purely tiled tree.
    selection, navigation that stops at the ends with up/down removed, and
    positional targets measured across the panes. `tests/common/mod.rs` has a PTY client and `tests/viewport.rs`
    covers the viewport. See "Step 5".
-6. **Borders.** Done. Vertical separators only, the outside fill for whatever
-   no pane covers, tmux's active-pane indicator, and no pane status rows
+6. **Borders.** Done. Vertical separators only, the inside and outside fills
+   as before, tmux's active-pane indicator, and no pane status rows
    (decisions 4 to 6). `tests/borders.rs` covers the rendering. See "Step 6".
 7. **Defaults and keys.** Done. `C-b` and its bindings unchanged, and a
    `C-a` key table for the strip keys (decision 8). `tests/default_keys.rs`
@@ -557,7 +558,7 @@ client that models its screen. Viewport and rendering cases use it.
 | Resizing | Grow and shrink the terminal; no repeated resize scheduling; silent when nothing moves |
 | Focus | Already visible pane; partially visible pane; offscreen pane in each direction; no wrapping at either end; no cursor-driven drift |
 | Viewport | The view rests on a pane boundary from both directions on even and odd widths; manual pan and reset; clients of different widths; active pane wider than a client |
-| Rendering | Right border of a lone half pane; spare column on even widths; no horizontal border below a shorter window; outside fill beside the last pane; active-pane indicator with two and with three panes; mouse selection after panning |
+| Rendering | Right border of a lone half pane; spare column on even widths; no horizontal border below a shorter window; inside fill beside the last pane and outside fill below a shorter window; active-pane indicator with two and with three panes; mouse selection after panning |
 | Environment | Session environment and `-e` overrides; `-c '#{pane_current_path}'` after `cd`; paths with spaces; directory fallback |
 | Defaults and keys | `C-b` prefix table unchanged; `C-a` c/h/l/f/H/L/x actions; uppercase/lowercase distinct; `C-a` passthrough; user overrides |
 | Compatibility | `split-window` inserts and ignores its split flags; removed commands, flags and options (including `pane-border-status` and `pane-border-format`) are rejected; `#{window_layout}` is a single-row layout |

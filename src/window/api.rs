@@ -247,10 +247,10 @@ pub trait Window {
     unsafe fn pane_is_focused(&self, pane: &Rc<UnsafeCell<window_pane>>) -> bool;
     unsafe fn invalidate_scene(&self);
     unsafe fn scene_generation(&self) -> u64;
-    /// Render the fill cell outside the Window borrow, publishing its fallback
-    /// first, as observed by format callbacks.
-    unsafe fn refresh_fill_cell(&self);
-    unsafe fn fill_cell(&self) -> grid_cell;
+    /// Render each fill cell outside the Window borrow, publishing its fallback
+    /// first, in inside/outside order as observed by format callbacks.
+    unsafe fn refresh_fill_cells(&self);
+    unsafe fn fill_cell(&self, inside: bool) -> grid_cell;
     unsafe fn with_options_mut<R>(&self, edit: impl FnOnce(&mut options) -> R) -> R;
     unsafe fn format_value(
         &self,
@@ -433,21 +433,41 @@ impl Window for WindowRef {
         strip::layout_string(&entries, (state.strip_width, state.sy), legacy)
     }
 
-    unsafe fn refresh_fill_cell(&self) {
-        let mut fallback = crate::src::grid::grid_default_cell;
-        fallback.attr |= crate::src::shared::grid::GRID_ATTR_CHARSET as u16;
-        crate::src::text::utf8::utf8_set(
-            &mut fallback.data,
-            crate::src::shared::borders::CELL_BORDERS
-                [crate::src::shared::borders::CELL_NONE as usize] as u8,
-        );
-        (*self.get()).fill_cell = fallback;
-        if let Some(rendered) = crate::src::window_border::window_render_fill_cell(self) {
-            (*self.get()).fill_cell = rendered;
+    unsafe fn refresh_fill_cells(&self) {
+        for inside in [true, false] {
+            let mut fallback = crate::src::grid::grid_default_cell;
+            fallback.attr |= crate::src::shared::grid::GRID_ATTR_CHARSET as u16;
+            crate::src::text::utf8::utf8_set(
+                &mut fallback.data,
+                crate::src::shared::borders::CELL_BORDERS
+                    [crate::src::shared::borders::CELL_NONE as usize] as u8,
+            );
+            {
+                let state = &mut *self.get();
+                if inside {
+                    state.inside_cell = fallback;
+                } else {
+                    state.outside_cell = fallback;
+                }
+            }
+            if let Some(rendered) = crate::src::window_border::window_render_fill_cell(self, inside)
+            {
+                let state = &mut *self.get();
+                if inside {
+                    state.inside_cell = rendered;
+                } else {
+                    state.outside_cell = rendered;
+                }
+            }
         }
     }
-    unsafe fn fill_cell(&self) -> grid_cell {
-        (*self.get()).fill_cell
+    unsafe fn fill_cell(&self, inside: bool) -> grid_cell {
+        let state = &*self.get();
+        if inside {
+            state.inside_cell
+        } else {
+            state.outside_cell
+        }
     }
 
     unsafe fn invalidate_scene(&self) {
@@ -909,7 +929,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fill_rendering_composes_border_style() {
+    fn fill_rendering_keeps_inside_outside_formats_and_composes_border_style() {
         unsafe {
             // Rendering initializes a temporary screen, whose input-mode setup
             // reads the server's extended-keys option.
@@ -933,18 +953,19 @@ mod tests {
             (*owner.get()).options = Some(options);
             owner.with_options_mut(|options| {
                 crate::src::options::options_set_string(options, c"fill-character", 0, |out| {
-                    out.write_all(b"#[fg=red]O")
+                    out.write_all(b"#[fg=red]#{?is_inside,I,O}")
                 });
             });
-            owner.refresh_fill_cell();
-            let original = owner.fill_cell();
-            assert_eq!(original.data.data[0], b'O');
+            owner.refresh_fill_cells();
+            let original = owner.fill_cell(true);
+            assert_eq!(original.data.data[0], b'I');
+            assert_eq!(owner.fill_cell(false).data.data[0], b'O');
             let mut border = crate::src::grid::grid_default_cell;
             border.fg = 4;
             border.bg = 3;
             border.attr = crate::src::shared::grid::GRID_ATTR_UNDERSCORE as u16;
-            crate::src::window_border::window_get_fill_cell(&owner, &mut border);
-            assert_eq!(border.data.data[0], b'O');
+            crate::src::window_border::window_get_fill_cell(&owner, 1, &mut border);
+            assert_eq!(border.data.data[0], b'I');
             assert_eq!(border.fg, 1, "fill overrides an explicit foreground");
             assert_eq!(
                 border.bg, 3,
@@ -956,13 +977,14 @@ mod tests {
             );
             owner.with_options_mut(|options| {
                 crate::src::options::options_set_string(options, c"fill-character", 0, |out| {
-                    out.write_all(b"X")
+                    out.write_all(b"#{?is_outside,X,Y}")
                 });
             });
-            owner.refresh_fill_cell();
-            assert_eq!(owner.fill_cell().data.data[0], b'X');
+            owner.refresh_fill_cells();
+            assert_eq!(owner.fill_cell(true).data.data[0], b'Y');
+            assert_eq!(owner.fill_cell(false).data.data[0], b'X');
             assert_eq!(
-                original.data.data[0], b'O',
+                original.data.data[0], b'I',
                 "fill snapshots survive refresh"
             );
             owner.release(c"fill rendering test");

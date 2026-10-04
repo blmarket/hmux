@@ -22,7 +22,7 @@ pub struct redraw_scene {
     pub oy: u_int,
 }
 
-pub type redraw_line = [redraw_spans; 4];
+pub type redraw_line = [redraw_spans; 5];
 
 /// Preserve stable heap allocation while drawing helpers borrow spans.
 pub type redraw_spans = Vec<Box<redraw_span>>;
@@ -39,6 +39,7 @@ pub struct redraw_span {
 pub enum redraw_span_data {
     Pane(RedrawPaneSpan),
     Outside,
+    Empty,
     Border(RedrawBorderSpan),
     Scrollbar(RedrawScrollbarSpan),
 }
@@ -54,8 +55,9 @@ impl redraw_span_data {
         match self {
             Self::Pane(_) => 0,
             Self::Outside => 1,
-            Self::Border(_) => 2,
-            Self::Scrollbar(_) => 3,
+            Self::Empty => 2,
+            Self::Border(_) => 3,
+            Self::Scrollbar(_) => 4,
         }
     }
     pub fn pane(&self) -> &RedrawPaneSpan {

@@ -234,7 +234,7 @@ pub(crate) unsafe fn initialize_spawned_window(sc: *mut spawn_context, window: &
     } else {
         window.initialize_name(default_window_name_cstring(window), false);
     }
-    window.refresh_fill_cell();
+    window.refresh_fill_cells();
 }
 pub unsafe fn spawn_pane(
     mut sc: *mut spawn_context,

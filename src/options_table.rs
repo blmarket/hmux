@@ -2308,7 +2308,7 @@ pub static options_table: [options_table_entry; 256] = [
             minimum: 0,
             maximum: 0,
             choices: &[],
-            default_str: Some(c"#[fg=themelightgrey]#[acs]~"),
+            default_str: Some(c"#{?is_inside,#[bg=themedarkgrey] ,#[fg=themelightgrey]#[acs]~}"),
             default_num: 0,
             default_arr: None,
             separator: None,
