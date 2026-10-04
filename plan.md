@@ -60,8 +60,11 @@ them (see "Removed in step 3").
   halves on an even width show the last pane's border in the final column.
 - Borders are vertical separators as tall as the panes; nothing draws a
   horizontal border or a junction. Whatever no pane, scrollbar or separator
-  covers shows `fill-character`: the inside fill within the extent, beside the
-  last pane, and the outside fill beyond it, below a shorter window.
+  covers shows `fill-character`: the inside fill within the window, beside the
+  last pane, and the outside fill beyond it, below a shorter window and beside a
+  narrower one.
+- A client larger than the window shows only the window's size of the strip,
+  as tmux shows a smaller window; it never shows more panes than the window.
 - The active pane's separators take `pane-active-border-style` as in tmux: each
   separator beside the active pane is coloured whole, except that with exactly
   two panes their one separator is split, the top half taking the left pane's
@@ -173,6 +176,10 @@ cases.
   so cursor movement in a visible pane never moves it. A view too short for the
   cell stays within the cell and moves the least distance that keeps the cursor
   visible.
+- The view is the window's size cut to the terminal (`tty_window_frame`,
+  `src/tty.rs`). A terminal larger than the window shows the outside fill
+  beyond it (`redraw_in_window`, `src/screen_redraw.rs`); it never shows more of
+  the strip than the window does.
 - `bigger` (terminal clipping, `#{window_bigger}`, `#{window_offset_x}`) is set
   only when the view leaves part of a pane out: a nonzero offset, or a strip
   wider or a window taller than the view. A view at the origin that shows every
@@ -558,7 +565,7 @@ client that models its screen. Viewport and rendering cases use it.
 | Resizing | Grow and shrink the terminal; no repeated resize scheduling; silent when nothing moves |
 | Focus | Already visible pane; partially visible pane; offscreen pane in each direction; no wrapping at either end; no cursor-driven drift |
 | Viewport | The view rests on a pane boundary from both directions on even and odd widths; manual pan and reset; clients of different widths; active pane wider than a client |
-| Rendering | Right border of a lone half pane; spare column on even widths; no horizontal border below a shorter window; inside fill beside the last pane and outside fill below a shorter window; active-pane indicator with two and with three panes; mouse selection after panning |
+| Rendering | Right border of a lone half pane; spare column on even widths; no horizontal border below a shorter window; inside fill beside the last pane and outside fill below a shorter window; a window narrower than its client shows only its width; active-pane indicator with two and with three panes; mouse selection after panning |
 | Environment | Session environment and `-e` overrides; `-c '#{pane_current_path}'` after `cd`; paths with spaces; directory fallback |
 | Defaults and keys | `C-b` prefix table unchanged; `C-a` c/h/l/f/H/L/x actions; uppercase/lowercase distinct; `C-a` passthrough; user overrides |
 | Compatibility | `split-window` inserts and ignores its split flags; removed commands, flags and options (including `pane-border-status` and `pane-border-format`) are rejected; `#{window_layout}` is a single-row layout |

@@ -1018,6 +1018,13 @@ pub(crate) unsafe fn tty_raw(fd: i32, text: *const ::core::ffi::c_char) {
     let _ = hmux_rt::unix::set_nonblocking(borrowed, was_nonblocking);
 }
 
+/// The part of the terminal that shows `window`: the window's size, cut to the
+/// terminal. A larger terminal shows the outside fill beyond it, as tmux does.
+unsafe fn tty_window_frame(owner: &ClientRef, window: &WindowRef) -> (u32, u32) {
+    let (wx, wy) = window.size();
+    let (tx, ty) = owner.terminal_size();
+    (tx.min(wx), ty.wrapping_sub(status_line_size(owner)).min(wy))
+}
 pub unsafe fn tty_window_bigger(owner: &ClientRef) -> ::core::ffi::c_int {
     let session = owner.attached_session().upgrade().expect("live session");
     let link = session.current_winlink();
@@ -1027,8 +1034,8 @@ pub unsafe fn tty_window_bigger(owner: &ClientRef) -> ::core::ffi::c_int {
         .cloned()
         .expect("current window");
     let (sx, sy) = window.logical_size();
-    let (tx, ty) = owner.terminal_size();
-    (tx < sx || ty.wrapping_sub(status_line_size(owner)) < sy) as i32
+    let (fx, fy) = tty_window_frame(owner, &window);
+    (fx < sx || fy < sy) as i32
 }
 pub fn tty_window_offset(tty: &tty) -> tty_window_view {
     tty_window_view {
@@ -1083,9 +1090,8 @@ unsafe fn tty_window_offset1(owner: &ClientRef) -> tty_window_view {
         .cloned()
         .expect("current window");
     let (sx, sy) = window.logical_size();
-    let (tx, ty) = owner.terminal_size();
-    let height = ty.wrapping_sub(status_line_size(owner));
-    if tx >= sx && height >= sy {
+    let (fx, fy) = tty_window_frame(owner, &window);
+    if fx >= sx && fy >= sy {
         owner.reset_pan(None);
         return tty_window_view {
             bigger: false,
@@ -1099,8 +1105,8 @@ unsafe fn tty_window_offset1(owner: &ClientRef) -> tty_window_view {
         bigger: true,
         ox: 0,
         oy: 0,
-        sx: tx,
-        sy: height,
+        sx: fx,
+        sy: fy,
     };
     if owner.apply_pan(&window, &mut view) {
         return view;

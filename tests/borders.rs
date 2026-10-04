@@ -114,31 +114,59 @@ fn borders_are_never_horizontal() {
 }
 
 #[test]
+fn a_window_narrower_than_its_client_shows_only_its_width() {
+    // Half panes of a 40-column window: 0-18, 20-38 and 40-58, with
+    // separators at 19, 39 and 59.
+    let server = strip(40, 10, 3);
+    let mut client = server.attach_terminal(80, 24);
+    // The view shows the window's 40 columns of the strip, not the client's
+    // 80; the client's other columns and the rows below show the outside
+    // fill.
+    client.wait_offset(&server, 20);
+    client.wait_screen(|screen| {
+        shows(screen, 0..10, 19..20, BORDER)
+            && shows(screen, 0..10, 39..40, BORDER)
+            && shows(screen, 0..10, 40..80, FILL)
+            && shows(screen, 10..24, 0..80, FILL)
+    });
+    // Panned to the end, the blank extent beside the last pane stays within
+    // the window and shows the inside fill.
+    server.success(&["refresh-client", "-t", &client.tty, "-R", "999"]);
+    assert_eq!(client.offset(&server), 40);
+    client.wait_screen(|screen| {
+        shows(screen, 0..10, 19..20, BORDER)
+            && shows(screen, 0..10, 20..40, INSIDE)
+            && shows(screen, 0..10, 40..80, FILL)
+            && shows(screen, 10..24, 0..80, FILL)
+    });
+}
+
+#[test]
 fn separators_beside_the_active_pane_take_its_style() {
     let server = strip(81, 24, 3);
     server.success(&["set", "-gw", "pane-border-style", "fg=red"]);
     server.success(&["set", "-gw", "pane-active-border-style", "fg=green"]);
     let ids = ids(&server);
-    // Wide enough for the whole strip: separators at 40 and 81, and the last
-    // pane's right border at 122.
-    let mut client = server.attach_terminal(123, 24);
+    // Separators at 40 and 81, and the last pane's right border at 122; a
+    // view at 0 shows the first and a view at 42 the other two.
+    let mut client = server.attach_terminal(81, 24);
     let colours = |screen: &Screen, x: usize| {
         (0..24)
             .map(|y| (screen.cells[y][x].ch == BORDER).then_some(screen.cells[y][x].fg))
             .collect::<Vec<_>>()
     };
     let solid = |fg| vec![Some(fg); 24];
-    for (active, expected) in [
+    for (active, [first, second, last]) in [
         (0, [GREEN, RED, RED]),
         (1, [GREEN, GREEN, RED]),
         (2, [RED, GREEN, GREEN]),
     ] {
         server.success(&["select-pane", "-t", &ids[active]]);
+        server.success(&["refresh-client", "-t", &client.tty, "-L", "999"]);
+        client.wait_screen(|screen| colours(screen, 40) == solid(first));
+        server.success(&["refresh-client", "-t", &client.tty, "-R", "42"]);
         client.wait_screen(|screen| {
-            [40, 81, 122]
-                .iter()
-                .zip(expected)
-                .all(|(&x, fg)| colours(screen, x) == solid(fg))
+            colours(screen, 39) == solid(second) && colours(screen, 80) == solid(last)
         });
     }
     // With two panes their one separator is split: the top half takes the

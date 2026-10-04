@@ -179,9 +179,9 @@ fn clients_of_different_widths_keep_their_own_views() {
             .map(|client| client.offset(&server))
             .to_vec()
     };
-    // A client wider than the window shows more of the strip, but no more
-    // than one window width past the last pane's first column.
-    assert_eq!(offsets(), [0, 80, 40]);
+    // A client wider than the window shows only the window's width of the
+    // strip, so it follows the panes as a client of that width does.
+    assert_eq!(offsets(), [40, 80, 40]);
     select(&server, &ids[0]);
     assert_eq!(offsets(), [0, 0, 0]);
     select(&server, &ids[1]);

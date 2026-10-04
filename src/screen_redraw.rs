@@ -182,14 +182,19 @@ unsafe fn redraw_get_build_cell(
     let index = y as usize * (*bctx).sx as usize + x as usize;
     &raw mut (*bctx).cells[index]
 }
+/// Whether scene cell (`x`, `y`) shows the window. A terminal larger than the
+/// window shows only the window's size of the strip, as tmux shows a smaller
+/// window, and the outside beyond it.
+unsafe fn redraw_in_window(bctx: *mut redraw_build_ctx, x: u_int, y: u_int) -> bool {
+    let (sx, sy) = (*bctx).w.size();
+    x < sx && y < sy
+}
 /// Whatever a pane, its scrollbar or a separator does not cover is empty
-/// within the window's extent, such as the blank extent beside the last pane,
-/// and outside beyond it.
+/// within the window, such as the blank extent beside the last pane, and
+/// outside beyond it.
 unsafe fn redraw_reset_cell(mut bctx: *mut redraw_build_ctx, mut x: u_int, mut y: u_int) {
     let mut bc: *mut redraw_build_cell = redraw_get_build_cell(bctx, x, y);
-    if (*bctx).ox.wrapping_add(x) < (*bctx).w.logical_size().0
-        && (*bctx).oy.wrapping_add(y) < (*bctx).w.logical_size().1
-    {
+    if redraw_in_window(bctx, x, y) {
         (*bc).data = redraw_span_data::Empty;
     } else {
         (*bc).data = redraw_span_data::Outside;
@@ -215,7 +220,10 @@ unsafe fn redraw_window_to_scene(
     }
     sx = wx - (*bctx).ox as ::core::ffi::c_int;
     sy = wy - (*bctx).oy as ::core::ffi::c_int;
-    if sx as u_int >= (*bctx).sx || sy as u_int >= (*bctx).sy {
+    if sx as u_int >= (*bctx).sx
+        || sy as u_int >= (*bctx).sy
+        || !redraw_in_window(bctx, sx as u_int, sy as u_int)
+    {
         return 0 as ::core::ffi::c_int;
     }
     *x = sx as u_int;
