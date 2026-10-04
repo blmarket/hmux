@@ -180,7 +180,7 @@ mod input_buffer_ownership_tests {
     use crate::src::reactor::{bufferevent_free, bufferevent_new};
 
     #[test]
-    fn palette_source_observes_pane_or_popup_owner() {
+    fn palette_source_observes_its_pane() {
         use crate::src::shared::input::InputPalette;
         let pane = window_pane::new();
         let pane_source = InputPalette::Pane(std::rc::Rc::downgrade(&pane));
@@ -188,13 +188,6 @@ mod input_buffer_ownership_tests {
         assert_eq!(unsafe { (*pane.get()).palette.fg }, 17);
         drop(pane);
         assert!(pane_source.with_mut(|palette| palette.fg).is_none());
-
-        let popup = refbox::RefBox::new(colour_palette::default());
-        let popup_source = InputPalette::Popup(popup.downgrade());
-        popup_source.with_mut(|palette| palette.bg = 23);
-        assert_eq!(popup.try_borrow_mut().unwrap().bg, 23);
-        drop(popup);
-        assert!(popup_source.with_mut(|palette| palette.bg).is_none());
     }
 
     #[test]

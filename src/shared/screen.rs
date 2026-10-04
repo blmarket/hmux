@@ -51,7 +51,6 @@ pub struct screen {
 }
 
 /// Owned display state used after releasing the screen's owner or component borrow.
-/// In particular, overlay callbacks must not return pointers into their screen.
 #[derive(Clone, Copy)]
 pub struct ScreenMode {
     pub cx: u_int,

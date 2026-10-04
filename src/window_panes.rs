@@ -1014,7 +1014,13 @@ unsafe fn window_panes_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         if window.next_pane(None).is_none() {
             return;
         }
-        (osx, osy) = window.logical_size();
+        // Preview the panes, not the blank extent past the last one.
+        let strip = window
+            .pane_cells()
+            .last()
+            .map_or(0, |(_, cell)| (cell.xoff as u_int).wrapping_add(cell.sx));
+        (osx, osy) = window.size();
+        osx = osx.max(strip);
         sx = (*data).screen.grid().sx;
         sy = (*data).screen.grid().sy;
         window_panes_free_areas(data);

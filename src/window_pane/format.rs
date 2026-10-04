@@ -1023,23 +1023,17 @@ unsafe fn format_cb_pane_at_left(mut ft: *mut format_tree) -> Option<CString> {
     None
 }
 
-unsafe fn format_cb_pane_at_right(mut ft: *mut format_tree) -> Option<CString> {
-    let format_pane_owner = (*ft).wp.upgrade();
-    let format_pane = format_pane_owner
-        .as_ref()
-        .map_or(std::ptr::null_mut(), |owner| owner.get());
-    if !format_pane.is_null() {
-        if (*format_pane).xoff + (*format_pane).sx as ::core::ffi::c_int
-            == ((*format_pane).window_handle().as_ref())
-                .expect("live window")
-                .logical_size()
-                .0 as ::core::ffi::c_int
-        {
-            return Some(c"1".to_owned());
+unsafe fn format_cb_pane_at_right(ft: *mut format_tree) -> Option<CString> {
+    // The last pane ends the strip; the extent past it is blank.
+    let pane = (*ft).wp.upgrade()?;
+    Some(
+        if pane.next_in_window().is_none() {
+            c"1"
+        } else {
+            c"0"
         }
-        return Some(c"0".to_owned());
-    }
-    None
+        .to_owned(),
+    )
 }
 
 unsafe fn format_cb_pane_bottom(mut ft: *mut format_tree) -> Option<CString> {

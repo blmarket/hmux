@@ -250,9 +250,12 @@ fn panes_move_between_strips() {
 }
 
 #[test]
-fn insertion_is_refused_past_the_maximum_width() {
+fn insertion_is_refused_past_the_maximum_extent() {
     let server = Server::new();
-    server.start(10000, 10, 2);
+    // The extent is the last pane's first column plus the window width: three
+    // halves reach exactly 5000 + 5000 columns.
+    server.start(5000, 10, 3);
+    assert_eq!(columns(&server), [(0, 2499), (2500, 2499), (5000, 2499)]);
     let before = ids(&server);
     let output = server.run(&["new-pane", "sleep 60"]);
     assert!(!output.status.success());
@@ -342,26 +345,38 @@ fn width_preference_moves_with_the_pane() {
 }
 
 #[test]
-fn widening_is_refused_past_the_maximum_width() {
+fn widening_is_refused_past_the_maximum_extent() {
     let server = Server::new();
-    server.start(10000, 10, 2);
+    server.start(5000, 10, 3);
     let before = ids(&server);
     server.count_events();
+    // Widening the first pane moves the last pane's first column.
     let output = server.run(&["resize-pane", "-W", "-t", &before[0]]);
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("no space for a full-width pane"));
-    assert_eq!(columns(&server), [(0, 4999), (5000, 4999)]);
+    assert_eq!(columns(&server), [(0, 2499), (2500, 2499), (5000, 2499)]);
     assert_eq!(server.events(), (0, 0));
+    // Widening the last pane leaves the extent at the maximum.
+    server.success(&["resize-pane", "-W", "-t", &before[2]]);
+    assert_eq!(columns(&server), [(0, 2499), (2500, 2499), (5000, 5000)]);
+    // Narrowing always succeeds.
+    server.success(&["resize-pane", "-W", "-t", &before[2]]);
+    assert_eq!(columns(&server), [(0, 2499), (2500, 2499), (5000, 2499)]);
+}
 
-    // A lone pane widens to exactly the maximum.
-    server.success(&["kill-pane", "-t", &before[1]]);
+#[test]
+fn a_lone_pane_widens_to_exactly_the_maximum() {
+    let server = Server::new();
+    server.start(10000, 10, 1);
     server.success(&["resize-pane", "-W"]);
     assert_eq!(columns(&server), [(0, 10000)]);
     let output = server.run(&["new-pane", "sleep 60"]);
     assert!(!output.status.success());
-    // Narrowing always succeeds.
     server.success(&["resize-pane", "-W"]);
     assert_eq!(columns(&server), [(0, 4999)]);
+    // A half pane after it would start at 5000 and reach 15000.
+    let output = server.run(&["new-pane", "sleep 60"]);
+    assert!(!output.status.success());
 }
 
 #[test]
@@ -387,6 +402,25 @@ fn layout_only_commands_and_flags_are_gone() {
     }
     assert_eq!(server.display("#{window_zoomed_flag}"), "");
     server.success(&["resize-pane", "-T"]);
+}
+
+#[test]
+fn menus_and_popups_are_gone() {
+    let server = Server::new();
+    server.start(80, 24, 1);
+    for args in [
+        &["display-menu", "Item", "", "new-pane"][..],
+        &["display-popup", "-E", "true"],
+        &["set", "-w", "menu-style", "fg=red"],
+        &["set", "-w", "popup-border-lines", "double"],
+    ] {
+        assert!(
+            !server.run(args).status.success(),
+            "{args:?} still accepted"
+        );
+    }
+    let keys = server.success(&["list-keys"]);
+    assert!(!keys.contains("display-menu"));
 }
 
 #[test]

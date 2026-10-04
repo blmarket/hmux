@@ -63,8 +63,6 @@ const cmd_find_pane_table: &[(&CStr, &CStr)] = &[
     (c"{top-right}", c"top-right"),
     (c"{bottom-left}", c"bottom-left"),
     (c"{bottom-right}", c"bottom-right"),
-    (c"{up-of}", c"{up-of}"),
-    (c"{down-of}", c"{down-of}"),
     (c"{left-of}", c"{left-of}"),
     (c"{right-of}", c"{right-of}"),
 ];
@@ -683,43 +681,15 @@ unsafe fn cmd_find_get_pane_with_window(
             return -(1 as ::core::ffi::c_int);
         }
         return 0 as ::core::ffi::c_int;
-    } else if strcmp(pane, c"{up-of}".as_ptr()) == 0 as ::core::ffi::c_int {
+    } else if strcmp(pane, c"{left-of}".as_ptr()) == 0 as ::core::ffi::c_int
+        || strcmp(pane, c"{right-of}".as_ptr()) == 0 as ::core::ffi::c_int
+    {
+        // The previous or next pane in the strip, stopping at its ends.
+        let left = strcmp(pane, c"{left-of}".as_ptr()) == 0 as ::core::ffi::c_int;
         let window_owner = (*fs).w.upgrade().expect("target window");
-        let active = window_owner.active_pane();
-        let selected = active.as_ref().and_then(|pane| pane.neighbor_up());
-        (*fs).wp = selected
-            .as_ref()
-            .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-        if (*fs).pane_handle().is_none() {
-            return -(1 as ::core::ffi::c_int);
-        }
-        return 0 as ::core::ffi::c_int;
-    } else if strcmp(pane, c"{down-of}".as_ptr()) == 0 as ::core::ffi::c_int {
-        let window_owner = (*fs).w.upgrade().expect("target window");
-        let active = window_owner.active_pane();
-        let selected = active.as_ref().and_then(|pane| pane.neighbor_down());
-        (*fs).wp = selected
-            .as_ref()
-            .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-        if (*fs).pane_handle().is_none() {
-            return -(1 as ::core::ffi::c_int);
-        }
-        return 0 as ::core::ffi::c_int;
-    } else if strcmp(pane, c"{left-of}".as_ptr()) == 0 as ::core::ffi::c_int {
-        let window_owner = (*fs).w.upgrade().expect("target window");
-        let active = window_owner.active_pane();
-        let selected = active.as_ref().and_then(|pane| pane.neighbor_left());
-        (*fs).wp = selected
-            .as_ref()
-            .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-        if (*fs).pane_handle().is_none() {
-            return -(1 as ::core::ffi::c_int);
-        }
-        return 0 as ::core::ffi::c_int;
-    } else if strcmp(pane, c"{right-of}".as_ptr()) == 0 as ::core::ffi::c_int {
-        let window_owner = (*fs).w.upgrade().expect("target window");
-        let active = window_owner.active_pane();
-        let selected = active.as_ref().and_then(|pane| pane.neighbor_right());
+        let selected = window_owner.active_pane().and_then(|active| {
+            window_owner.step_pane(Some(&std::rc::Rc::downgrade(&active)), left)
+        });
         (*fs).wp = selected
             .as_ref()
             .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);

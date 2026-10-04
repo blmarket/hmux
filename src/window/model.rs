@@ -49,6 +49,9 @@ pub struct window {
     pub(super) panes: window_panes,
     /// Columns the arranged strip occupies; written only by the arrange step.
     pub(super) strip_width: u_int,
+    /// Columns a view can scroll across: the last pane's first column plus the
+    /// window width. Written only by the arrange step.
+    pub(super) extent: u_int,
     pub(super) sx: u_int,
     pub(super) sy: u_int,
     pub(super) manual_sx: u_int,
@@ -60,9 +63,6 @@ pub struct window {
     pub(super) new_xpixel: u_int,
     pub(super) new_ypixel: u_int,
     pub(super) redraw_scene_generation: uint64_t,
-    pub(super) menu: Option<refbox::RefBox<crate::src::shared::menu::menu_data>>,
-    pub(super) menu_last_px: u_int,
-    pub(super) menu_last_py: u_int,
     pub(super) sb: ::core::ffi::c_int,
     pub(super) sb_pos: ::core::ffi::c_int,
     pub(super) inside_cell: grid_cell,
@@ -91,6 +91,7 @@ impl Default for window {
             last_panes: Default::default(),
             panes: Default::default(),
             strip_width: Default::default(),
+            extent: Default::default(),
             sx: Default::default(),
             sy: Default::default(),
             manual_sx: Default::default(),
@@ -102,9 +103,6 @@ impl Default for window {
             new_xpixel: Default::default(),
             new_ypixel: Default::default(),
             redraw_scene_generation: Default::default(),
-            menu: Default::default(),
-            menu_last_px: Default::default(),
-            menu_last_py: Default::default(),
             sb: Default::default(),
             sb_pos: Default::default(),
             inside_cell: Default::default(),

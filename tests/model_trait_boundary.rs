@@ -215,7 +215,6 @@ fn migrated_consumers_do_not_project_model_storage() {
         "src/control_notify.rs",
         "src/events_payload.rs",
         "src/names.rs",
-        "src/menu.rs",
         "src/resize.rs",
         "src/status.rs",
         "src/tty_acs.rs",
@@ -263,41 +262,7 @@ fn format_callbacks_do_not_retain_cache_or_entry_pointers() {
 }
 
 #[test]
-fn overlay_mode_callback_returns_owned_screen_state() {
-    let source = std::fs::read_to_string("src/shared/client.rs").unwrap();
-    let syntax = syn::parse_file(&source).unwrap();
-    let callback = syntax
-        .items
-        .iter()
-        .find_map(|item| match item {
-            Item::Type(alias) if alias.ident == "overlay_mode_cb" => Some(alias),
-            _ => None,
-        })
-        .expect("overlay mode callback declaration");
-    struct OwnedResult;
-    impl<'ast> Visit<'ast> for OwnedResult {
-        fn visit_return_type(&mut self, output: &'ast syn::ReturnType) {
-            struct NoBorrow;
-            impl<'ast> Visit<'ast> for NoBorrow {
-                fn visit_type_ptr(&mut self, _: &'ast syn::TypePtr) {
-                    panic!("overlay callback returned a component pointer");
-                }
-                fn visit_type_reference(&mut self, _: &'ast syn::TypeReference) {
-                    panic!("overlay callback returned a borrowed component");
-                }
-                fn visit_type_path(&mut self, ty: &'ast syn::TypePath) {
-                    assert!(
-                        !ty.path.segments.iter().any(|part| part.ident == "NonNull"),
-                        "overlay callback returned a NonNull component"
-                    );
-                    visit::visit_type_path(self, ty);
-                }
-            }
-            NoBorrow.visit_return_type(output);
-        }
-    }
-    OwnedResult.visit_item_type(callback);
-    // The returned display snapshot itself must own only copied scalar state.
+fn screen_mode_snapshot_owns_only_copied_scalar_state() {
     let source = std::fs::read_to_string("src/shared/screen.rs").unwrap();
     let syntax = syn::parse_file(&source).unwrap();
     let snapshot = syntax
@@ -895,7 +860,7 @@ fn external_client_types_use_holders_without_exposing_model_storage() {
 }
 
 #[test]
-fn terminal_registry_and_clipping_results_do_not_retain_component_pointers() {
+fn terminal_registry_results_do_not_retain_component_pointers() {
     struct Owned;
     impl<'ast> Visit<'ast> for Owned {
         fn visit_type_ptr(&mut self, _: &'ast syn::TypePtr) {
@@ -923,16 +888,6 @@ fn terminal_registry_and_clipping_results_do_not_retain_component_pointers() {
         }
     }
     assert_eq!(checked, 2);
-    let syntax = syn::parse_file(&std::fs::read_to_string("src/tty.rs").unwrap()).unwrap();
-    let function = syntax
-        .items
-        .iter()
-        .find_map(|item| match item {
-            Item::Fn(function) if function.sig.ident == "tty_check_overlay_range" => Some(function),
-            _ => None,
-        })
-        .unwrap();
-    Owned.visit_return_type(&function.sig.output);
 }
 
 #[test]

@@ -13,7 +13,6 @@ use crate::src::format_draw::{format_draw, format_width};
 use crate::src::grid::grid_default_cell;
 use crate::src::key_string::key_string_format;
 use crate::src::log::{log_bytes, log_debug};
-use crate::src::menu::{menu_add_items, menu_create, menu_display};
 use crate::src::options::options_get_number;
 use crate::src::prompt::{
     prompt_closed, prompt_create, prompt_draw, prompt_free, prompt_key, prompt_mouse,
@@ -43,12 +42,11 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::key_event;
 use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
-use crate::src::shared::menu::{menu_choice_cb, menu_item, MenuSelection};
 use crate::src::shared::mode_tree::{
     mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_height_cb, mode_tree_help_cb,
     mode_tree_help_info, mode_tree_item, mode_tree_key_cb, mode_tree_line, mode_tree_list,
-    mode_tree_menu_cb, mode_tree_prompt, mode_tree_prompt_input_cb, mode_tree_search_cb,
-    mode_tree_search_dir, mode_tree_sort_cb, mode_tree_swap_cb, ModeTreeItemData, ModeTreeItemRef,
+    mode_tree_prompt, mode_tree_prompt_input_cb, mode_tree_search_cb, mode_tree_search_dir,
+    mode_tree_sort_cb, mode_tree_swap_cb, ModeTreeItemData, ModeTreeItemRef,
 };
 use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 use crate::src::shared::options::options;
@@ -100,28 +98,6 @@ unsafe fn tolower(mut __c: ::core::ffi::c_int) -> ::core::ffi::c_int {
     }
 }
 pub const UINT64_MAX: ::core::ffi::c_ulong = 18446744073709551615 as ::core::ffi::c_ulong;
-static mode_tree_menu_items: [menu_item<'static>; 4] = [
-    menu_item {
-        name: c"Scroll Left",
-        key: '<' as i32 as key_code,
-        command: None,
-    },
-    menu_item {
-        name: c"Scroll Right",
-        key: '>' as i32 as key_code,
-        command: None,
-    },
-    menu_item {
-        name: c"",
-        key: KEYC_NONE as ::core::ffi::c_ulong as key_code,
-        command: None,
-    },
-    menu_item {
-        name: c"Cancel",
-        key: 'q' as i32 as key_code,
-        command: None,
-    },
-];
 static mode_tree_help_start: &[&CStr] = &[
     c"#[fg=themelightgrey]      Up, k #[#{E:tree-mode-border-style},acs]x#[default] Move cursor up",
     c"#[fg=themelightgrey]    Down, j #[#{E:tree-mode-border-style},acs]x#[default] Move cursor down",
@@ -539,20 +515,17 @@ pub unsafe fn mode_tree_start(
     buildcb: mode_tree_build_cb,
     drawcb: mode_tree_draw_cb,
     searchcb: mode_tree_search_cb,
-    menucb: mode_tree_menu_cb,
     heightcb: mode_tree_height_cb,
     keycb: mode_tree_key_cb,
     swapcb: mode_tree_swap_cb,
     sortcb: mode_tree_sort_cb,
     helpcb: mode_tree_help_cb,
-    menu: &'static [menu_item<'static>],
     s: *mut *mut screen,
 ) -> std::rc::Rc<std::cell::UnsafeCell<mode_tree_data>> {
     let (pane_sx, pane_sy) = pane_owner.screen_size(false);
     let owner = mode_tree_alloc_data();
     let mtd = &mut *owner.get();
     mtd.wp = std::rc::Rc::downgrade(pane_owner);
-    mtd.menu = menu;
     if drawcb.is_none() {
         mtd.preview = MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int;
     } else if args_has(args, 'N' as i32 as u_char) > 1 as ::core::ffi::c_int {
@@ -578,7 +551,6 @@ pub unsafe fn mode_tree_start(
     mtd.buildcb = buildcb;
     mtd.drawcb = drawcb;
     mtd.searchcb = searchcb;
-    mtd.menucb = menucb;
     mtd.heightcb = heightcb;
     mtd.keycb = keycb;
     mtd.swapcb = swapcb;
@@ -1708,99 +1680,6 @@ unsafe fn mode_tree_clear_filter(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     mode_tree_draw(tree_owner);
     mode_pane_owner.request_redraw(false);
 }
-fn mode_tree_menu_callback(
-    tree: Rc<UnsafeCell<mode_tree_data>>,
-    client: ClientWeak,
-    line: u_int,
-) -> menu_choice_cb {
-    Some(Box::new(move |selection| unsafe {
-        let MenuSelection::Selected { key, .. } = selection else {
-            return;
-        };
-        let mtd = &mut *tree.get();
-        if mtd.dead != 0 || key == KEYC_NONE || line >= mode_tree_line_count(&*mtd) {
-            return;
-        }
-        let Some(client) = client.upgrade() else {
-            return;
-        };
-        if client.is_dead() {
-            return;
-        }
-        mtd.current = line;
-        let callback = mtd.menucb.take();
-        if let Some(mut callback) = callback {
-            callback(&client, key);
-            // The handler may close the mode or install another callback.
-            let mtd = &mut *tree.get();
-            if mtd.dead == 0 && mtd.menucb.is_none() {
-                mtd.menucb = Some(callback);
-            }
-        }
-    }))
-}
-
-unsafe fn mode_tree_display_menu(
-    tree: &Rc<UnsafeCell<mode_tree_data>>,
-    client_owner: Option<&ClientRef>,
-    mut x: u_int,
-    mut y: u_int,
-    mut outside: ::core::ffi::c_int,
-) {
-    let Some(client_owner) = client_owner else {
-        return;
-    };
-    let mtd = &*tree.get();
-    let Some(mode_pane_owner) =
-        std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(&mtd.wp)
-    else {
-        return;
-    };
-    let items: &[menu_item<'_>];
-    let mut line: u_int = 0;
-    if mtd.offset.wrapping_add(y) > mode_tree_line_count(mtd).wrapping_sub(1 as u_int) {
-        line = mtd.current;
-    } else {
-        line = mtd.offset.wrapping_add(y);
-    }
-
-    let title = if outside == 0 {
-        items = mtd.menu;
-        let mut bytes = b"#[align=centre]".to_vec();
-        bytes.extend_from_slice((&mtd.lines)[line as usize].item.borrow().name.to_bytes());
-        CString::new(bytes).expect("mode tree item names contain no NUL")
-    } else {
-        items = &mode_tree_menu_items;
-        c"".to_owned()
-    };
-    let mut menu = menu_create(&title);
-    menu_add_items(&mut menu, items, Some(client_owner));
-    drop(title);
-    let client = Rc::downgrade(client_owner);
-    if x >= menu.width.wrapping_add(4 as u_int).wrapping_div(2 as u_int) {
-        x = x.wrapping_sub(menu.width.wrapping_add(4 as u_int).wrapping_div(2 as u_int));
-    } else {
-        x = 0 as u_int;
-    }
-    let (_, _, xoff, yoff) = mode_pane_owner.geometry();
-    x = x.wrapping_add(xoff as u_int);
-    y = y.wrapping_add(yoff as u_int);
-    menu_display(
-        menu,
-        0 as ::core::ffi::c_int,
-        0 as ::core::ffi::c_int,
-        None,
-        x,
-        y,
-        Some(client_owner),
-        BOX_LINES_DEFAULT,
-        None,
-        None,
-        None,
-        ::core::ptr::null_mut::<cmd_find_state>(),
-        mode_tree_menu_callback(tree.clone(), client, line),
-    );
-}
 unsafe fn mode_tree_draw_help_line(
     mut ctx: *mut screen_write_ctx,
     mut gc: *const grid_cell,
@@ -2123,9 +2002,6 @@ pub unsafe fn mode_tree_key(
         }
         if x > (*mtd).width || y > (*mtd).height {
             preview = (*mtd).preview;
-            if *key == KEYC_MOUSEDOWN3_PANE as ::core::ffi::c_ulong as key_code {
-                mode_tree_display_menu(&tree, client_owner, x, y, 1 as ::core::ffi::c_int);
-            }
             if preview == MODE_TREE_PREVIEW_OFF as ::core::ffi::c_int {
                 *key = KEYC_NONE as ::core::ffi::c_ulong as key_code;
             }
@@ -2133,7 +2009,6 @@ pub unsafe fn mode_tree_key(
         }
         if (*mtd).offset.wrapping_add(y) < mode_tree_line_count(&*mtd) {
             if *key == KEYC_MOUSEDOWN1_PANE as ::core::ffi::c_ulong as key_code
-                || *key == KEYC_MOUSEDOWN3_PANE as ::core::ffi::c_ulong as key_code
                 || *key == KEYC_DOUBLECLICK1_PANE as ::core::ffi::c_ulong as key_code
             {
                 (*mtd).current = (*mtd).offset.wrapping_add(y);
@@ -2141,15 +2016,9 @@ pub unsafe fn mode_tree_key(
             if *key == KEYC_DOUBLECLICK1_PANE as ::core::ffi::c_ulong as key_code {
                 *key = '\r' as i32 as key_code;
             } else {
-                if *key == KEYC_MOUSEDOWN3_PANE as ::core::ffi::c_ulong as key_code {
-                    mode_tree_display_menu(&tree, client_owner, x, y, 0 as ::core::ffi::c_int);
-                }
                 *key = KEYC_NONE as ::core::ffi::c_ulong as key_code;
             }
         } else {
-            if *key == KEYC_MOUSEDOWN3_PANE as ::core::ffi::c_ulong as key_code {
-                mode_tree_display_menu(&tree, client_owner, x, y, 0 as ::core::ffi::c_int);
-            }
             *key = KEYC_NONE as ::core::ffi::c_ulong as key_code;
         }
         return 0 as ::core::ffi::c_int;

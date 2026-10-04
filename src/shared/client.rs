@@ -1,4 +1,4 @@
-//! Authoritative client objects, file transfers, overlays, and scalar domains.
+//! Authoritative client objects, file transfers, and scalar domains.
 use std::cell::UnsafeCell;
 use std::rc::Rc;
 
@@ -52,11 +52,9 @@ pub const CLIENT_CONTROL_PAUSEAFTER: ::core::ffi::c_ulonglong =
 pub const CLIENT_CONTROL_DISCARD: ::core::ffi::c_ulonglong =
     0x1000000000 as ::core::ffi::c_ulonglong;
 pub const CLIENT_UNATTACHEDFLAGS: ::core::ffi::c_int = CLIENT_DEAD | CLIENT_SUSPENDED | CLIENT_EXIT;
-pub const CLIENT_REDRAWOVERLAY: ::core::ffi::c_int = 0x2000000 as ::core::ffi::c_int;
 pub const CLIENT_STATUSOFF: ::core::ffi::c_int = 0x800000 as ::core::ffi::c_int;
 pub const CLIENT_NOSIZEFLAGS: ::core::ffi::c_int = CLIENT_DEAD | CLIENT_SUSPENDED | CLIENT_EXIT;
 pub const CLIENT_REDRAWWINDOW: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const CLIENT_REDRAWMENU: ::core::ffi::c_int = 0x20000000 as ::core::ffi::c_int;
 pub const CLIENT_IDENTIFIED: ::core::ffi::c_int = 0x40000 as ::core::ffi::c_int;
 pub const CLIENT_DEFAULTSOCKET: ::core::ffi::c_int = 0x8000000 as ::core::ffi::c_int;
 pub const CLIENT_NOFORK: ::core::ffi::c_int = 0x40000000 as ::core::ffi::c_int;
@@ -75,12 +73,8 @@ pub const CLIENT_BRACKETPASTING: ::core::ffi::c_ulonglong =
 pub const CLIENT_ASSUMEPASTING: ::core::ffi::c_ulonglong = 0x2000000000 as ::core::ffi::c_ulonglong;
 pub const CLIENT_NO_DETACH_ON_DESTROY: ::core::ffi::c_ulonglong =
     0x8000000000 as ::core::ffi::c_ulonglong;
-pub const CLIENT_ALLREDRAWFLAGS: ::core::ffi::c_int = CLIENT_REDRAWWINDOW
-    | CLIENT_REDRAWSTATUS
-    | CLIENT_REDRAWSTATUSALWAYS
-    | CLIENT_REDRAWBORDERS
-    | CLIENT_REDRAWOVERLAY
-    | CLIENT_REDRAWMENU;
+pub const CLIENT_ALLREDRAWFLAGS: ::core::ffi::c_int =
+    CLIENT_REDRAWWINDOW | CLIENT_REDRAWSTATUS | CLIENT_REDRAWSTATUSALWAYS | CLIENT_REDRAWBORDERS;
 pub const CLIENT_NODETACHFLAGS: ::core::ffi::c_int = CLIENT_DEAD | CLIENT_EXIT;
 
 #[cfg(test)]
@@ -113,19 +107,6 @@ pub type ClientRef = Rc<UnsafeCell<client>>;
 pub type ClientWeak = std::rc::Weak<UnsafeCell<client>>;
 
 pub use crate::src::file::{client_file, client_file_cb, client_file_event, client_files};
-
-pub type overlay_resize_cb = Option<Box<dyn FnMut(&ClientRef)>>;
-
-pub type overlay_free_cb = Option<Box<dyn FnOnce(&ClientRef)>>;
-
-pub type overlay_key_cb = Option<Box<dyn FnMut(&ClientRef, &mut key_event) -> i32>>;
-
-pub type overlay_draw_cb = Option<Box<dyn FnMut(&ClientRef)>>;
-
-pub type overlay_mode_cb = Option<Box<dyn FnMut(&ClientRef) -> Option<(ScreenMode, u_int, u_int)>>>;
-
-pub type overlay_check_cb =
-    Option<Box<dyn FnMut(&ClientRef, u_int, u_int, u_int) -> visible_ranges>>;
 
 pub fn client_handle(owner: &Option<ClientRef>) -> Option<&ClientRef> {
     owner.as_ref()

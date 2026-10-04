@@ -49,7 +49,7 @@ use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
 use crate::src::shared::client::{
     CLIENT_ALLREDRAWFLAGS, CLIENT_CONTROL, CLIENT_EXIT, CLIENT_NO_DETACH_ON_DESTROY,
-    CLIENT_REDRAWBORDERS, CLIENT_REDRAWMENU, CLIENT_REDRAWSTATUS, CLIENT_SUSPENDED,
+    CLIENT_REDRAWBORDERS, CLIENT_REDRAWSTATUS, CLIENT_SUSPENDED,
 };
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::event::*;
@@ -140,27 +140,6 @@ pub unsafe fn server_redraw_window(window: &WindowRef) {
             .is_some_and(|current| std::rc::Rc::ptr_eq(window, &current));
         if matches {
             server_redraw_client(client);
-        }
-    }
-}
-pub unsafe fn server_redraw_window_menu(window_owner: &WindowRef) {
-    let mut next = clients.first();
-    while let Some(client_owner) = next {
-        next = clients.next(&client_owner);
-        let client = &client_owner;
-        let matches = client
-            .attached_session()
-            .upgrade()
-            .and_then(|session| {
-                session
-                    .current_winlink()
-                    .try_borrow_mut()
-                    .ok()
-                    .and_then(|link| link.window_owner.clone())
-            })
-            .is_some_and(|current| std::rc::Rc::ptr_eq(&current, window_owner));
-        if matches {
-            client.request_redraw(CLIENT_REDRAWMENU as u64);
         }
     }
 }

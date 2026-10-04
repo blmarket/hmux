@@ -25,7 +25,7 @@ use crate::src::server::server_start;
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{ssize_t, uint32_t};
 use crate::src::shared::client::*;
-pub use crate::src::shared::client::{client, client_files, overlay_mode_cb};
+pub use crate::src::shared::client::{client, client_files};
 use crate::src::shared::client::{
     CLIENT_CONTROL, CLIENT_CONTROLCONTROL, CLIENT_CONTROL_WAITEXIT, CLIENT_LOGIN,
     CLIENT_NOSTARTSERVER, CLIENT_STARTSERVER, CLIENT_WRITE_ACK,

@@ -1,4 +1,4 @@
-//! Prompt and popup callbacks may destroy their own owners during dispatch.
+//! Prompt callbacks may destroy their own owners during dispatch.
 
 #![cfg(unix)]
 
@@ -203,76 +203,4 @@ fn confirmed_prompts_can_destroy_their_own_mode() {
 #[test]
 fn queued_prompt_acceptance_can_destroy_its_own_mode() {
     check_destruction(true);
-}
-
-#[test]
-fn popup_input_resize_completion_and_cancellation_release_the_waiting_command() {
-    let server = Server::new();
-    server.command(&["new-session", "-d", "-s", "mode", "sleep 60"]);
-    let mut client = AttachedClient::new(&server);
-    client.read_until(&[b"[mode]"]);
-    let output = server.command(&["list-clients", "-F", "#{client_tty}"]);
-    let tty = String::from_utf8(output.stdout).unwrap();
-    let tty = tty.trim();
-    let spawn_popup = |script: &str| {
-        Command::new(env!("CARGO_BIN_EXE_hmux"))
-            .args(["-f", "/dev/null", "-S"])
-            .arg(&server.socket)
-            .args([
-                "display-popup",
-                "-c",
-                tty,
-                "-E",
-                "-w",
-                "50",
-                "-h",
-                "10",
-                script,
-            ])
-            .env("TERM", "xterm-256color")
-            .env("SHELL", "/bin/sh")
-            .env("LC_ALL", "C")
-            .env_remove("TMUX")
-            .spawn()
-            .expect("start waiting popup command")
-    };
-    let wait_popup = |child: &mut std::process::Child| {
-        let deadline = Instant::now() + Duration::from_secs(5);
-        loop {
-            if let Some(status) = child.try_wait().expect("poll popup command") {
-                return status.code();
-            }
-            assert!(Instant::now() < deadline, "popup command remained waiting");
-            thread::sleep(Duration::from_millis(10));
-        }
-    };
-    let mut popup = spawn_popup(
-        r"printf '\033]4;1;rgb:ff/00/00\007\033[31mPOPUP-FIRST\033[0m\r\n'; read first; printf '\033]4;1;rgb:00/ff/00\007\033[31mPOPUP-SECOND\033[0m\r\n'; read second; exit 7",
-    );
-    client.read_until(&[b"POPUP-FIRST"]);
-    assert!(popup.try_wait().unwrap().is_none());
-    let size = libc::winsize {
-        ws_row: 35,
-        ws_col: 110,
-        ws_xpixel: 0,
-        ws_ypixel: 0,
-    };
-    assert_eq!(
-        unsafe { libc::ioctl(client.master.as_raw_fd(), libc::TIOCSWINSZ, &size) },
-        0
-    );
-    assert_eq!(unsafe { libc::kill(client.pid, libc::SIGWINCH) }, 0);
-    // Modify the active popup between input batches, exercising redraw and the
-    // next batch's geometry/defaults snapshot while the previous callbacks exist.
-    server.command(&["display-popup", "-c", tty, "-B", "-T", "updated"]);
-    server.command(&["send-keys", "-K", "-c", tty, "Enter"]);
-    client.read_until(&[b"POPUP-SECOND"]);
-    server.command(&["send-keys", "-K", "-c", tty, "Enter"]);
-    assert_eq!(wait_popup(&mut popup), Some(7));
-
-    let mut popup = spawn_popup("printf 'POPUP-CANCEL\r\n'; sleep 60");
-    client.read_until(&[b"POPUP-CANCEL"]);
-    server.command(&["display-popup", "-C", "-c", tty]);
-    assert_eq!(wait_popup(&mut popup), Some(129));
-    server.command(&["display-message", "-p", "server still running"]);
 }

@@ -38,7 +38,6 @@ use crate::src::grid::view::grid_view_string_cells_bytes;
 use crate::src::input::{input_parse_buffer, input_parse_pane};
 use crate::src::input_keys::input_key_pane;
 use crate::src::log::{fatal, fatalx, log_cstr, log_cstr_n, log_debug};
-use crate::src::menu::{menu_destroy, menu_resize};
 use crate::src::options::options_owner_ptr;
 use crate::src::options::{
     options_create, options_free, options_get_number, options_get_number_ref,
@@ -411,7 +410,6 @@ unsafe fn window_destroy(w_owner: &WindowRef) {
     if !(*w).owner.is_empty() {
         windows_remove(&mut windows, w_owner);
     }
-    menu_destroy((*w).menu.take());
     window_destroy_panes(w_owner);
     drop((*w).name_event.take());
     drop((*w).alerts_timer.take());
@@ -506,15 +504,6 @@ unsafe fn window_resize(
     (*w).sx = sx;
     (*w).sy = sy;
     window_arrange(w_owner);
-    if let Some(menu) = (*w).menu.as_ref().map(|menu| menu.downgrade()) {
-        let (menu_sx, menu_sy) = w_owner.logical_size();
-        menu_resize(
-            &mut menu.try_borrow_mut().expect("live unborrowed menu"),
-            menu_sx,
-            menu_sy,
-        );
-        server_redraw_window(w_owner);
-    }
     if xpixel != -(1 as ::core::ffi::c_int) {
         (*w).xpixel = xpixel as u_int;
     }
@@ -553,6 +542,13 @@ unsafe fn window_set_active_pane(
         pane_history_push(&mut (*w).last_panes, Rc::downgrade(previous));
     }
     (*w).active = observer;
+    // Selecting a pane ends explicit panning of this window, so every client
+    // showing it follows the new active pane.
+    let mut client = clients.first();
+    while let Some(current) = client {
+        current.reset_pan(Some(window));
+        client = clients.next(&current);
+    }
     pane.on_selected(true);
     if options_get_number(global_options, c"focus-events") != 0 {
         if let Some(previous) = previous.as_ref() {
@@ -640,7 +636,8 @@ unsafe fn window_find_string(
     name: &CStr,
 ) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
     let w = window_owner.get();
-    let (wsx, wsy) = window_owner.logical_size();
+    // Positions are measured across the panes, not the blank extent past them.
+    let (wsx, wsy) = ((*w).strip_width, (*w).sy);
     let s = name.as_ptr();
     let mut x: u_int = 0;
     let mut y: u_int = 0;
@@ -776,11 +773,12 @@ unsafe fn window_horizontal_minimum(window: &WindowRef) -> u_int {
         .unwrap_or(PANE_MINIMUM as u_int)
 }
 
-/// Whether a strip whose panes have `widths` stays within WINDOW_MAXIMUM
-/// columns.
+/// Whether the extent of a strip whose panes have `widths` stays within
+/// WINDOW_MAXIMUM columns.
 unsafe fn window_strip_fits(window: &WindowRef, widths: &[PaneWidth]) -> bool {
-    strip::width(widths, window.size(), window_horizontal_minimum(window))
-        <= WINDOW_MAXIMUM as u_int
+    let size = window.size();
+    let cells = strip::cells(widths, size, window_horizontal_minimum(window));
+    strip::extent(&cells, size.0) <= WINDOW_MAXIMUM as u_int
 }
 
 /// The current panes' width preferences, in order.
@@ -807,12 +805,16 @@ unsafe fn window_strip_cells(
 
 /// The arrange step: the only writer of pane geometry. Every operation that
 /// changes the pane order, a width preference, the window size or the options
-/// the strip reads ends here. Returns whether any pane moved.
+/// the strip reads ends here, and the clients showing the window follow the
+/// result. Returns whether any pane moved.
 unsafe fn window_arrange(window: &WindowRef) -> bool {
     let cells = window_strip_cells(window);
-    (*window.get()).strip_width = cells
-        .last()
-        .map_or(0, |(_, cell)| (cell.xoff as u_int).wrapping_add(cell.sx));
+    let geometry = cells.iter().map(|(_, cell)| *cell).collect::<Vec<_>>();
+    {
+        let state = &mut *window.get();
+        state.strip_width = strip::width(&geometry);
+        state.extent = strip::extent(&geometry, state.sx);
+    }
     let mut moved = false;
     for (pane, cell) in cells {
         // Resize callbacks may remove a later pane; its removal arranges again.
@@ -823,6 +825,7 @@ unsafe fn window_arrange(window: &WindowRef) -> bool {
     if moved {
         (*window.get()).invalidate_scene();
     }
+    tty_update_window_offset(window);
     moved
 }
 

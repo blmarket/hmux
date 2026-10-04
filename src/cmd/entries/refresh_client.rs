@@ -268,7 +268,7 @@ unsafe fn cmd_refresh_client_exec(
         }
         let client = tc.as_ref().expect("live client");
         if args_has(args, b'c') != 0 {
-            client.reset_pan();
+            client.reset_pan(None);
         } else {
             let window = client
                 .attached_session()

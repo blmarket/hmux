@@ -22,8 +22,6 @@ mod process;
 mod render;
 mod sort;
 mod spawning;
-#[cfg(test)]
-mod storage_tests;
 pub(crate) use format::format_without_pane;
 pub use model::window_pane;
 mod pane_sync;
@@ -50,7 +48,6 @@ use crate::src::grid::grid_cells_look_equal;
 use crate::src::grid::view::grid_view_string_cells_bytes;
 use crate::src::input_keys::input_key_pane;
 use crate::src::log::{fatal, fatalx, log_cstr, log_cstr_n, log_debug};
-use crate::src::menu::{menu_destroy, menu_resize};
 use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_create, options_free, options_get_number};
 use crate::src::prompt::{
@@ -1656,19 +1653,6 @@ unsafe fn window_pane_search(
     i.wrapping_add(1 as u_int)
 }
 
-unsafe fn window_pane_choose_best(
-    list: &[Rc<std::cell::UnsafeCell<window_pane>>],
-) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    let (first, rest) = list.split_first()?;
-    let mut best = first;
-    for next in rest {
-        if (*next.get()).active_point > (*best.get()).active_point {
-            best = next;
-        }
-    }
-    Some(best.clone())
-}
-
 unsafe fn window_pane_full_size_offset(
     pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
 ) -> (::core::ffi::c_int, ::core::ffi::c_int, u_int, u_int) {
@@ -1689,206 +1673,6 @@ unsafe fn window_pane_full_size_offset(
         (*wp).xoff
     };
     (xoff, (*wp).yoff, (*wp).sx.wrapping_add(sb_w), (*wp).sy)
-}
-
-unsafe fn window_pane_find_up(
-    source: Option<&Rc<std::cell::UnsafeCell<window_pane>>>,
-) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    let source = source?;
-    let wp = source.get();
-    let mut next: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut list = Vec::new();
-    let mut edge: ::core::ffi::c_int = 0;
-    let mut left: ::core::ffi::c_int = 0;
-    let mut right: ::core::ffi::c_int = 0;
-    let mut end: ::core::ffi::c_int = 0;
-    let mut status: ::core::ffi::c_int = 0;
-    let mut found: ::core::ffi::c_int = 0;
-    let mut xoff: ::core::ffi::c_int = 0;
-    let mut yoff: ::core::ffi::c_int = 0;
-    let mut sx: u_int = 0;
-    let mut sy: u_int = 0;
-    let window = (*wp).window_handle().expect("pane parent");
-    let (_width, height) = window.logical_size();
-    status = window.pane_border_status();
-    (xoff, yoff, sx, sy) = window_pane_full_size_offset(source);
-    edge = yoff;
-    if status == PANE_STATUS_TOP {
-        if edge == 1 as ::core::ffi::c_int {
-            edge = height as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
-        }
-    } else if status == PANE_STATUS_BOTTOM {
-        if edge == 0 as ::core::ffi::c_int {
-            edge = height as ::core::ffi::c_int;
-        }
-    } else if edge == 0 as ::core::ffi::c_int {
-        edge = height as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
-    }
-    left = xoff;
-    right = xoff + sx as ::core::ffi::c_int;
-    for candidate in window.pane_snapshot() {
-        next = candidate.get();
-        (xoff, yoff, sx, sy) = window_pane_full_size_offset(&candidate);
-        if !(next == wp) && !(yoff + sy as ::core::ffi::c_int + 1 as ::core::ffi::c_int != edge) {
-            end = xoff + sx as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
-            found = 0 as ::core::ffi::c_int;
-            if xoff < left && end > right
-                || (xoff >= left && xoff <= right)
-                || (end >= left && end <= right)
-            {
-                found = 1 as ::core::ffi::c_int;
-            }
-            if !(found == 0) {
-                list.push(candidate);
-            }
-        }
-    }
-    window_pane_choose_best(&list)
-}
-
-unsafe fn window_pane_find_down(
-    source: Option<&Rc<std::cell::UnsafeCell<window_pane>>>,
-) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    let source = source?;
-    let wp = source.get();
-    let mut next: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut list = Vec::new();
-    let mut edge: ::core::ffi::c_int = 0;
-    let mut left: ::core::ffi::c_int = 0;
-    let mut right: ::core::ffi::c_int = 0;
-    let mut end: ::core::ffi::c_int = 0;
-    let mut status: ::core::ffi::c_int = 0;
-    let mut found: ::core::ffi::c_int = 0;
-    let mut xoff: ::core::ffi::c_int = 0;
-    let mut yoff: ::core::ffi::c_int = 0;
-    let mut sx: u_int = 0;
-    let mut sy: u_int = 0;
-    let window = (*wp).window_handle().expect("pane parent");
-    let (_width, height) = window.logical_size();
-    status = window.pane_border_status();
-    (xoff, yoff, sx, sy) = window_pane_full_size_offset(source);
-    edge = yoff + sy as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
-    if status == PANE_STATUS_TOP {
-        if edge >= height as ::core::ffi::c_int {
-            edge = 1 as ::core::ffi::c_int;
-        }
-    } else if status == PANE_STATUS_BOTTOM {
-        if edge >= height as ::core::ffi::c_int - 1 as ::core::ffi::c_int {
-            edge = 0 as ::core::ffi::c_int;
-        }
-    } else if edge >= height as ::core::ffi::c_int {
-        edge = 0 as ::core::ffi::c_int;
-    }
-    left = (*wp).xoff;
-    right = (*wp).xoff + (*wp).sx as ::core::ffi::c_int;
-    for candidate in window.pane_snapshot() {
-        next = candidate.get();
-        (xoff, yoff, sx, sy) = window_pane_full_size_offset(&candidate);
-        if !(next == wp) && !(yoff != edge) {
-            end = xoff + sx as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
-            found = 0 as ::core::ffi::c_int;
-            if xoff < left && end > right
-                || (xoff >= left && xoff <= right)
-                || (end >= left && end <= right)
-            {
-                found = 1 as ::core::ffi::c_int;
-            }
-            if !(found == 0) {
-                list.push(candidate);
-            }
-        }
-    }
-    window_pane_choose_best(&list)
-}
-
-unsafe fn window_pane_find_left(
-    source: Option<&Rc<std::cell::UnsafeCell<window_pane>>>,
-) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    let source = source?;
-    let wp = source.get();
-    let mut next: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut list = Vec::new();
-    let mut edge: ::core::ffi::c_int = 0;
-    let mut top: ::core::ffi::c_int = 0;
-    let mut bottom: ::core::ffi::c_int = 0;
-    let mut end: ::core::ffi::c_int = 0;
-    let mut found: ::core::ffi::c_int = 0;
-    let mut xoff: ::core::ffi::c_int = 0;
-    let mut yoff: ::core::ffi::c_int = 0;
-    let mut sx: u_int = 0;
-    let mut sy: u_int = 0;
-    let window = (*wp).window_handle().expect("pane parent");
-    let (width, _height) = window.logical_size();
-    (xoff, yoff, sx, sy) = window_pane_full_size_offset(source);
-    edge = xoff;
-    if edge == 0 as ::core::ffi::c_int {
-        edge = width as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
-    }
-    top = yoff;
-    bottom = yoff + sy as ::core::ffi::c_int;
-    for candidate in window.pane_snapshot() {
-        next = candidate.get();
-        (xoff, yoff, sx, sy) = window_pane_full_size_offset(&candidate);
-        if !(next == wp) && !(xoff + sx as ::core::ffi::c_int + 1 as ::core::ffi::c_int != edge) {
-            end = yoff + sy as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
-            found = 0 as ::core::ffi::c_int;
-            if yoff < top && end > bottom
-                || (yoff >= top && yoff <= bottom)
-                || (end >= top && end <= bottom)
-            {
-                found = 1 as ::core::ffi::c_int;
-            }
-            if !(found == 0) {
-                list.push(candidate);
-            }
-        }
-    }
-    window_pane_choose_best(&list)
-}
-
-unsafe fn window_pane_find_right(
-    source: Option<&Rc<std::cell::UnsafeCell<window_pane>>>,
-) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
-    let source = source?;
-    let wp = source.get();
-    let mut next: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
-    let mut list = Vec::new();
-    let mut edge: ::core::ffi::c_int = 0;
-    let mut top: ::core::ffi::c_int = 0;
-    let mut bottom: ::core::ffi::c_int = 0;
-    let mut end: ::core::ffi::c_int = 0;
-    let mut found: ::core::ffi::c_int = 0;
-    let mut xoff: ::core::ffi::c_int = 0;
-    let mut yoff: ::core::ffi::c_int = 0;
-    let mut sx: u_int = 0;
-    let mut sy: u_int = 0;
-    let window = (*wp).window_handle().expect("pane parent");
-    let (width, _height) = window.logical_size();
-    (xoff, yoff, sx, sy) = window_pane_full_size_offset(source);
-    edge = xoff + sx as ::core::ffi::c_int + 1 as ::core::ffi::c_int;
-    if edge >= width as ::core::ffi::c_int {
-        edge = 0 as ::core::ffi::c_int;
-    }
-    top = (*wp).yoff;
-    bottom = (*wp).yoff + (*wp).sy as ::core::ffi::c_int;
-    for candidate in window.pane_snapshot() {
-        next = candidate.get();
-        (xoff, yoff, sx, sy) = window_pane_full_size_offset(&candidate);
-        if !(next == wp) && !(xoff != edge) {
-            end = yoff + sy as ::core::ffi::c_int - 1 as ::core::ffi::c_int;
-            found = 0 as ::core::ffi::c_int;
-            if yoff < top && end > bottom
-                || (yoff >= top && yoff <= bottom)
-                || (end >= top && end <= bottom)
-            {
-                found = 1 as ::core::ffi::c_int;
-            }
-            if !(found == 0) {
-                list.push(candidate);
-            }
-        }
-    }
-    window_pane_choose_best(&list)
 }
 
 unsafe fn window_pane_stack_push(

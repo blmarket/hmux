@@ -13,7 +13,6 @@ use crate::src::cmd::entries::command_prompt::cmd_command_prompt_entry;
 use crate::src::cmd::entries::confirm_before::cmd_confirm_before_entry;
 use crate::src::cmd::entries::copy_mode::{cmd_clock_mode_entry, cmd_copy_mode_entry};
 use crate::src::cmd::entries::detach_client::{cmd_detach_client_entry, cmd_suspend_client_entry};
-use crate::src::cmd::entries::display_menu::{cmd_display_menu_entry, cmd_display_popup_entry};
 use crate::src::cmd::entries::display_message::cmd_display_message_entry;
 use crate::src::cmd::entries::find_window::cmd_find_window_entry;
 use crate::src::cmd::entries::if_shell::cmd_if_shell_entry;
@@ -108,7 +107,7 @@ pub const DQ: C2RustUnnamed_38 = 2;
 pub type C2RustUnnamed_38 = ::core::ffi::c_uint;
 pub const SQ: C2RustUnnamed_38 = 1;
 pub const NQ: C2RustUnnamed_38 = 0;
-pub static cmd_table: [&cmd_entry; 88] = {
+pub static cmd_table: [&cmd_entry; 86] = {
     [
         &cmd_attach_session_entry,
         &cmd_bind_key_entry,
@@ -126,9 +125,7 @@ pub static cmd_table: [&cmd_entry; 88] = {
         &cmd_customize_mode_entry,
         &cmd_delete_buffer_entry,
         &cmd_detach_client_entry,
-        &cmd_display_menu_entry,
         &cmd_display_message_entry,
-        &cmd_display_popup_entry,
         &cmd_display_panes_entry,
         &cmd_find_window_entry,
         &cmd_has_session_entry,

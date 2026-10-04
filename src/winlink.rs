@@ -22,7 +22,6 @@ use crate::src::grid::view::grid_view_string_cells_bytes;
 use crate::src::input::{input_free, input_init, input_parse_buffer, input_parse_pane};
 use crate::src::input_keys::input_key_pane;
 use crate::src::log::{fatal, fatalx, log_cstr, log_cstr_n, log_debug};
-use crate::src::menu::{menu_destroy, menu_resize};
 use crate::src::options::options_owner_ptr;
 use crate::src::options::{
     options_create, options_free, options_get_number, options_get_number_ref,

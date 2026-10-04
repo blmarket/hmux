@@ -82,11 +82,10 @@ pub use crate::src::shared::tty::{tty, tty_ctx, tty_ctx_set_client_cb, tty_style
 use crate::src::shared::tty::{
     TERM_256COLOURS, TERM_DECFRA, TERM_DECSLRM, TERM_NOAM, TERM_RGBCOLOURS, TERM_VT100LIKE,
     TTY_ALL_REQUEST_FLAGS, TTY_BLOCK, TTY_BLOCK_INTERVAL, TTY_CTX_CELL_INVALIDATE,
-    TTY_CTX_INVISIBLE_PANES, TTY_CTX_OVERLAY_SYNC, TTY_CTX_PANE_OBSCURED, TTY_CTX_SYNC,
-    TTY_CTX_WINDOW_BIGGER, TTY_CTX_WRAPPED, TTY_FREEZE, TTY_HAVEDA, TTY_HAVEDA2, TTY_HAVESYNC,
-    TTY_HAVEXDA, TTY_NOBLOCK, TTY_NOCURSOR, TTY_OPENED, TTY_OSC52QUERY, TTY_QUERY_TIMEOUT,
-    TTY_REQUEST_LIMIT, TTY_STARTED, TTY_SYNCING, TTY_TIMER, TTY_WAITBG, TTY_WAITFG,
-    TTY_WINSIZEQUERY,
+    TTY_CTX_INVISIBLE_PANES, TTY_CTX_PANE_OBSCURED, TTY_CTX_SYNC, TTY_CTX_WINDOW_BIGGER,
+    TTY_CTX_WRAPPED, TTY_FREEZE, TTY_HAVEDA, TTY_HAVEDA2, TTY_HAVESYNC, TTY_HAVEXDA, TTY_NOBLOCK,
+    TTY_NOCURSOR, TTY_OPENED, TTY_OSC52QUERY, TTY_QUERY_TIMEOUT, TTY_REQUEST_LIMIT, TTY_STARTED,
+    TTY_SYNCING, TTY_TIMER, TTY_WAITBG, TTY_WAITFG, TTY_WINSIZEQUERY,
 };
 use crate::src::shared::utf8::UTF8_SIZE;
 use crate::src::shared::window::WindowRef;
@@ -1040,6 +1039,41 @@ pub fn tty_window_offset(tty: &tty) -> tty_window_view {
         sy: tty.osy,
     }
 }
+/// Where a view `view` cells long rests along one axis of a window `extent`
+/// cells long. It rests on the stop nearest `previous` that shows the active
+/// pane's `cell` (start, length) completely, so cursor movement inside a
+/// visible pane never moves it. A view too short for the cell stays within
+/// the cell and moves as little as it can to keep the cursor visible.
+fn tty_follow_cell(
+    stops: &[u32],
+    (start, length): (u32, u32),
+    view: u32,
+    extent: u32,
+    previous: u32,
+    cursor: Option<u32>,
+) -> u32 {
+    let last = extent.saturating_sub(view);
+    let end = start.saturating_add(length);
+    if let Some(stop) = stops
+        .iter()
+        .copied()
+        .filter(|&stop| stop <= start.min(last) && end <= stop.saturating_add(view))
+        .min_by_key(|&stop| (stop.abs_diff(previous), stop))
+    {
+        return stop;
+    }
+    let first = start.min(last);
+    let final_offset = end.saturating_sub(view).clamp(first, last);
+    let mut offset = previous.clamp(first, final_offset);
+    if let Some(cursor) = cursor {
+        if cursor < offset {
+            offset = cursor;
+        } else if cursor >= offset.saturating_add(view) {
+            offset = cursor.saturating_add(1).saturating_sub(view);
+        }
+    }
+    offset.clamp(first, final_offset)
+}
 unsafe fn tty_window_offset1(owner: &ClientRef) -> tty_window_view {
     let session = owner.attached_session().upgrade().expect("live session");
     let link = session.current_winlink();
@@ -1052,7 +1086,7 @@ unsafe fn tty_window_offset1(owner: &ClientRef) -> tty_window_view {
     let (tx, ty) = owner.terminal_size();
     let height = ty.wrapping_sub(status_line_size(owner));
     if tx >= sx && height >= sy {
-        owner.reset_pan();
+        owner.reset_pan(None);
         return tty_window_view {
             bigger: false,
             ox: 0,
@@ -1071,27 +1105,45 @@ unsafe fn tty_window_offset1(owner: &ClientRef) -> tty_window_view {
     if owner.apply_pan(&window, &mut view) {
         return view;
     }
-    if let Some((cx, cy)) = window
-        .active_pane()
-        .expect("active pane")
-        .visible_cursor_in_window()
-    {
-        view.ox = if cx < view.sx {
-            0
-        } else if cx > sx.wrapping_sub(view.sx) {
-            sx.wrapping_sub(view.sx)
-        } else {
-            cx.wrapping_sub(view.sx / 2)
-        };
-        view.oy = if cy < view.sy {
-            0
-        } else if cy > sy.wrapping_sub(view.sy) {
-            sy.wrapping_sub(view.sy)
-        } else {
-            cy.wrapping_sub(view.sy).wrapping_add(1)
-        };
+    owner.reset_pan(None);
+    // Rest on a pane's first column, or the top row, that shows the active
+    // pane completely.
+    let previous = tty_window_offset(owner.borrow_terminal());
+    let cells = window.pane_cells();
+    let active = window.active_pane().and_then(|active| {
+        cells
+            .iter()
+            .find(|(pane, _)| std::rc::Rc::ptr_eq(pane, &active))
+            .map(|&(_, cell)| (active.visible_cursor_in_window(), cell))
+    });
+    if let Some((cursor, cell)) = active {
+        let stops = cells
+            .iter()
+            .map(|(_, cell)| cell.xoff as u32)
+            .collect::<Vec<_>>();
+        view.ox = tty_follow_cell(
+            &stops,
+            (cell.xoff as u32, cell.sx),
+            view.sx,
+            sx,
+            previous.ox,
+            cursor.map(|(x, _)| x),
+        );
+        view.oy = tty_follow_cell(
+            &[cell.yoff as u32],
+            (cell.yoff as u32, cell.sy),
+            view.sy,
+            sy,
+            previous.oy,
+            cursor.map(|(_, y)| y),
+        );
     }
-    owner.reset_pan();
+    // The terminal clips only when the view leaves part of a pane out. A
+    // view at the origin that shows every pane draws them where they are.
+    let strip = cells
+        .last()
+        .map_or(0, |(_, cell)| (cell.xoff as u32).saturating_add(cell.sx));
+    view.bigger = view.ox != 0 || view.oy != 0 || strip > view.sx || sy > view.sy;
     view
 }
 pub unsafe fn tty_update_window_offset(w_owner: &WindowRef) {
@@ -1303,7 +1355,7 @@ unsafe fn tty_clear_line(
         return;
     }
     let complete = (|tty: &ClientRef| {
-        if !tty.clips_terminal_output() && tty_fake_bce(tty.borrow_terminal(), defaults, bg) == 0 {
+        if tty_fake_bce(tty.borrow_terminal(), defaults, bg) == 0 {
             if px.wrapping_add(nx) >= terminal_value!(tty, sx)
                 && tty_term_has(terminal_term(tty), TTYC_EL) != 0
             {
@@ -1328,17 +1380,10 @@ unsafe fn tty_clear_line(
     if complete {
         return;
     }
-    let ranges = tty_check_overlay_range(owner, px, py, nx);
-    {
-        let terminal = owner;
-
-        for range in ranges.storage.iter().take(ranges.used as usize) {
-            if range.nx != 0 {
-                tty_cursor(terminal, range.px, py);
-                tty_repeat_space(terminal, range.nx);
-            }
-        }
-    };
+    if nx != 0 {
+        tty_cursor(owner, px, py);
+        tty_repeat_space(owner, nx);
+    }
 }
 unsafe fn tty_clear_pane_line(
     owner: &ClientRef,
@@ -1357,18 +1402,15 @@ unsafe fn tty_clear_pane_line(
         py
     ));
     if let Some(line) = tty_clamp_line(ctx, px, py, nx) {
-        let ranges = tty_check_overlay_range(owner, line.x, line.y, line.width);
-        for range in ranges.storage.iter().take(ranges.used as usize) {
-            if range.nx != 0 {
-                tty_clear_line(
-                    owner,
-                    &ctx.style_ctx.defaults,
-                    line.y,
-                    range.px,
-                    range.nx,
-                    bg,
-                );
-            }
+        if line.width != 0 {
+            tty_clear_line(
+                owner,
+                &ctx.style_ctx.defaults,
+                line.y,
+                line.x,
+                line.width,
+                bg,
+            );
         }
     }
 }
@@ -1461,7 +1503,7 @@ unsafe fn tty_clear_area(
     let defaults = &ctx.style_ctx.defaults;
     let complete = (|tty: &ClientRef| {
         let mut tmp: [::core::ffi::c_char; 64] = [0; 64];
-        if !tty.clips_terminal_output() && tty_fake_bce(tty.borrow_terminal(), defaults, bg) == 0 {
+        if tty_fake_bce(tty.borrow_terminal(), defaults, bg) == 0 {
             if px == 0 as u_int
                 && px.wrapping_add(nx) >= terminal_value!(tty, sx)
                 && py.wrapping_add(ny) >= terminal_value!(tty, sy)
@@ -1555,50 +1597,33 @@ unsafe fn tty_draw_pane(owner: &ClientRef, ctx: &tty_ctx, s: &screen, py: u_int)
         };
         line
     };
-    let ranges = tty_check_overlay_range(owner, line.x, line.y, line.width);
-    {
-        let terminal = owner;
-
-        for range in ranges.storage.iter().take(ranges.used as usize) {
-            if range.nx != 0 {
-                tty_draw_line(
-                    terminal,
-                    s,
-                    line.skip.wrapping_add(range.px).wrapping_sub(line.x),
-                    py,
-                    range.nx,
-                    range.px,
-                    line.y,
-                    Some(&ctx.style_ctx),
-                );
-            }
-        }
-    };
+    if line.width != 0 {
+        tty_draw_line(
+            owner,
+            s,
+            line.skip,
+            py,
+            line.width,
+            line.x,
+            line.y,
+            Some(&ctx.style_ctx),
+        );
+    }
 }
 pub unsafe fn tty_cmd_redrawline(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
     if let Some(line) = tty_clamp_line(ctx, ctx.ocx, ctx.ocy, ctx.data.count()) {
-        let ranges = tty_check_overlay_range(owner, line.x, line.y, line.width);
-        {
-            let terminal = owner;
-
-            for range in ranges.storage.iter().take(ranges.used as usize) {
-                if range.nx != 0 {
-                    tty_draw_line(
-                        terminal,
-                        s,
-                        ctx.ocx
-                            .wrapping_add(line.skip)
-                            .wrapping_add(range.px)
-                            .wrapping_sub(line.x),
-                        ctx.ocy,
-                        range.nx,
-                        range.px,
-                        line.y,
-                        Some(&ctx.style_ctx),
-                    );
-                }
-            }
-        };
+        if line.width != 0 {
+            tty_draw_line(
+                owner,
+                s,
+                ctx.ocx.wrapping_add(line.skip),
+                ctx.ocy,
+                line.width,
+                line.x,
+                line.y,
+                Some(&ctx.style_ctx),
+            );
+        }
     }
 }
 pub unsafe fn tty_check_codeset(utf8: bool, gc: &grid_cell) -> grid_cell {
@@ -1630,30 +1655,6 @@ pub unsafe fn tty_check_codeset(utf8: bool, gc: &grid_cell) -> grid_cell {
     new.data.data[..new.data.size as usize].fill(b'_');
     new
 }
-unsafe fn tty_check_overlay(owner: &ClientRef, px: u_int, py: u_int) -> bool {
-    let mut ranges = tty_check_overlay_range(owner, px, py, 1);
-    !ranges.is_empty()
-}
-
-/// Return owned clipping geometry. Overlay callbacks run without a terminal
-/// borrow, and nested output cannot replace the caller's ranges in place.
-pub unsafe fn tty_check_overlay_range(
-    owner: &ClientRef,
-    px: u_int,
-    py: u_int,
-    nx: u_int,
-) -> visible_ranges {
-    if let Some(ranges) = owner.overlay_ranges(px, py, nx) {
-        ranges
-    } else {
-        let mut ranges = visible_ranges::default();
-        ranges.ensure(1);
-        ranges.storage[0] = visible_range { px, nx };
-        ranges.used = 1;
-        ranges
-    }
-}
-
 unsafe fn tty_client_ready(ctx: &tty_ctx, owner: &ClientRef) -> bool {
     if owner.attached_session().upgrade().is_none() {
         return false;
@@ -1696,7 +1697,6 @@ pub unsafe fn tty_cmd_insertcharacter(owner: &ClientRef, ctx: &tty_ctx, s: &scre
             || tty_fake_bce(tty.borrow_terminal(), &ctx.style_ctx.defaults, ctx.bg) != 0
             || tty_term_has(terminal_term(tty), TTYC_ICH) == 0
                 && tty_term_has(terminal_term(tty), TTYC_ICH1) == 0
-            || tty.clips_terminal_output()
         {
             return false;
         }
@@ -1717,7 +1717,6 @@ pub unsafe fn tty_cmd_deletecharacter(owner: &ClientRef, ctx: &tty_ctx, s: &scre
             || tty_fake_bce(tty.borrow_terminal(), &ctx.style_ctx.defaults, ctx.bg) != 0
             || tty_term_has(terminal_term(tty), TTYC_DCH) == 0
                 && tty_term_has(terminal_term(tty), TTYC_DCH1) == 0
-            || tty.clips_terminal_output()
         {
             return false;
         }
@@ -1748,7 +1747,6 @@ pub unsafe fn tty_cmd_insertline(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
             || tty_term_has(terminal_term(tty), TTYC_IL1) == 0
             || ctx.sx == 1 as u_int
             || ctx.sy == 1 as u_int
-            || tty.clips_terminal_output()
         {
             return false;
         }
@@ -1775,7 +1773,6 @@ pub unsafe fn tty_cmd_deleteline(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
             || tty_term_has(terminal_term(tty), TTYC_DL1) == 0
             || ctx.sx == 1 as u_int
             || ctx.sy == 1 as u_int
-            || tty.clips_terminal_output()
         {
             return false;
         }
@@ -1807,7 +1804,6 @@ pub unsafe fn tty_cmd_reverseindex(owner: &ClientRef, ctx: &tty_ctx, s: &screen)
                 && tty_term_has(terminal_term(tty), TTYC_RIN) == 0
             || ctx.sx == 1 as u_int
             || ctx.sy == 1 as u_int
-            || tty.clips_terminal_output()
         {
             return false;
         }
@@ -1837,7 +1833,6 @@ pub unsafe fn tty_cmd_scrollup(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
             || tty_term_has(terminal_term(tty), TTYC_CSR) == 0
             || ctx.sx == 1 as u_int
             || ctx.sy == 1 as u_int
-            || tty.clips_terminal_output()
         {
             return false;
         }
@@ -1886,7 +1881,6 @@ pub unsafe fn tty_cmd_scrolldown(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
                 && tty_term_has(terminal_term(tty), TTYC_RIN) == 0
             || ctx.sx == 1 as u_int
             || ctx.sy == 1 as u_int
-            || tty.clips_terminal_output()
         {
             return false;
         }
@@ -1976,7 +1970,7 @@ pub unsafe fn tty_cmd_alignmenttest(owner: &ClientRef, ctx: &tty_ctx) {
     let complete = (|tty: &ClientRef| {
         let mut i: u_int = 0;
         let mut j: u_int = 0;
-        if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0 || tty.clips_terminal_output() {
+        if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0 {
             return false;
         }
         tty_attributes(tty, &grid_default_cell, Some(&ctx.style_ctx));
@@ -1999,43 +1993,12 @@ pub unsafe fn tty_cmd_alignmenttest(owner: &ClientRef, ctx: &tty_ctx) {
         ctx.redraw_cb.as_ref().expect("non-null redraw callback")(ctx);
     }
 }
-pub unsafe fn tty_cmd_cell(owner: &ClientRef, ctx: &tty_ctx, s: &screen, gc: &grid_cell) {
+pub unsafe fn tty_cmd_cell(owner: &ClientRef, ctx: &tty_ctx, gc: &grid_cell) {
     let px = (ctx.xoff as u_int)
         .wrapping_add(ctx.ocx)
         .wrapping_sub(ctx.wox);
-    let py = (ctx.yoff as u_int)
-        .wrapping_add(ctx.ocy)
-        .wrapping_sub(ctx.woy);
     if tty_is_visible(ctx, ctx.ocx, ctx.ocy, 1, 1) == 0 {
         return;
-    }
-    if gc.data.width == 1 && !tty_check_overlay(owner, px, py) {
-        return;
-    }
-    if gc.data.width > 1 {
-        let ranges = tty_check_overlay_range(owner, px, py, gc.data.width as u_int);
-        let visible = ranges
-            .storage
-            .iter()
-            .take(ranges.used as usize)
-            .fold(0_u32, |total, range| total.wrapping_add(range.nx));
-        if visible < gc.data.width as u_int {
-            {
-                let terminal = owner;
-
-                tty_draw_line(
-                    terminal,
-                    s,
-                    s.cx,
-                    s.cy,
-                    gc.data.width as u_int,
-                    px,
-                    py,
-                    Some(&ctx.style_ctx),
-                );
-            };
-            return;
-        }
     }
     {
         let terminal = owner;
@@ -2096,30 +2059,8 @@ pub unsafe fn tty_cmd_cells(owner: &ClientRef, ctx: &tty_ctx, s: &screen, gc: &g
         tty_margin_off(terminal);
         tty_cursor_pane_unless_wrap(terminal, ctx, ctx.ocx, ctx.ocy);
         tty_attributes(terminal, gc, Some(&ctx.style_ctx));
-    };
-    let px = (ctx.xoff as u_int)
-        .wrapping_add(ctx.ocx)
-        .wrapping_sub(ctx.wox);
-    let py = (ctx.yoff as u_int)
-        .wrapping_add(ctx.ocy)
-        .wrapping_sub(ctx.woy);
-    let ranges = tty_check_overlay_range(owner, px, py, n as u_int);
-    {
-        let terminal = owner;
-
-        for range in ranges.storage.iter().take(ranges.used as usize) {
-            if range.nx != 0 {
-                let cx = range
-                    .px
-                    .wrapping_sub(ctx.xoff as u_int)
-                    .wrapping_add(ctx.wox);
-                tty_cursor_pane_unless_wrap(terminal, ctx, cx, ctx.ocy);
-                tty_putn(
-                    terminal,
-                    &data[(range.px - px) as usize..(range.px - px + range.nx) as usize],
-                    range.nx,
-                );
-            }
+        if n != 0 {
+            tty_putn(terminal, data, n as u_int);
         }
     };
 }
@@ -2176,18 +2117,13 @@ pub unsafe fn tty_cmd_rawstring(owner: &ClientRef, ctx: &tty_ctx) {
     };
 }
 pub unsafe fn tty_cmd_syncstart(owner: &ClientRef, ctx: &tty_ctx) {
-    let sync = if ctx.flags & TTY_CTX_OVERLAY_SYNC != 0 {
-        ctx.flags & TTY_CTX_SYNC != 0
-    } else {
-        ctx.flags & TTY_CTX_SYNC != 0 || owner.has_overlay()
-    };
-    if sync {
+    if ctx.flags & TTY_CTX_SYNC != 0 {
         tty_sync_start(owner);
     }
 }
 
 pub unsafe fn tty_cell(owner: &ClientRef, gc: &grid_cell, style_ctx: Option<&tty_style_ctx>) {
-    let cursor = {
+    {
         let terminal = owner.borrow_terminal();
         if terminal
             .term
@@ -2198,9 +2134,8 @@ pub unsafe fn tty_cell(owner: &ClientRef, gc: &grid_cell, style_ctx: Option<&tty
         {
             return;
         }
-        (terminal.cx, terminal.cy)
-    };
-    if gc.flags as i32 & GRID_FLAG_PADDING != 0 || !tty_check_overlay(owner, cursor.0, cursor.1) {
+    }
+    if gc.flags as i32 & GRID_FLAG_PADDING != 0 {
         return;
     }
     (|terminal: &ClientRef| {
@@ -2262,6 +2197,44 @@ pub unsafe fn tty_clipboard_query(owner: &ClientRef) {
 #[cfg(test)]
 mod clipping_tests {
     use super::*;
+
+    #[test]
+    fn the_view_rests_on_the_nearest_pane_start_that_shows_the_pane() {
+        // Halves of an 80-column window start at 0, 40, 80 and 120.
+        let stops = [0, 40, 80, 120];
+        let follow = |cell, previous| tty_follow_cell(&stops, cell, 80, 200, previous, None);
+        // A shown pane leaves the view alone, wherever its cursor is.
+        assert_eq!(follow((80, 39), 80), 80);
+        assert_eq!(follow((80, 39), 40), 40);
+        assert_eq!(
+            tty_follow_cell(&stops, (80, 39), 80, 200, 80, Some(118)),
+            80
+        );
+        // From the left it becomes the last pane shown; from the right, the first.
+        assert_eq!(follow((80, 39), 0), 40);
+        assert_eq!(follow((40, 39), 120), 40);
+        // A pan between starts returns to the nearer one, the left on a tie.
+        assert_eq!(follow((40, 39), 25), 40);
+        assert_eq!(follow((40, 39), 20), 0);
+        // A view wider than the window stays within the extent.
+        assert_eq!(tty_follow_cell(&stops, (120, 39), 120, 200, 0, None), 40);
+    }
+
+    #[test]
+    fn a_view_shorter_than_the_pane_keeps_the_cursor_in_sight() {
+        // A full pane at columns 40 to 119, seen through 40 columns.
+        let follow =
+            |previous, cursor| tty_follow_cell(&[0, 40, 121], (40, 80), 40, 201, previous, cursor);
+        assert_eq!(follow(0, None), 40);
+        assert_eq!(follow(121, None), 80);
+        assert_eq!(follow(40, Some(111)), 72);
+        assert_eq!(follow(72, Some(51)), 51);
+        assert_eq!(follow(51, Some(70)), 51);
+        // Rows have one stop at the top; a short view follows the cursor.
+        assert_eq!(tty_follow_cell(&[0], (0, 24), 24, 24, 5, Some(23)), 0);
+        assert_eq!(tty_follow_cell(&[0], (0, 24), 10, 24, 0, Some(23)), 14);
+        assert_eq!(tty_follow_cell(&[0], (0, 24), 10, 24, 14, Some(3)), 3);
+    }
 
     #[test]
     fn clipping_matches_tmux_at_viewport_edges_and_for_empty_regions() {

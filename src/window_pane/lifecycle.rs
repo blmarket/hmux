@@ -53,7 +53,7 @@ use crate::src::shared::abi::*;
 use crate::src::shared::client::client;
 use crate::src::shared::client::{
     CLIENT_ALLREDRAWFLAGS, CLIENT_CONTROL, CLIENT_EXIT, CLIENT_NO_DETACH_ON_DESTROY,
-    CLIENT_REDRAWBORDERS, CLIENT_REDRAWMENU, CLIENT_REDRAWSTATUS, CLIENT_SUSPENDED,
+    CLIENT_REDRAWBORDERS, CLIENT_REDRAWSTATUS, CLIENT_SUSPENDED,
 };
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::event::*;

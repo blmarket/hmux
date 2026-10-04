@@ -45,12 +45,12 @@ pub static cmd_select_pane_entry: cmd_entry = {
         name: c"select-pane",
         alias: Some(c"selectp"),
         args: args_parse {
-            template: c"DdegLlMmP:RT:t:U",
+            template: c"degLlMmP:RT:t:",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: c"[-DdeLlMmRU] [-T title] [-t target-pane]",
+        usage: c"[-deLlMmR] [-T title] [-t target-pane]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -282,26 +282,13 @@ unsafe fn cmd_select_pane_exec(
             cmdq_print(item_handle, |out| write_cstr(out, style.as_ptr()));
             return CMD_RETURN_NORMAL;
         }
-        let direction = if args_has(arguments, b'L') != 0 {
-            Some(b'L')
-        } else if args_has(arguments, b'R') != 0 {
-            Some(b'R')
-        } else if args_has(arguments, b'U') != 0 {
-            Some(b'U')
-        } else if args_has(arguments, b'D') != 0 {
-            Some(b'D')
-        } else {
-            None
-        };
-        let pane = if let Some(direction) = direction {
-            let selected = match direction {
-                b'L' => original_pane.neighbor_left(),
-                b'R' => original_pane.neighbor_right(),
-                b'U' => original_pane.neighbor_up(),
-                b'D' => original_pane.neighbor_down(),
-                _ => unreachable!(),
-            };
-            let Some(selected) = selected else {
+        // Left and right are the previous and next panes in the strip; they
+        // stop at its ends.
+        let left = args_has(arguments, b'L') != 0;
+        let pane = if left || args_has(arguments, b'R') != 0 {
+            let Some(selected) =
+                window.step_pane(Some(&std::rc::Rc::downgrade(&original_pane)), left)
+            else {
                 return CMD_RETURN_NORMAL;
             };
             selected

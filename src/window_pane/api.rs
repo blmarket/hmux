@@ -85,18 +85,6 @@ pub trait WindowPane {
     ) -> Result<Vec<u8>, CString>;
     /// Clear complete history after retiring modes; optionally reset link identities.
     unsafe fn clear_history(&self, reset_links: bool);
-    unsafe fn neighbor_left(&self) -> Option<Self>
-    where
-        Self: Sized;
-    unsafe fn neighbor_right(&self) -> Option<Self>
-    where
-        Self: Sized;
-    unsafe fn neighbor_up(&self) -> Option<Self>
-    where
-        Self: Sized;
-    unsafe fn neighbor_down(&self) -> Option<Self>
-    where
-        Self: Sized;
     unsafe fn window_observer(&self) -> WindowWeak;
     /// Move the parent identity and option inheritance together, before the
     /// caller publishes membership or dispatches move/layout notifications.
@@ -774,18 +762,6 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn clear_history(&self, reset_links: bool) {
         super::capture::clear_history(self, reset_links);
-    }
-    unsafe fn neighbor_left(&self) -> Option<Self> {
-        window_pane_find_left(Some(self))
-    }
-    unsafe fn neighbor_right(&self) -> Option<Self> {
-        window_pane_find_right(Some(self))
-    }
-    unsafe fn neighbor_up(&self) -> Option<Self> {
-        window_pane_find_up(Some(self))
-    }
-    unsafe fn neighbor_down(&self) -> Option<Self> {
-        window_pane_find_down(Some(self))
     }
     unsafe fn refresh_palette(&self) {
         let pane = &mut *self.get();

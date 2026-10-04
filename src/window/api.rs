@@ -8,7 +8,6 @@
 use super::*;
 use crate::src::server_client::Client as _;
 use crate::src::shared::client::ClientRef;
-use crate::src::shared::menu::menu_data;
 use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_RESIZE};
@@ -128,8 +127,8 @@ pub trait Window {
     /// The strip's rectangles in pane order, before pane border and scrollbar
     /// adjustments. Retained panes and copied geometry only.
     unsafe fn pane_cells(&self) -> Vec<(Rc<UnsafeCell<window_pane>>, layout_geometry)>;
-    /// The area clients clip and pan across: the window size, widened to
-    /// the strip.
+    /// The area clients clip and pan across: the strip's extent, which is the
+    /// last pane's first column plus the window width, by the window height.
     unsafe fn logical_size(&self) -> (u32, u32);
     /// The strip as a single-row layout string. `legacy` selects the
     /// checksummed format of older control clients.
@@ -245,24 +244,8 @@ pub trait Window {
     /// different notifications and keep that orchestration in their callers.
     unsafe fn set_latest_client(&self, client: Option<&ClientRef>) -> bool;
     unsafe fn is_latest_client(&self, client: &ClientRef) -> bool;
-    /// Window-owned menu/selection policy used when a pane's focus changes.
+    /// Window-owned selection policy used when a pane's focus changes.
     unsafe fn pane_is_focused(&self, pane: &Rc<UnsafeCell<window_pane>>) -> bool;
-    /// Observe the independently owned menu; no Window/component pointer escapes.
-    unsafe fn menu_observer(&self) -> Option<refbox::Weak<menu_data>>;
-    /// Detach only the expected menu (or any menu for None). The caller performs
-    /// explicit cancellation after this operation, outside the Window borrow.
-    unsafe fn take_menu(
-        &self,
-        expected: Option<&refbox::Weak<menu_data>>,
-    ) -> Option<refbox::RefBox<menu_data>>;
-    /// Publish first, then let the caller cancel a displaced menu outside the borrow.
-    unsafe fn replace_menu(
-        &self,
-        menu: refbox::RefBox<menu_data>,
-    ) -> Option<refbox::RefBox<menu_data>>;
-    /// Clamp to the current dimensions and remember the resulting menu position.
-    unsafe fn place_menu(&self, position: (u32, u32), size: (u32, u32)) -> (u32, u32);
-    unsafe fn last_menu_position(&self) -> (u32, u32);
     unsafe fn invalidate_scene(&self);
     unsafe fn scene_generation(&self) -> u64;
     /// Render each fill cell outside the Window borrow, publishing its fallback
@@ -398,7 +381,6 @@ impl Window for WindowRef {
         pane.set_width_preference(width);
         (*self.get()).invalidate_scene();
         window_arrange(self);
-        tty_update_window_offset(self);
         server_redraw_window(self);
         events_fire_window(c"window-layout-changed".as_ptr(), self.clone());
         true
@@ -429,7 +411,8 @@ impl Window for WindowRef {
     }
     unsafe fn logical_size(&self) -> (u32, u32) {
         let state = &*self.get();
-        (state.sx.max(state.strip_width), state.sy)
+        // Never narrower than the window, even before a pane is arranged.
+        (state.extent.max(state.sx), state.sy)
     }
     unsafe fn layout_string(&self, legacy: bool) -> Option<CString> {
         let active = self.active_pane_observer();
@@ -488,51 +471,6 @@ impl Window for WindowRef {
         }
     }
 
-    unsafe fn menu_observer(&self) -> Option<refbox::Weak<menu_data>> {
-        (*self.get()).menu.as_ref().map(refbox::RefBox::downgrade)
-    }
-    unsafe fn take_menu(
-        &self,
-        expected: Option<&refbox::Weak<menu_data>>,
-    ) -> Option<refbox::RefBox<menu_data>> {
-        let state = &mut *self.get();
-        if expected.is_some_and(|expected| {
-            !state
-                .menu
-                .as_ref()
-                .is_some_and(|current| expected.is(current))
-        }) {
-            return None;
-        }
-        state.menu.take()
-    }
-    unsafe fn replace_menu(
-        &self,
-        menu: refbox::RefBox<menu_data>,
-    ) -> Option<refbox::RefBox<menu_data>> {
-        (*self.get()).menu.replace(menu)
-    }
-    unsafe fn place_menu(&self, (mut px, mut py): (u32, u32), (sx, sy): (u32, u32)) -> (u32, u32) {
-        let (wsx, wsy) = self.logical_size();
-        let state = &mut *self.get();
-        if sx >= wsx {
-            px = 0;
-        } else if px.wrapping_add(sx) > wsx {
-            px = wsx.wrapping_sub(sx);
-        }
-        if sy >= wsy {
-            py = 0;
-        } else if py.wrapping_add(sy) > wsy {
-            py = wsy.wrapping_sub(sy);
-        }
-        state.menu_last_px = px;
-        state.menu_last_py = py;
-        (px, py)
-    }
-    unsafe fn last_menu_position(&self) -> (u32, u32) {
-        let state = &*self.get();
-        (state.menu_last_px, state.menu_last_py)
-    }
     unsafe fn invalidate_scene(&self) {
         (*self.get()).invalidate_scene();
     }
@@ -892,10 +830,9 @@ impl Window for WindowRef {
     }
     unsafe fn pane_is_focused(&self, pane: &Rc<UnsafeCell<window_pane>>) -> bool {
         use crate::src::server_client::Client;
-        if (*self.get()).menu.is_some()
-            || !self
-                .active_pane()
-                .is_some_and(|active| Rc::ptr_eq(&active, pane))
+        if !self
+            .active_pane()
+            .is_some_and(|active| Rc::ptr_eq(&active, pane))
         {
             return false;
         }
@@ -982,7 +919,6 @@ unsafe fn resize_window(
         { sy },
         { (*w).strip_width }
     ));
-    tty_update_window_offset(w_owner);
     server_redraw_window(w_owner);
     events_fire_window(
         c"window-layout-changed".as_ptr(),

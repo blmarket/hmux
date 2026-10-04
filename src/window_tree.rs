@@ -44,7 +44,6 @@ use crate::src::shared::format::{FORMAT_NONE, FORMAT_PANE, FORMAT_WINDOW};
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
-use crate::src::shared::menu::menu_item;
 use crate::src::shared::mode_tree::{
     mode_tree_data, mode_tree_help_info, ModeTreeItemData, ModeTreeItemRef,
 };
@@ -137,68 +136,6 @@ pub const WINDOW_TREE_DEFAULT_COMMAND: &std::ffi::CStr = c"switch-client -Zt '%%
 pub const WINDOW_TREE_DEFAULT_FORMAT: &CStr = c"#{?pane_format,#{?pane_marked,#[fg=thememagenta],}#{pane_current_command}#[fg=themelightgrey]#{pane_flags}#{?#{&&:#{pane_title},#{!=:#{pane_title},#{host_short}}},: \"#{pane_title}\",},window_format,#{?window_marked_flag,#[fg=thememagenta],}#{window_name}#[fg=themelightgrey]#{window_flags}#{?#{&&:#{==:#{window_panes},1},#{&&:#{pane_title},#{!=:#{pane_title},#{host_short}}}},: \"#{pane_title}\",},#[fg=themelightgrey]#{session_windows} windows#{?session_grouped, (group #{session_group}: #{session_group_list}),}#{?session_attached, (attached),}}";
 pub const WINDOW_TREE_DEFAULT_KEY_FORMAT: &std::ffi::CStr =
     c"#{?#{e|<:#{line},10},#{line},#{e|<:#{line},36},M-#{a:#{e|+:97,#{e|-:#{line},10}}}}";
-static window_tree_menu_items: [menu_item<'static>; 12] = [
-    menu_item {
-        name: c"Select",
-        key: '\r' as i32 as key_code,
-        command: None,
-    },
-    menu_item {
-        name: c"Expand",
-        key: KEYC_RIGHT as ::core::ffi::c_ulong as key_code,
-        command: None,
-    },
-    menu_item {
-        name: c"Mark",
-        key: 'm' as i32 as key_code,
-        command: None,
-    },
-    menu_item {
-        name: c"",
-        key: KEYC_NONE as ::core::ffi::c_ulong as key_code,
-        command: None,
-    },
-    menu_item {
-        name: c"Tag",
-        key: 't' as i32 as key_code,
-        command: None,
-    },
-    menu_item {
-        name: c"Tag All",
-        key: '\u{14}' as i32 as key_code,
-        command: None,
-    },
-    menu_item {
-        name: c"Tag None",
-        key: 'T' as i32 as key_code,
-        command: None,
-    },
-    menu_item {
-        name: c"",
-        key: KEYC_NONE as ::core::ffi::c_ulong as key_code,
-        command: None,
-    },
-    menu_item {
-        name: c"Kill",
-        key: 'x' as i32 as key_code,
-        command: None,
-    },
-    menu_item {
-        name: c"Kill Tagged",
-        key: 'X' as i32 as key_code,
-        command: None,
-    },
-    menu_item {
-        name: c"",
-        key: KEYC_NONE as ::core::ffi::c_ulong as key_code,
-        command: None,
-    },
-    menu_item {
-        name: c"Cancel",
-        key: 'q' as i32 as key_code,
-        command: None,
-    },
-];
 pub static window_tree_mode: window_mode = {
     window_mode {
         name: c"tree-mode",
@@ -1656,33 +1593,6 @@ unsafe fn window_tree_search(
     }
     0 as ::core::ffi::c_int
 }
-unsafe fn window_tree_menu(
-    mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
-    c: &ClientRef,
-    mut key: key_code,
-) {
-    let data = mode_owner.get();
-    let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
-        return;
-    };
-    let mut wme: refbox::Weak<window_mode_entry> = refbox::Weak::new();
-    wme = mode_pane_owner.mode_entry();
-    if !wme.is_alive()
-        || wme
-            .get_unchecked()
-            .shared_data_ptr::<window_tree_modedata>()
-            != Some(data)
-    {
-        return;
-    }
-    window_tree_key(
-        wme.clone(),
-        c,
-        (refbox::Weak::new()).clone(),
-        key,
-        ::core::ptr::null_mut::<mouse_event>(),
-    );
-}
 unsafe fn window_tree_get_key(
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
     item: &window_tree_itemdata,
@@ -1902,7 +1812,6 @@ unsafe fn window_tree_init(
         (*data).prompt_flags = PROMPT_ACCEPT;
     }
     let draw_mode = build_mode.clone();
-    let menu_mode = build_mode.clone();
     let key_mode = build_mode.clone();
     (*data).data = Some(mode_tree_start(
         &mode_pane_owner,
@@ -1931,12 +1840,6 @@ unsafe fn window_tree_init(
             let item = itemdata.as_tree().expect("tree row payload");
             window_tree_search(&item, search, icase as ::core::ffi::c_int) != 0
         })),
-        Some(Box::new(move |client, key| {
-            let Some(mode) = window_tree_live_mode(&menu_mode) else {
-                return;
-            };
-            window_tree_menu(&mode, client, key)
-        })),
         None,
         Some(Box::new(move |itemdata, line| {
             let Some(mode) = window_tree_live_mode(&key_mode) else {
@@ -1954,7 +1857,6 @@ unsafe fn window_tree_init(
         })),
         Some(window_tree_sort),
         Some(window_tree_help),
-        &window_tree_menu_items,
         &raw mut s,
     ));
     mode_tree_view_name(&mut *(*data).tree_owner().get(), Some(c"preview"));

@@ -2,8 +2,10 @@
 
 #![allow(dead_code)] // Each test binary uses a different subset.
 
-use std::fs;
-use std::io::Write as _;
+use std::fs::{self, File};
+use std::io::{ErrorKind, Read as _, Write as _};
+use std::os::fd::{AsRawFd as _, FromRawFd as _};
+use std::os::unix::process::CommandExt as _;
 use std::path::PathBuf;
 use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -167,6 +169,14 @@ impl Drop for Server {
 
 pub struct ControlClient(Child);
 
+impl Server {
+    /// Attach a client on a pseudo-terminal of `width` by `height` cells; it
+    /// stays attached until dropped.
+    pub fn attach_terminal(&self, width: u16, height: u16) -> TerminalClient {
+        TerminalClient::new(self, width, height)
+    }
+}
+
 impl Drop for ControlClient {
     fn drop(&mut self) {
         drop(self.0.stdin.take());
@@ -182,4 +192,387 @@ fn field(text: &str, key: &str) -> u32 {
         .take_while(char::is_ascii_digit)
         .collect();
     digits.parse().expect("numeric layout field")
+}
+
+/// The cells a terminal client shows, kept by interpreting the subset of
+/// escape sequences the server sends.
+pub struct Screen {
+    pub cells: Vec<Vec<char>>,
+    pub x: usize,
+    pub y: usize,
+    pending: Vec<u8>,
+    saved: (usize, usize),
+    region: (usize, usize),
+}
+
+impl Screen {
+    fn new(width: usize, height: usize) -> Self {
+        Self {
+            cells: vec![vec![' '; width]; height],
+            x: 0,
+            y: 0,
+            pending: Vec::new(),
+            saved: (0, 0),
+            region: (0, height - 1),
+        }
+    }
+
+    pub fn row(&self, y: usize) -> String {
+        self.cells[y].iter().collect()
+    }
+
+    /// The first column of `text` on row `y`.
+    pub fn find(&self, y: usize, text: &str) -> Option<usize> {
+        let row = self.row(y);
+        row.find(text).map(|byte| row[..byte].chars().count())
+    }
+
+    fn newline(&mut self) {
+        if self.y == self.region.1 {
+            let width = self.cells[0].len();
+            self.cells.remove(self.region.0);
+            self.cells.insert(self.region.1, vec![' '; width]);
+        } else {
+            self.y = (self.y + 1).min(self.cells.len() - 1);
+        }
+    }
+
+    fn csi(&mut self, bytes: &[u8], command: u8) {
+        let private = bytes.first() == Some(&b'?');
+        let params = String::from_utf8_lossy(bytes);
+        let values: Vec<usize> = params
+            .trim_start_matches(['?', '>', '='])
+            .split(';')
+            .map(|n| n.parse().unwrap_or(0))
+            .collect();
+        let get = |i: usize, default: usize| {
+            values
+                .get(i)
+                .copied()
+                .filter(|n| *n != 0)
+                .unwrap_or(default)
+        };
+        let w = self.cells[0].len();
+        let h = self.cells.len();
+        let x = self.x.min(w - 1);
+        match command {
+            b'H' | b'f' => {
+                self.y = get(0, 1).saturating_sub(1).min(h - 1);
+                self.x = get(1, 1).saturating_sub(1).min(w - 1);
+            }
+            b'A' => self.y = self.y.saturating_sub(get(0, 1)),
+            b'B' | b'e' => self.y = (self.y + get(0, 1)).min(h - 1),
+            b'C' | b'a' => self.x = (self.x + get(0, 1)).min(w - 1),
+            b'D' => self.x = self.x.saturating_sub(get(0, 1)),
+            b'G' | b'`' => self.x = get(0, 1).saturating_sub(1).min(w - 1),
+            b'd' => self.y = get(0, 1).saturating_sub(1).min(h - 1),
+            b'J' if !private => {
+                let rows = match values[0] {
+                    0 => {
+                        self.cells[self.y][x..].fill(' ');
+                        self.y + 1..h
+                    }
+                    1 => {
+                        self.cells[self.y][..=x].fill(' ');
+                        0..self.y
+                    }
+                    _ => 0..h,
+                };
+                for row in &mut self.cells[rows] {
+                    row.fill(' ');
+                }
+            }
+            b'K' if !private => match values[0] {
+                0 => self.cells[self.y][x..].fill(' '),
+                1 => self.cells[self.y][..=x].fill(' '),
+                _ => self.cells[self.y].fill(' '),
+            },
+            b'X' => {
+                let end = (x + get(0, 1)).min(w);
+                self.cells[self.y][x..end].fill(' ');
+            }
+            b'P' => {
+                let n = get(0, 1).min(w - x);
+                self.cells[self.y].drain(x..x + n);
+                self.cells[self.y].resize(w, ' ');
+            }
+            b'@' => {
+                for _ in 0..get(0, 1).min(w - x) {
+                    self.cells[self.y].insert(x, ' ');
+                    self.cells[self.y].pop();
+                }
+            }
+            b'b' => {
+                let ch = self.cells[self.y][x.saturating_sub(1)];
+                for _ in 0..get(0, 1) {
+                    self.put(ch);
+                }
+            }
+            b'r' if !private => {
+                self.region = (
+                    get(0, 1).saturating_sub(1).min(h - 1),
+                    get(1, h).saturating_sub(1).min(h - 1),
+                );
+            }
+            b'L' => {
+                for _ in 0..get(0, 1).min(h - self.y) {
+                    self.cells.remove(self.region.1);
+                    self.cells.insert(self.y, vec![' '; w]);
+                }
+            }
+            b'M' => {
+                for _ in 0..get(0, 1).min(h - self.y) {
+                    self.cells.remove(self.y);
+                    self.cells.insert(self.region.1, vec![' '; w]);
+                }
+            }
+            _ => (),
+        }
+    }
+
+    fn put(&mut self, ch: char) {
+        if self.x == self.cells[0].len() {
+            self.x = 0;
+            self.newline();
+        }
+        self.cells[self.y][self.x] = ch;
+        self.x += 1;
+    }
+
+    fn feed(&mut self, bytes: &[u8]) {
+        self.pending.extend_from_slice(bytes);
+        let bytes = std::mem::take(&mut self.pending);
+        let mut i = 0;
+        while i < bytes.len() {
+            let start = i;
+            if bytes[i] == 0x1b {
+                let Some(&kind) = bytes.get(i + 1) else {
+                    break;
+                };
+                match kind {
+                    b'[' => {
+                        let Some(end) =
+                            (i + 2..bytes.len()).find(|&j| (0x40..=0x7e).contains(&bytes[j]))
+                        else {
+                            break;
+                        };
+                        self.csi(&bytes[i + 2..end], bytes[end]);
+                        i = end + 1;
+                    }
+                    b']' | b'P' | b'_' => {
+                        let Some(end) = (i + 2..bytes.len()).find(|&j| {
+                            bytes[j] == 7 || (bytes[j] == 0x1b && bytes.get(j + 1) == Some(&b'\\'))
+                        }) else {
+                            break;
+                        };
+                        i = end + if bytes[end] == 7 { 1 } else { 2 };
+                    }
+                    b'(' | b')' | b'%' => {
+                        if i + 2 == bytes.len() {
+                            break;
+                        }
+                        i += 3;
+                    }
+                    b'7' => {
+                        self.saved = (self.x, self.y);
+                        i += 2;
+                    }
+                    b'8' => {
+                        (self.x, self.y) = self.saved;
+                        i += 2;
+                    }
+                    b'D' => {
+                        self.newline();
+                        i += 2;
+                    }
+                    b'M' => {
+                        self.y = self.y.saturating_sub(1);
+                        i += 2;
+                    }
+                    _ => i += 2,
+                }
+                continue;
+            }
+            let byte = bytes[i];
+            i += 1;
+            match byte {
+                b'\r' => self.x = 0,
+                b'\n' => self.newline(),
+                0x08 => self.x = self.x.saturating_sub(1),
+                b'\t' => self.x = ((self.x / 8 + 1) * 8).min(self.cells[0].len() - 1),
+                0..=31 | 127 => (),
+                32..=126 => self.put(byte as char),
+                _ => {
+                    let n = match byte {
+                        ..0xe0 => 2,
+                        ..0xf0 => 3,
+                        _ => 4,
+                    };
+                    if start + n > bytes.len() {
+                        i = start;
+                        break;
+                    }
+                    let ch = std::str::from_utf8(&bytes[start..start + n])
+                        .ok()
+                        .and_then(|text| text.chars().next())
+                        .unwrap_or('?');
+                    self.put(ch);
+                    i = start + n;
+                }
+            }
+        }
+        self.pending.extend_from_slice(&bytes[i..]);
+    }
+}
+
+/// A client attached on a pseudo-terminal, as a user's terminal would be.
+pub struct TerminalClient {
+    master: File,
+    child: Child,
+    pub screen: Screen,
+    /// The client's terminal name, for `-c` and `-t` client targets.
+    pub tty: String,
+}
+
+impl TerminalClient {
+    fn new(server: &Server, width: u16, height: u16) -> Self {
+        let size = libc::winsize {
+            ws_row: height,
+            ws_col: width,
+            ws_xpixel: 0,
+            ws_ypixel: 0,
+        };
+        let (mut master, mut slave) = (-1, -1);
+        let opened = unsafe {
+            libc::openpty(
+                &mut master,
+                &mut slave,
+                std::ptr::null_mut(),
+                std::ptr::null(),
+                &size,
+            )
+        };
+        assert_eq!(opened, 0, "openpty: {}", std::io::Error::last_os_error());
+        let master = unsafe { File::from_raw_fd(master) };
+        let slave = unsafe { File::from_raw_fd(slave) };
+        let mut command = server.command();
+        command
+            .arg("attach-session")
+            .stdin(slave.try_clone().expect("clone terminal"))
+            .stdout(slave.try_clone().expect("clone terminal"))
+            .stderr(slave);
+        unsafe {
+            command.pre_exec(|| {
+                if libc::setsid() == -1 || libc::ioctl(0, libc::TIOCSCTTY, 0) == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let child = command.spawn().expect("spawn terminal client");
+        let flags = unsafe { libc::fcntl(master.as_raw_fd(), libc::F_GETFL) };
+        assert_ne!(
+            unsafe { libc::fcntl(master.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) },
+            -1
+        );
+        let mut client = Self {
+            master,
+            child,
+            screen: Screen::new(width.into(), height.into()),
+            tty: String::new(),
+        };
+        let prefix = format!("{} ", client.child.id());
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let clients = server.success(&["list-clients", "-F", "#{client_pid} #{client_tty}"]);
+            if let Some(line) = clients.lines().find(|line| line.starts_with(&prefix)) {
+                client.tty = line[prefix.len()..].to_owned();
+                break;
+            }
+            assert!(Instant::now() < deadline, "terminal client did not attach");
+            client.drain();
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        client
+    }
+
+    /// Read whatever the server has drawn so far.
+    pub fn drain(&mut self) {
+        let mut bytes = [0; 65536];
+        loop {
+            match self.master.read(&mut bytes) {
+                Ok(0) => return,
+                Ok(n) => self.screen.feed(&bytes[..n]),
+                Err(error) if error.kind() == ErrorKind::WouldBlock => return,
+                // The client side closed after detaching.
+                Err(error) if error.raw_os_error() == Some(libc::EIO) => return,
+                Err(error) => panic!("terminal read: {error}"),
+            }
+        }
+    }
+
+    /// Type `bytes` into the client's terminal.
+    pub fn send(&mut self, bytes: &[u8]) {
+        self.master.write_all(bytes).expect("terminal write");
+    }
+
+    /// Press and release mouse button 1 at zero-based cell (`x`, `y`).
+    pub fn click(&mut self, x: usize, y: usize) {
+        let (x, y) = (x + 1, y + 1);
+        self.send(format!("\x1b[<0;{x};{y}M\x1b[<0;{x};{y}m").as_bytes());
+    }
+
+    pub fn wait_screen(&mut self, condition: impl Fn(&Screen) -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            self.drain();
+            if condition(&self.screen) {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "screen mismatch: cursor {},{}; rows {:#?}",
+                self.screen.x,
+                self.screen.y,
+                (0..self.screen.cells.len())
+                    .map(|y| self.screen.row(y))
+                    .collect::<Vec<_>>()
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// Expand `format` for this client.
+    pub fn display(&self, server: &Server, format: &str) -> String {
+        server
+            .success(&["display-message", "-p", "-c", &self.tty, format])
+            .trim_end()
+            .to_owned()
+    }
+
+    /// The first strip column this client shows.
+    pub fn offset(&self, server: &Server) -> u32 {
+        self.display(server, "#{?window_bigger,#{window_offset_x},0}")
+            .parse()
+            .expect("numeric offset")
+    }
+
+    pub fn wait_offset(&self, server: &Server, expected: u32) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while self.offset(server) != expected {
+            assert!(
+                Instant::now() < deadline,
+                "offset stayed {}, expected {expected}",
+                self.offset(server)
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+}
+
+impl Drop for TerminalClient {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
 }

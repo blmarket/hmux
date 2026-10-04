@@ -42,15 +42,24 @@ pub(super) fn cells(
         .collect()
 }
 
-/// Columns a strip whose panes have `widths` occupies, up to the last pane's
-/// right edge.
-pub(super) fn width(widths: &[PaneWidth], (sx, _): (u32, u32), minimum: u32) -> u32 {
-    widths
-        .iter()
-        .fold(0u32, |columns, &width| {
-            columns.saturating_add(pane_width(width, sx, minimum) + 1)
-        })
-        .saturating_sub(1)
+/// Columns a strip of `cells` occupies, up to the last pane's right edge.
+pub(super) fn width(cells: &[layout_geometry]) -> u32 {
+    cells
+        .last()
+        .map_or(0, |cell| (cell.xoff as u32).saturating_add(cell.sx))
+}
+
+/// Columns a view of a strip of `cells` in an `sx`-column window can scroll
+/// across: the last pane's first column plus the window width. Every pane's
+/// first column is then a reachable view offset, and the last pane's right
+/// border has room. A minimum wider than the window can push the last pane's
+/// right edge further; the extent reaches it too. Without panes the extent is
+/// the window width.
+pub(super) fn extent(cells: &[layout_geometry], sx: u32) -> u32 {
+    cells.last().map_or(sx, |cell| {
+        let start = cell.xoff as u32;
+        start.saturating_add(sx).max(start.saturating_add(cell.sx))
+    })
 }
 
 /// One pane's entry in a layout string, copied before serialization.
@@ -166,14 +175,28 @@ mod tests {
             .iter()
             .all(|cell| (cell.sx, cell.sy, cell.yoff) == (40, 24, 0)));
         assert_eq!(starts(&odd), [0, 41, 82]);
-        assert_eq!(width(&HALVES[..2], (81, 24), 1), 81);
+        assert_eq!(width(&odd[..2]), 81);
         // Even width: one spare column remains at the right edge.
         let even = cells(&HALVES[..2], (80, 24), 1);
         assert_eq!((even[0].sx, starts(&even)), (39, vec![0, 40]));
-        assert_eq!(width(&HALVES[..2], (80, 24), 1), 79);
+        assert_eq!(width(&even), 79);
         // A lone pane stays half-width.
-        assert_eq!(width(&HALVES[..1], (80, 24), 1), 39);
-        assert_eq!(width(&[], (80, 24), 1), 0);
+        assert_eq!(width(&even[..1]), 39);
+        assert_eq!(width(&[]), 0);
+    }
+
+    #[test]
+    fn the_extent_reaches_the_window_width_past_the_last_pane_start() {
+        let odd = cells(&HALVES, (81, 24), 1);
+        assert_eq!(extent(&odd, 81), 82 + 81);
+        let even = cells(&HALVES[..2], (80, 24), 1);
+        assert_eq!(extent(&even, 80), 40 + 80);
+        // A lone pane, half or full, scrolls nowhere.
+        assert_eq!(extent(&even[..1], 80), 80);
+        assert_eq!(extent(&cells(&[PaneWidth::Full], (80, 24), 1), 80), 80);
+        assert_eq!(extent(&[], 80), 80);
+        // A minimum wider than the window still reaches the last right edge.
+        assert_eq!(extent(&cells(&HALVES[..2], (2, 3), 3), 2), 4 + 3);
     }
 
     #[test]
@@ -185,11 +208,12 @@ mod tests {
             [39, 80, 39]
         );
         assert_eq!(starts(&mixed), [0, 40, 121]);
-        assert_eq!(width(&[Half, Full, Half], (80, 24), 1), 160);
+        assert_eq!(width(&mixed), 160);
+        assert_eq!(extent(&mixed, 80), 201);
         // A lone full pane fills the window exactly.
         assert_eq!(cells(&[Full], (81, 24), 1)[0].sx, 81);
-        assert_eq!(width(&[Full], (81, 24), 1), 81);
-        assert_eq!(width(&[Full, Full], (81, 24), 1), 163);
+        assert_eq!(width(&cells(&[Full], (81, 24), 1)), 81);
+        assert_eq!(width(&cells(&[Full, Full], (81, 24), 1)), 163);
     }
 
     #[test]
@@ -197,7 +221,7 @@ mod tests {
         let tiny = cells(&HALVES[..2], (2, 3), 2);
         assert!(tiny.iter().all(|cell| cell.sx == 2));
         assert_eq!(starts(&tiny), [0, 3]);
-        assert_eq!(width(&HALVES[..2], (2, 3), 2), 5);
+        assert_eq!(width(&tiny), 5);
         assert_eq!(cells(&HALVES[..1], (1, 1), 1)[0].sx, 1);
         assert_eq!(cells(&[PaneWidth::Full], (1, 1), 2)[0].sx, 2);
     }
