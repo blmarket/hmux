@@ -8,7 +8,7 @@ use crate::src::options::options_get_string;
 use crate::src::screen::{screen_free, screen_init};
 use crate::src::screen_write::{screen_write_start, screen_write_stop};
 use crate::src::shared::abi::*;
-use crate::src::shared::borders::{CELL_BORDERS, CELL_NONE, SIMPLE_BORDERS};
+use crate::src::shared::borders::{CELL_BORDERS, CELL_UD, SIMPLE_BORDERS};
 use crate::src::shared::format::{format_tree, FORMAT_NOJOBS, FORMAT_WINDOW};
 use crate::src::shared::grid::*;
 use crate::src::shared::layout::*;
@@ -20,10 +20,9 @@ use crate::src::text::utf8::{utf8_copy, utf8_set};
 use crate::src::tty_acs::{tty_acs_double_borders, tty_acs_heavy_borders, tty_acs_rounded_borders};
 use crate::src::window::Window as _;
 
-pub(crate) unsafe fn window_render_fill_cell(
-    w_owner: &WindowRef,
-    inside: bool,
-) -> Option<grid_cell> {
+/// Render `fill-character` into the cell that fills whatever no pane, scrollbar
+/// or separator covers.
+pub(crate) unsafe fn window_render_fill_cell(w_owner: &WindowRef) -> Option<grid_cell> {
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut s: screen = screen::empty();
     let mut ctx: screen_write_ctx = screen_write_ctx {
@@ -63,10 +62,6 @@ pub(crate) unsafe fn window_render_fill_cell(
         (refbox::Weak::new()).clone(),
         w_owner.active_pane().as_ref(),
     );
-    format_add(ft, c"is_inside", |out| write!(out, "{}", (inside) as i32));
-    format_add(ft, c"is_outside", |out| {
-        write!(out, "{}", { (!inside) as ::core::ffi::c_int })
-    });
     let value = w_owner.with_options_mut(|options| options_get_string(options, c"fill-character"));
     let expanded = format_expand_cstring(ft, value.as_ptr());
     format_free(ft_owner);
@@ -86,7 +81,7 @@ pub(crate) unsafe fn window_render_fill_cell(
     (new_gc.data.width == 1).then_some(new_gc)
 }
 pub unsafe fn window_set_fill_cells(w_owner: &WindowRef) {
-    w_owner.refresh_fill_cells();
+    w_owner.refresh_fill_cell();
 }
 
 unsafe fn window_copy_fill_cell(mut gc: *mut grid_cell, mut fill: *const grid_cell) {
@@ -104,38 +99,29 @@ unsafe fn window_copy_fill_cell(mut gc: *mut grid_cell, mut fill: *const grid_ce
         (*gc).us = (*fill).us;
     }
 }
-pub unsafe fn window_get_fill_cell(
-    owner: &WindowRef,
-    inside: ::core::ffi::c_int,
-    gc: *mut grid_cell,
-) {
-    let fill = owner.fill_cell(inside != 0);
+pub unsafe fn window_get_fill_cell(owner: &WindowRef, gc: *mut grid_cell) {
+    let fill = owner.fill_cell();
     window_copy_fill_cell(gc, &fill);
 }
 
+/// Set `gc` to a separator glyph in the `pane_lines` style. Every separator is
+/// vertical; `index` is the pane's number for the number style.
 pub unsafe fn window_get_border_cell(
     index: Option<u32>,
     mut pane_lines: pane_lines,
-    mut cell_type: ::core::ffi::c_int,
     gc: &mut grid_cell,
 ) {
-    let mut idx: u_int = 0;
+    let cell_type = CELL_UD;
     match pane_lines as ::core::ffi::c_uint {
         4 => {
-            if cell_type == CELL_NONE {
-                gc.attr = (gc.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
-                utf8_set(&mut gc.data, CELL_BORDERS[CELL_NONE as usize] as u_char);
+            gc.attr = (gc.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
+            if let Some(index) = index {
+                utf8_set(
+                    &mut gc.data,
+                    ('0' as i32 as u_int).wrapping_add(index.wrapping_rem(10 as u_int)) as u_char,
+                );
             } else {
-                gc.attr = (gc.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;
-                if let Some(index) = index {
-                    idx = index;
-                    utf8_set(
-                        &mut gc.data,
-                        ('0' as i32 as u_int).wrapping_add(idx.wrapping_rem(10 as u_int)) as u_char,
-                    );
-                } else {
-                    utf8_set(&mut gc.data, '*' as i32 as u_char);
-                }
+                utf8_set(&mut gc.data, '*' as i32 as u_char);
             }
         }
         1 => {

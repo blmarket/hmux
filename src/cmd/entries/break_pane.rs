@@ -178,7 +178,7 @@ unsafe fn cmd_break_pane_exec(
                     .expect("check_name validated the explicit window name");
                 window.initialize_name(cleaned, true);
             }
-            window.refresh_fill_cells();
+            window.refresh_fill_cell();
             if idx == -(1 as ::core::ffi::c_int) {
                 idx = (-(1 as ::core::ffi::c_int) as ::core::ffi::c_longlong
                     - dst_s

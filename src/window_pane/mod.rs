@@ -80,10 +80,7 @@ use crate::src::style::colour::{
     colour_palette_free, colour_palette_from_option, colour_palette_get, colour_palette_init,
     colour_totheme,
 };
-use crate::src::style::{
-    style_ranges_free, style_ranges_get_range, style_ranges_init,
-    style_set_scrollbar_style_from_option,
-};
+use crate::src::style::style_set_scrollbar_style_from_option;
 use crate::src::tmux::{clean_name_cstring, global_options, global_w_options, setblocking};
 use crate::src::tty::{tty_default_colours, tty_update_window_offset};
 use crate::src::window_copy::{window_copy_mode, window_view_mode};
@@ -118,8 +115,8 @@ use crate::src::shared::pane::{
     pane_output_data, window_pane_offset, window_pane_resize, window_pane_resizes, PANE_CHANGED,
     PANE_DESTROYED, PANE_EMPTY, PANE_EXITED, PANE_FOCUSED, PANE_INPUTOFF, PANE_REDRAW,
     PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT,
-    PANE_SCROLLBARS_MODAL, PANE_STATUSREADY, PANE_STATUS_BOTTOM, PANE_STATUS_OFF, PANE_STATUS_TOP,
-    PANE_STYLECHANGED, PANE_THEMECHANGED, PANE_UNSEENCHANGES,
+    PANE_SCROLLBARS_MODAL, PANE_STATUSREADY, PANE_STYLECHANGED, PANE_THEMECHANGED,
+    PANE_UNSEENCHANGES,
 };
 use crate::src::shared::pane::{
     window_pane_history, window_pane_modes, window_pane_prompt, window_panes, PaneScreenSource,
@@ -686,8 +683,6 @@ unsafe fn window_pane_create(
     screen_init(&mut (*wp).base, sx, sy, hlimit);
     (*wp).screen_source = PaneScreenSource::Base;
     window_pane_default_cursor(&owner);
-    screen_init(&mut (*wp).status_screen, 1 as u_int, 1 as u_int, 0 as u_int);
-    style_ranges_init(&raw mut (*wp).border_status_line.ranges);
     if gethostname(
         &raw mut host as *mut ::core::ffi::c_char,
         ::core::mem::size_of::<[::core::ffi::c_char; 65]>() as size_t,
@@ -833,9 +828,6 @@ unsafe fn window_pane_free(wp_value: &mut window_pane) {
         pane_sync::stop_unowned(&mut *wp);
     }
     window_pane_set_searchstr(&mut *wp, None);
-    if (*wp).status_screen.grid.is_some() {
-        screen_free(&mut (*wp).status_screen);
-    }
     if (*wp).base.grid.is_some() {
         screen_free(&mut (*wp).base);
     }
@@ -843,7 +835,6 @@ unsafe fn window_pane_free(wp_value: &mut window_pane) {
     window_pane_set_cwd(&mut *wp, None);
     window_pane_set_shell(&mut *wp, None);
     colour_palette_free(Some(&mut (*wp).palette));
-    style_ranges_free(&raw mut (*wp).border_status_line.ranges);
 }
 
 unsafe fn window_pane_read_callback(owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
@@ -2160,41 +2151,8 @@ unsafe fn window_pane_send_theme_update(pane_owner: &Rc<std::cell::UnsafeCell<wi
     };
 }
 
-unsafe fn window_pane_status_get_range(
-    pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
-    x: u_int,
-    y: u_int,
-) -> Option<style_range> {
-    let wp = pane_owner.get();
-    let pane_status = window_pane_get_pane_status(&*wp);
-    let line = if pane_status == PANE_STATUS_TOP {
-        ((*wp).yoff - 1) as u_int
-    } else if pane_status == PANE_STATUS_BOTTOM {
-        ((*wp).yoff as u_int).wrapping_add((*wp).sy)
-    } else {
-        0
-    };
-    if pane_status == PANE_STATUS_OFF || line != y {
-        return None;
-    }
-    let x = x.wrapping_sub((*wp).xoff as u_int).wrapping_sub(2);
-    (*wp)
-        .border_status_line
-        .ranges
-        .as_slice()
-        .iter()
-        .find(|range| x >= range.start && x < range.end)
-        .map(|range| **range)
-}
-
 unsafe fn window_pane_get_pane_lines(wp: &window_pane) -> pane_lines {
     wp.window_handle().expect("pane window").pane_border_lines()
-}
-
-unsafe fn window_pane_get_pane_status(wp: &window_pane) -> ::core::ffi::c_int {
-    wp.window_handle()
-        .expect("pane window")
-        .pane_border_status()
 }
 
 impl Drop for window_pane {

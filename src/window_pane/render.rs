@@ -176,20 +176,11 @@ pub(super) unsafe fn draw_line(
     source: (u32, u32),
     width: u32,
     destination: (u32, u32),
-    status: bool,
 ) {
-    let (defaults, dim) = if status {
-        (grid_default_cell, 0)
-    } else {
-        pane.default_colours()
-    };
+    let (defaults, dim) = pane.default_colours();
     // The selected screen and its grid remain explicitly owned by this operation.
     // Terminal drawing may inspect the pane palette after pane storage is released.
-    let target = if status {
-        &raw mut (*pane.get()).status_screen
-    } else {
-        displayed_screen(pane)
-    };
+    let target = displayed_screen(pane);
     let selected = std::mem::take(&mut *target);
     let context = tty_style_ctx {
         defaults,
@@ -209,7 +200,7 @@ pub(super) unsafe fn draw_line(
             width.min(available),
             x,
             y,
-            (!status).then_some(&context),
+            Some(&context),
         );
     }
     *target = selected;

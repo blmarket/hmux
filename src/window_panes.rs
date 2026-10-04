@@ -30,7 +30,7 @@ use crate::src::window::Window as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
 use crate::src::shared::arguments::args_command_state;
-use crate::src::shared::borders::CELL_BORDERS;
+use crate::src::shared::borders::{CELL_BORDERS, CELL_UD};
 use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::{cmd, cmd_find_state, cmdq_item, cmdq_state};
@@ -43,7 +43,7 @@ use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::{PANE_REDRAW, PANE_STATUS_BOTTOM, PANE_STATUS_TOP};
+use crate::src::shared::pane::PANE_REDRAW;
 use crate::src::shared::screen::{screen, MODE_CURSOR};
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::session::session;
@@ -124,10 +124,6 @@ pub static window_panes_mode: window_mode = {
         display_screen: Some(window_panes_get_screen),
     }
 };
-pub const WINDOW_PANES_BORDER_L: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const WINDOW_PANES_BORDER_R: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const WINDOW_PANES_BORDER_U: ::core::ffi::c_int = 4;
-pub const WINDOW_PANES_BORDER_D: ::core::ffi::c_int = 8;
 unsafe fn window_panes_session(data: *mut window_panes_modedata) -> Option<SessionRef> {
     let owner = (*data).session.upgrade()?;
     if !owner.is_registered() {
@@ -274,23 +270,9 @@ unsafe fn window_panes_get_geometry(
     let Some(geometry) = window_panes_pane_geometry(wp_owner) else {
         return 0;
     };
-    let Some((x, mut y, sx, mut sy)) = window_panes_scaled_geometry(&geometry, osx, osy, dsx, dsy)
-    else {
+    let Some((x, y, sx, sy)) = window_panes_scaled_geometry(&geometry, osx, osy, dsx, dsy) else {
         return 0;
     };
-    let status = wp_owner
-        .window_observer()
-        .upgrade()
-        .expect("live pane window")
-        .pane_border_status();
-    // Every strip pane spans the full height, so each has the status row.
-    let border = status == PANE_STATUS_TOP || status == PANE_STATUS_BOTTOM;
-    if border && sy > 1 {
-        if status == PANE_STATUS_TOP {
-            y = y.wrapping_add(1);
-        }
-        sy = sy.wrapping_sub(1);
-    }
     *xp = x;
     *yp = y;
     *sxp = sx;
@@ -354,134 +336,8 @@ unsafe fn window_panes_map_y(mut y: u_int, mut osy: u_int, mut dsy: u_int) -> ::
     }
     y.wrapping_mul(dsy).wrapping_div(osy) as ::core::ffi::c_int
 }
-unsafe fn window_panes_mark_border(
-    mut map: *mut u_char,
-    mut dsx: u_int,
-    mut dsy: u_int,
-    mut x: u_int,
-    mut y: u_int,
-    mut mask: u_char,
-) {
-    if x < dsx && y < dsy {
-        let fresh0 = &mut *map.offset(y.wrapping_mul(dsx).wrapping_add(x) as isize);
-        *fresh0 = (*fresh0 as ::core::ffi::c_int | mask as ::core::ffi::c_int) as u_char;
-    }
-}
-unsafe fn window_panes_mark_vline(
-    mut map: *mut u_char,
-    mut dsx: u_int,
-    mut dsy: u_int,
-    mut x: ::core::ffi::c_int,
-    mut y: ::core::ffi::c_int,
-    mut y2: ::core::ffi::c_int,
-) {
-    let mut mask: u_char = 0;
-    let mut yy: ::core::ffi::c_int = 0;
-    if x < 0 as ::core::ffi::c_int || x as u_int >= dsx || y2 <= y {
-        return;
-    }
-    if y < 0 as ::core::ffi::c_int {
-        y = 0 as ::core::ffi::c_int;
-    }
-    if y2 as u_int > dsy {
-        y2 = dsy as ::core::ffi::c_int;
-    }
-    yy = y;
-    while yy < y2 {
-        mask = 0 as u_char;
-        if yy > y {
-            mask = (mask as ::core::ffi::c_int | WINDOW_PANES_BORDER_U) as u_char;
-        }
-        if (yy + 1 as ::core::ffi::c_int) < y2 {
-            mask = (mask as ::core::ffi::c_int | WINDOW_PANES_BORDER_D) as u_char;
-        }
-        if mask as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
-            mask = (WINDOW_PANES_BORDER_U | WINDOW_PANES_BORDER_D) as u_char;
-        }
-        window_panes_mark_border(map, dsx, dsy, x as u_int, yy as u_int, mask);
-        yy += 1;
-    }
-}
-unsafe fn window_panes_mark_hline(
-    mut map: *mut u_char,
-    mut dsx: u_int,
-    mut dsy: u_int,
-    mut x: ::core::ffi::c_int,
-    mut x2: ::core::ffi::c_int,
-    mut y: ::core::ffi::c_int,
-) {
-    let mut mask: u_char = 0;
-    let mut xx: ::core::ffi::c_int = 0;
-    if y < 0 as ::core::ffi::c_int || y as u_int >= dsy || x2 <= x {
-        return;
-    }
-    if x < 0 as ::core::ffi::c_int {
-        x = 0 as ::core::ffi::c_int;
-    }
-    if x2 as u_int > dsx {
-        x2 = dsx as ::core::ffi::c_int;
-    }
-    xx = x;
-    while xx < x2 {
-        mask = 0 as u_char;
-        if xx > x {
-            mask = (mask as ::core::ffi::c_int | WINDOW_PANES_BORDER_L) as u_char;
-        }
-        if (xx + 1 as ::core::ffi::c_int) < x2 {
-            mask = (mask as ::core::ffi::c_int | WINDOW_PANES_BORDER_R) as u_char;
-        }
-        if mask as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
-            mask = (WINDOW_PANES_BORDER_L | WINDOW_PANES_BORDER_R) as u_char;
-        }
-        window_panes_mark_border(map, dsx, dsy, xx as u_int, y as u_int, mask);
-        xx += 1;
-    }
-}
-unsafe fn window_panes_mark_pane_status_borders(
-    map: *mut u_char,
-    window: &WindowRef,
-    osx: u_int,
-    osy: u_int,
-    dsx: u_int,
-    dsy: u_int,
-) {
-    let status = window.pane_border_status();
-    if status != PANE_STATUS_TOP && status != PANE_STATUS_BOTTOM {
-        return;
-    }
-    // No callbacks occur while collecting these copied geometry records.
-    for (_, geometry) in window.pane_cells() {
-        let x = window_panes_map_x(geometry.xoff as u_int, osx, dsx);
-        let x2 = window_panes_map_x((geometry.xoff as u_int).wrapping_add(geometry.sx), osx, dsx);
-        let y = if status == PANE_STATUS_TOP {
-            window_panes_map_y(geometry.yoff as u_int, osy, dsy)
-        } else {
-            window_panes_map_y((geometry.yoff as u_int).wrapping_add(geometry.sy), osy, dsy) - 1
-        };
-        window_panes_mark_hline(map, dsx, dsy, x, x2, y);
-    }
-}
-unsafe fn window_panes_border_cell_type(mut mask: u_char) -> ::core::ffi::c_int {
-    match mask as ::core::ffi::c_int {
-        15 => return 11 as ::core::ffi::c_int,
-        7 => return 8 as ::core::ffi::c_int,
-        11 => return 7 as ::core::ffi::c_int,
-        3 | WINDOW_PANES_BORDER_L | WINDOW_PANES_BORDER_R => {
-            return 2 as ::core::ffi::c_int;
-        }
-        13 => return 10 as ::core::ffi::c_int,
-        5 => return 6 as ::core::ffi::c_int,
-        9 => return 4 as ::core::ffi::c_int,
-        14 => return 9 as ::core::ffi::c_int,
-        6 => return 5 as ::core::ffi::c_int,
-        10 => return 3 as ::core::ffi::c_int,
-        12 | WINDOW_PANES_BORDER_U | WINDOW_PANES_BORDER_D => {
-            return 1 as ::core::ffi::c_int;
-        }
-        _ => {}
-    }
-    12 as ::core::ffi::c_int
-}
+/// Draw a separator after every pane but the last, across the preview's
+/// height. Separators are the only borders; none is horizontal.
 unsafe fn window_panes_draw_borders(
     mut ctx: *mut screen_write_ctx,
     w_owner: &WindowRef,
@@ -491,66 +347,28 @@ unsafe fn window_panes_draw_borders(
     mut dsx: u_int,
     mut dsy: u_int,
 ) {
-    let mut border_gc: grid_cell = grid_cell {
-        data: utf8_data {
-            data: [0; 32],
-            have: 0,
-            size: 0,
-            width: 0,
-        },
-        attr: 0,
-        flags: 0,
-        fg: 0,
-        bg: 0,
-        us: 0,
-        link: 0,
-    };
-    let mut xx: u_int = 0;
-    let mut yy: u_int = 0;
-    let mut cell_type: ::core::ffi::c_int = 0;
     if dsx == 0 as u_int || dsy == 0 as u_int {
         return;
     }
-    let map_size = (dsx as usize).checked_mul(dsy as usize).unwrap();
-    let mut map = vec![0; map_size];
-    // A separator follows every pane but the last, across the full height.
+    let mut border_gc = *gc;
+    border_gc.attr = (border_gc.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
+    utf8_set(
+        &mut border_gc.data,
+        CELL_BORDERS[CELL_UD as usize] as u_char,
+    );
     for pair in w_owner.pane_cells().windows(2) {
         let (_, geometry) = &pair[0];
         let x = window_panes_map_x((geometry.xoff as u_int).wrapping_add(geometry.sx), osx, dsx);
-        let y = window_panes_map_y(geometry.yoff as u_int, osy, dsy);
-        let y2 = window_panes_map_y((geometry.yoff as u_int).wrapping_add(geometry.sy), osy, dsy);
-        window_panes_mark_vline(map.as_mut_ptr(), dsx, dsy, x, y, y2);
-    }
-    window_panes_mark_pane_status_borders(map.as_mut_ptr(), w_owner, osx, osy, dsx, dsy);
-    yy = 0 as u_int;
-    while yy < dsy {
-        xx = 0 as u_int;
-        while xx < dsx {
-            let border = map[yy.wrapping_mul(dsx).wrapping_add(xx) as usize];
-            if border != 0 {
-                cell_type = window_panes_border_cell_type(border);
-                memcpy(
-                    &raw mut border_gc as *mut ::core::ffi::c_void,
-                    gc as *const ::core::ffi::c_void,
-                    ::core::mem::size_of::<grid_cell>() as size_t,
-                );
-                border_gc.attr =
-                    (border_gc.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
-                utf8_set(
-                    &mut border_gc.data,
-                    CELL_BORDERS[cell_type as usize] as u_char,
-                );
-                screen_write_cursormove(
-                    &mut *ctx,
-                    xx as ::core::ffi::c_int,
-                    yy as ::core::ffi::c_int,
-                    0 as ::core::ffi::c_int,
-                );
-                screen_write_cell(&mut *ctx, &border_gc);
-            }
-            xx = xx.wrapping_add(1);
+        if x < 0 || x as u_int >= dsx {
+            continue;
         }
-        yy = yy.wrapping_add(1);
+        let y = window_panes_map_y(geometry.yoff as u_int, osy, dsy).max(0);
+        let y2 = window_panes_map_y((geometry.yoff as u_int).wrapping_add(geometry.sy), osy, dsy)
+            .min(dsy as ::core::ffi::c_int);
+        for yy in y..y2 {
+            screen_write_cursormove(&mut *ctx, x, yy, 0 as ::core::ffi::c_int);
+            screen_write_cell(&mut *ctx, &border_gc);
+        }
     }
 }
 unsafe fn window_panes_draw_format(

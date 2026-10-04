@@ -432,18 +432,12 @@ unsafe fn format_cb_pane_at_top(mut ft: *mut format_tree) -> Option<CString> {
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = format_pane;
-    let mut status: ::core::ffi::c_int = 0;
     let mut flag: ::core::ffi::c_int = 0;
     let mut value = None;
     if wp.is_null() {
         return None;
     }
-    status = window_pane_get_pane_status(&*wp);
-    if status == PANE_STATUS_TOP {
-        flag = ((*wp).yoff == 1 as ::core::ffi::c_int) as ::core::ffi::c_int;
-    } else {
-        flag = ((*wp).yoff == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
-    }
+    flag = ((*wp).yoff == 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
     value =
         Some(CString::new(format!("{}", (flag) as i32)).expect("formatted numbers contain no NUL"));
     value
@@ -452,9 +446,8 @@ unsafe fn format_cb_pane_at_top(mut ft: *mut format_tree) -> Option<CString> {
 unsafe fn format_cb_pane_at_bottom(ft: *mut format_tree) -> Option<CString> {
     let pane = (*ft).wp.upgrade()?;
     let window = pane.window_observer().upgrade().expect("pane window");
-    let status = pane.border_status();
     let (_, height, _, y) = pane.geometry();
-    let bottom = window.logical_size().1 as i32 - if status == PANE_STATUS_BOTTOM { 1 } else { 0 };
+    let bottom = window.logical_size().1 as i32;
     Some(
         if y + height as i32 == bottom {
             c"1"

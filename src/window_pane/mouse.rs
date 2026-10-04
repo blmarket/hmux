@@ -64,21 +64,13 @@ unsafe fn mouse_location_in(
     let (sx, sy, xoff, yoff) = pane_owner.geometry();
     let scrollbar = &pane_owner;
     let position = window_owner.scrollbar_position();
-    let mut examined = None;
-    let mut pane_status: ::core::ffi::c_int = 0;
     let mut sb_w: ::core::ffi::c_int = 0;
     let mut sb_pad: ::core::ffi::c_int = 0;
-    let mut pane_status_line: ::core::ffi::c_int = 0;
     let mut sl_top: ::core::ffi::c_int = 0;
     let mut sl_bottom: ::core::ffi::c_int = 0;
-    let mut bdr_bottom: ::core::ffi::c_int = 0;
-    let mut bdr_top: ::core::ffi::c_int = 0;
-    let mut bdr_left: ::core::ffi::c_int = 0;
-    let mut bdr_right: ::core::ffi::c_int = 0;
     let mut sb_start: ::core::ffi::c_int = 0;
     let mut sb_end: ::core::ffi::c_int = 0;
     let mut sb_overlay: ::core::ffi::c_int = 0;
-    pane_status = pane_owner.border_status();
     sb_overlay = scrollbar.scrollbar_overlay() as i32;
     if scrollbar.scrollbar_visible() {
         sb_w = scrollbar.scrollbar_width();
@@ -89,17 +81,6 @@ unsafe fn mouse_location_in(
     } else {
         sb_w = 0 as ::core::ffi::c_int;
         sb_pad = 0 as ::core::ffi::c_int;
-    }
-    if pane_status == PANE_STATUS_TOP {
-        pane_status_line = yoff - 1 as ::core::ffi::c_int;
-    } else if pane_status == PANE_STATUS_BOTTOM {
-        pane_status_line = (yoff as u_int).wrapping_add(sy) as ::core::ffi::c_int;
-    } else {
-        pane_status_line = -(1 as ::core::ffi::c_int);
-    }
-    bdr_left = xoff - 1 as ::core::ffi::c_int;
-    if sb_overlay == 0 && position == PANE_SCROLLBARS_LEFT {
-        bdr_left -= sb_pad + sb_w;
     }
     if sb_overlay != 0
         && sb_w != 0 as ::core::ffi::c_int
@@ -135,11 +116,8 @@ unsafe fn mouse_location_in(
         }
         return KEYC_MOUSE_LOCATION_PANE;
     }
-    if (pane_status != PANE_STATUS_OFF
-        && py != pane_status_line
-        && py != yoff + sy as ::core::ffi::c_int
-        || yoff == 0 as ::core::ffi::c_int && py < sy as ::core::ffi::c_int
-        || py >= yoff && py < yoff + sy as ::core::ffi::c_int)
+    if py >= yoff
+        && py < yoff + sy as ::core::ffi::c_int
         && (position == PANE_SCROLLBARS_RIGHT
             && px < xoff + sx as ::core::ffi::c_int + sb_pad + sb_w
             || position == PANE_SCROLLBARS_LEFT
@@ -170,52 +148,8 @@ unsafe fn mouse_location_in(
         } else {
             return KEYC_MOUSE_LOCATION_PANE;
         }
-    } else {
-        let mut cursor = window_owner.next_pane(None);
-        while let Some(border_pane) = cursor {
-            let (border_sx, border_sy, border_xoff, border_yoff) = border_pane.geometry();
-            let border_scrollbar = &border_pane;
-            examined = Some(border_pane.clone());
-            if border_scrollbar.scrollbar_reserved() {
-                sb_w = border_scrollbar.scrollbar_width();
-                sb_pad = border_scrollbar.scrollbar_pad();
-            } else {
-                sb_w = 0 as ::core::ffi::c_int;
-                sb_pad = 0 as ::core::ffi::c_int;
-            }
-            bdr_top = border_yoff - 1 as ::core::ffi::c_int;
-            bdr_bottom = (border_yoff as u_int).wrapping_add(border_sy) as ::core::ffi::c_int;
-            bdr_left = border_xoff - 1 as ::core::ffi::c_int;
-            if position == PANE_SCROLLBARS_LEFT {
-                bdr_left -= sb_pad + sb_w;
-                bdr_right = (border_xoff as u_int).wrapping_add(border_sx) as ::core::ffi::c_int;
-            } else {
-                bdr_right = (border_xoff as u_int)
-                    .wrapping_add(border_sx)
-                    .wrapping_add(sb_pad as u_int)
-                    .wrapping_add(sb_w as u_int) as ::core::ffi::c_int;
-            }
-            if py >= border_yoff - 1 as ::core::ffi::c_int
-                && py <= border_yoff + border_sy as ::core::ffi::c_int
-            {
-                if px == bdr_right {
-                    break;
-                }
-            }
-            if px >= bdr_left && px <= border_xoff + border_sx as ::core::ffi::c_int {
-                bdr_bottom = (border_yoff as u_int).wrapping_add(border_sy) as ::core::ffi::c_int;
-                if py == bdr_bottom {
-                    break;
-                }
-                if py == bdr_top {
-                    break;
-                }
-            }
-            cursor = window_owner.next_pane(Some(&border_pane));
-        }
-        if examined.is_some() {
-            return KEYC_MOUSE_LOCATION_BORDER;
-        }
     }
-    KEYC_MOUSE_LOCATION_NOWHERE
+    // Anywhere else is the separator beside the pane: every border is
+    // vertical, as tall as the panes.
+    KEYC_MOUSE_LOCATION_BORDER
 }

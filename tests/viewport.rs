@@ -140,7 +140,7 @@ fn cursor_movement_inside_a_visible_pane_does_not_move_the_view() {
         r"printf '\033[1;39Hz\033[1;1Hy'; exec sleep 60",
         "y",
     );
-    client.wait_screen(|screen| screen.cells[0][40] == 'y' && (screen.x, screen.y) == (41, 0));
+    client.wait_screen(|screen| screen.cells[0][40].ch == 'y' && (screen.x, screen.y) == (41, 0));
     std::thread::sleep(Duration::from_millis(100));
     assert_eq!(client.offset(&server), 40);
 }
@@ -220,7 +220,7 @@ fn a_client_narrower_than_the_active_pane_follows_its_cursor() {
     );
     // The cursor after `!` is strip column 111: the view moves just enough.
     narrow.wait_offset(&server, 72);
-    narrow.wait_screen(|screen| screen.cells[0][38] == '!' && screen.x == 39);
+    narrow.wait_screen(|screen| screen.cells[0][38].ch == '!' && screen.x == 39);
     server.success(&["send-keys", "-t", &ids[1], "Enter"]);
     narrow.wait_offset(&server, 51);
     // Cursor movement inside the view does not move it.

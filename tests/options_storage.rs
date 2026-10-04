@@ -126,16 +126,16 @@ fn aliases_parent_fallback_and_shadowing() {
         );
         let numeric_definition = (*table)
             .iter()
-            .find(|oe| oe.name == Some(c"pane-border-status"))
+            .find(|oe| oe.name == Some(c"pane-border-lines"))
             .unwrap();
         options_default(parent, numeric_definition);
-        options_set_number(parent, c"pane-border-status", 2);
-        assert_eq!(options_get_number_ref(&*child, c"pane-border-status"), 2);
-        let numeric = options_set_number(child, c"pane-border-status", 1);
-        assert_eq!(options_get_number_ref(&*child, c"pane-border-status"), 1);
-        assert_eq!(options_get_number_ref(&*parent, c"pane-border-status"), 2);
+        options_set_number(parent, c"pane-border-lines", 2);
+        assert_eq!(options_get_number_ref(&*child, c"pane-border-lines"), 2);
+        let numeric = options_set_number(child, c"pane-border-lines", 1);
+        assert_eq!(options_get_number_ref(&*child, c"pane-border-lines"), 1);
+        assert_eq!(options_get_number_ref(&*parent, c"pane-border-lines"), 2);
         options_remove_or_default(numeric, null(), null_mut());
-        assert_eq!(options_get_number_ref(&*child, c"pane-border-status"), 2);
+        assert_eq!(options_get_number_ref(&*child, c"pane-border-lines"), 2);
         options_set_string(child, c"display-panes-color", 0, |out| {
             out.write_all(b"red")
         });

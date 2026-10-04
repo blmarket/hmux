@@ -7,6 +7,10 @@
 mod common;
 
 use common::Server;
+use std::io::{BufRead as _, BufReader};
+use std::process::{Child, Stdio};
+use std::sync::mpsc::{channel, Receiver};
+use std::time::{Duration, Instant};
 
 fn columns(server: &Server) -> Vec<(u32, u32)> {
     server
@@ -143,34 +147,32 @@ fn recalculation_is_silent_when_nothing_moves() {
     server.count_events();
     for _ in 0..3 {
         server.success(&["set", "-w", "window-size", "manual"]);
-        server.success(&["set", "-w", "pane-border-status", "off"]);
+        server.success(&["set", "-w", "pane-scrollbars", "off"]);
     }
     assert_eq!(server.events(), (0, 0), "recalculation was not silent");
     assert_eq!(columns(&server), [(0, 20), (21, 20), (42, 20), (63, 20)]);
 }
 
 #[test]
-fn border_status_takes_a_row_from_every_pane_without_resizing() {
+fn pane_status_rows_are_gone() {
     let server = Server::new();
     server.start(41, 12, 3);
-    server.count_events();
-    server.success(&["set", "-w", "pane-border-status", "top"]);
-    assert!(server
-        .panes()
-        .iter()
-        .all(|&(_, _, _, top, height)| (top, height) == (1, 11)));
-    server.success(&["set", "-w", "pane-border-status", "bottom"]);
-    assert!(server
-        .panes()
-        .iter()
-        .all(|&(_, _, _, top, height)| (top, height) == (0, 11)));
-    server.success(&["set", "-w", "pane-border-status", "off"]);
+    for args in [
+        &["set", "-w", "pane-border-status", "top"][..],
+        &["set", "-w", "pane-border-format", "#{pane_index}"],
+        &["set", "-p", "pane-border-status", "bottom"],
+    ] {
+        assert!(
+            !server.run(args).status.success(),
+            "{args:?} still accepted"
+        );
+    }
+    // Every pane keeps the window's full height.
     assert!(server
         .panes()
         .iter()
         .all(|&(_, _, _, top, height)| (top, height) == (0, 12)));
-    assert_eq!(server.window_size(), (41, 12));
-    assert_eq!(server.events().1, 0);
+    assert_eq!(server.display("#{pane_at_top}#{pane_at_bottom}"), "11");
 }
 
 #[test]
@@ -247,6 +249,85 @@ fn panes_move_between_strips() {
     server.success(&["last-window"]);
     assert_eq!(ids(&server), [&source[0], &source[1]].map(String::clone));
     assert_eq!(columns(&server), [(0, 20), (21, 20)]);
+}
+
+/// A control client's notification lines, read on a thread as they arrive.
+struct ControlLines {
+    child: Child,
+    lines: Receiver<String>,
+    seen: Vec<String>,
+}
+
+impl ControlLines {
+    fn attach(server: &Server) -> Self {
+        let mut child = server
+            .command()
+            .args(["-C", "attach"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn control client");
+        let stdout = child.stdout.take().expect("control stdout");
+        let (sender, lines) = channel();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                if sender.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+        let mut control = Self {
+            child,
+            lines,
+            seen: Vec::new(),
+        };
+        control.wait_for("%session-changed");
+        control.seen.clear();
+        control
+    }
+
+    /// The position among the lines seen of the first starting with `prefix`,
+    /// reading until it arrives.
+    fn wait_for(&mut self, prefix: &str) -> usize {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Some(index) = self.seen.iter().position(|line| line.starts_with(prefix)) {
+                return index;
+            }
+            match self
+                .lines
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            {
+                Ok(line) => self.seen.push(line),
+                Err(_) => panic!("no {prefix} line in {:#?}", self.seen),
+            }
+        }
+    }
+}
+
+impl Drop for ControlLines {
+    fn drop(&mut self) {
+        drop(self.child.stdin.take());
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+#[test]
+fn removing_the_active_pane_reports_the_layout_before_its_replacement() {
+    // As in tmux: the strip closes its gap, then the new active pane follows.
+    for remove in [&["kill-pane", "-t"][..], &["break-pane", "-d", "-s"]] {
+        let server = Server::new();
+        server.start(41, 10, 2);
+        let ids = ids(&server);
+        server.success(&["select-pane", "-t", &ids[0]]);
+        let mut control = ControlLines::attach(&server);
+        server.success(&[remove, &[ids[0].as_str()]].concat());
+        let changed = control.wait_for(&format!("%window-pane-changed @0 {}", ids[1]));
+        let layout = control.wait_for("%layout-change @0 ");
+        assert!(layout < changed, "{remove:?}: {:#?}", control.seen);
+    }
 }
 
 #[test]

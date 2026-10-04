@@ -2,7 +2,6 @@
 
 use super::abi::{u_int, uint64_t};
 use super::client::client;
-use super::layout::pane_lines;
 use super::pane::window_pane;
 use super::window::window;
 use crate::src::shared::client::ClientWeak;
@@ -23,7 +22,7 @@ pub struct redraw_scene {
     pub oy: u_int,
 }
 
-pub type redraw_line = [redraw_spans; 6];
+pub type redraw_line = [redraw_spans; 4];
 
 /// Preserve stable heap allocation while drawing helpers borrow spans.
 pub type redraw_spans = Vec<Box<redraw_span>>;
@@ -40,8 +39,6 @@ pub struct redraw_span {
 pub enum redraw_span_data {
     Pane(RedrawPaneSpan),
     Outside,
-    Empty,
-    Status(RedrawStatusSpan),
     Border(RedrawBorderSpan),
     Scrollbar(RedrawScrollbarSpan),
 }
@@ -57,10 +54,8 @@ impl redraw_span_data {
         match self {
             Self::Pane(_) => 0,
             Self::Outside => 1,
-            Self::Empty => 2,
-            Self::Status(_) => 3,
-            Self::Border(_) => 4,
-            Self::Scrollbar(_) => 5,
+            Self::Border(_) => 2,
+            Self::Scrollbar(_) => 3,
         }
     }
     pub fn pane(&self) -> &RedrawPaneSpan {
@@ -87,18 +82,6 @@ impl redraw_span_data {
         };
         data
     }
-    pub fn status(&self) -> &RedrawStatusSpan {
-        let Self::Status(data) = self else {
-            panic!("status span expected")
-        };
-        data
-    }
-    pub fn status_mut(&mut self) -> &mut RedrawStatusSpan {
-        let Self::Status(data) = self else {
-            panic!("status span expected")
-        };
-        data
-    }
     pub fn scrollbar(&self) -> &RedrawScrollbarSpan {
         let Self::Scrollbar(data) = self else {
             panic!("scrollbar span expected")
@@ -120,27 +103,14 @@ pub struct RedrawPaneSpan {
     pub py: u_int,
 }
 
+/// A separator cell. Every border is vertical: the pane on its left and the
+/// pane on its right, either missing at a strip end.
 #[derive(Clone, Default)]
 pub struct RedrawBorderSpan {
-    pub top_wp: Weak<UnsafeCell<window_pane>>,
-    pub bottom_wp: Weak<UnsafeCell<window_pane>>,
     pub left_wp: Weak<UnsafeCell<window_pane>>,
     pub right_wp: Weak<UnsafeCell<window_pane>>,
     pub style_wp: Weak<UnsafeCell<window_pane>>,
-    pub cell_type: ::core::ffi::c_int,
-    pub cell_mask: ::core::ffi::c_int,
-    pub top_lines: pane_lines,
-    pub bottom_lines: pane_lines,
-    pub left_lines: pane_lines,
-    pub right_lines: pane_lines,
     pub flags: ::core::ffi::c_int,
-}
-
-#[derive(Clone, Default)]
-pub struct RedrawStatusSpan {
-    pub wp: Weak<UnsafeCell<window_pane>>,
-    pub offset: u_int,
-    pub cell_type: ::core::ffi::c_int,
 }
 
 #[derive(Clone, Default)]
@@ -153,17 +123,9 @@ pub struct RedrawScrollbarSpan {
 
 impl PartialEq for RedrawBorderSpan {
     fn eq(&self, other: &Self) -> bool {
-        self.top_wp.ptr_eq(&other.top_wp)
-            && self.bottom_wp.ptr_eq(&other.bottom_wp)
-            && self.left_wp.ptr_eq(&other.left_wp)
+        self.left_wp.ptr_eq(&other.left_wp)
             && self.right_wp.ptr_eq(&other.right_wp)
             && self.style_wp.ptr_eq(&other.style_wp)
-            && self.cell_type == other.cell_type
-            && self.cell_mask == other.cell_mask
-            && self.top_lines == other.top_lines
-            && self.bottom_lines == other.bottom_lines
-            && self.left_lines == other.left_lines
-            && self.right_lines == other.right_lines
             && self.flags == other.flags
     }
 }
@@ -175,15 +137,6 @@ impl PartialEq for RedrawPaneSpan {
     }
 }
 impl Eq for RedrawPaneSpan {}
-
-impl PartialEq for RedrawStatusSpan {
-    fn eq(&self, other: &Self) -> bool {
-        self.wp.ptr_eq(&other.wp)
-            && self.offset == other.offset
-            && self.cell_type == other.cell_type
-    }
-}
-impl Eq for RedrawStatusSpan {}
 
 impl PartialEq for RedrawScrollbarSpan {
     fn eq(&self, other: &Self) -> bool {

@@ -121,7 +121,7 @@ use crate::src::shared::options::{options, options_array_item, options_entry};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{
     PANE_CMDRUNNING, PANE_INPUTOFF, PANE_MINIMUM, PANE_SCROLLBARS_ALWAYS, PANE_STATUSDRAWN,
-    PANE_STATUSREADY, PANE_STATUS_BOTTOM, PANE_STATUS_TOP, PANE_UNSEENCHANGES,
+    PANE_STATUSREADY, PANE_UNSEENCHANGES,
 };
 use crate::src::shared::paste::PasteBufferRef;
 use crate::src::shared::posix_io::FNM_CASEFOLD;

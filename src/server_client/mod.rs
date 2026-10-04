@@ -674,7 +674,7 @@ use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, PANE_ACTIVITY, PANE_EXITED, PANE_REDRAW,
     PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT, PANE_SCROLLBARS_MODAL,
-    PANE_SCROLLBARS_RIGHT, PANE_STATUS_BOTTOM, PANE_STATUS_OFF, PANE_STATUS_TOP, PANE_STYLECHANGED,
+    PANE_SCROLLBARS_RIGHT, PANE_STYLECHANGED,
 };
 use crate::src::shared::posix_io::{
     _PATH_BSHELL, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, X_OK,
@@ -1607,16 +1607,6 @@ unsafe fn server_client_check_mouse(
                 } else if loc as ::core::ffi::c_uint
                     == KEYC_MOUSE_LOCATION_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
-                    if let Some(range) = selected_pane
-                        .as_ref()
-                        .expect("mouse border pane")
-                        .status_range(px, py)
-                    {
-                        n = range.argument;
-                        loc = (KEYC_MOUSE_LOCATION_CONTROL0 as ::core::ffi::c_int as u_int)
-                            .wrapping_add(n)
-                            as key_code_mouse_location;
-                    }
                     log_debug(format_args!("mouse on pane %{} border", {
                         selected_pane.as_ref().expect("selected pane").id()
                     }));

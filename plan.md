@@ -1,8 +1,8 @@
 # Scrolling window implementation plan
 
 Status: written on 2026-10-03 against `main` at `f457d591`; it replaces the
-layout-based design. Steps 1 to 5 are done (see "Where things stand"); step 6
-is next. Line references are current as of step 5.
+layout-based design. Steps 1 to 6 are done (see "Where things stand"); step 7
+is next. Line references are current as of step 6.
 
 ## Direction
 
@@ -28,9 +28,9 @@ assumes the proposed answer to an open decision and marks it "proposed".
 | 1 | Keep tmux's command, option and format names as translations and stubs, or delete what has no strip meaning | Settled: delete | Step 3 |
 | 2 | `split-window`: block it, or make it an alias for insertion | Settled: alias | Step 3 |
 | 3 | `join-pane` and `break-pane` between windows | Settled: keep, as remove plus insert | Step 3 |
-| 4 | `pane-border-status` (per-pane title row, off by default) | Proposed: drop | Step 6 |
-| 5 | Active-pane indicator: half-coloured border on every separator | Proposed: adopt | Step 6 |
-| 6 | Blank area beside a trailing half pane: inside fill or outside fill | Proposed: outside fill, as tmux paints beyond a smaller window | Step 6 |
+| 4 | `pane-border-status` (per-pane title row, off by default) | Settled: drop | Step 6 |
+| 5 | Active-pane indicator: half-coloured border on every separator, or tmux's rule | Settled: keep tmux's rule | Step 6 |
+| 6 | Blank area beside a trailing half pane: inside fill or outside fill | Settled: outside fill, as tmux paints beyond a smaller window | Step 6 |
 | 7 | Menus and popups, the client overlays | Settled: delete, with the overlay mechanism | Done after step 5 |
 
 Steps 1 and 2 had kept stub names while decision 1 was open; step 3 deleted
@@ -57,6 +57,14 @@ them (see "Removed in step 3").
 - Borders follow tmux's existing rule: a pane draws its right border whenever
   there is room. A lone half pane therefore has a border at its right, and two
   halves on an even width show the last pane's border in the final column.
+- Borders are vertical separators as tall as the panes; nothing draws a
+  horizontal border or a junction. Whatever no pane, scrollbar or separator
+  covers shows the outside fill, beside the last pane and below a shorter
+  window alike.
+- The active pane's separators take `pane-active-border-style` as in tmux: each
+  separator beside the active pane is coloured whole, except that with exactly
+  two panes their one separator is split, the top half taking the left pane's
+  style and the bottom half the right pane's (decision 5).
 - Use `new-pane` for pane insertion; adding a pane is a distinct operation from
   splitting one. `split-window` is accepted as an alias for insertion and
   ignores its direction and size flags (decision 2).
@@ -75,6 +83,7 @@ them (see "Removed in step 3").
 | Step 4: width preference and `resize-pane -W` | `ebd35f47` | Done |
 | Step 5: viewport | The commit after `ebd35f47` | Done |
 | Overlays removed: menus, popups (decision 7) | With step 5 | Done |
+| Step 6: borders, pane status rows removed (decisions 4 to 6) | The commit after `f09340de` | Done |
 | Window sizing split (`Window::size()` vs. `layout::logical_size`) | `8e6e80db` | Kept. `Window::size()` stays the sizing basis; `Window::logical_size()` replaces `layout::logical_size` and, since step 5, is the scrollable extent (see Geometry) |
 | Sticky layouts (`sticky-layout` option, `sticky` and `lastlayout` fields) | `4b6e6435` | Removed in step 3 with `tests/sticky_layout.rs` |
 | Shared server harness (`tests/common/mod.rs`) | `4b6e6435` | Kept |
@@ -82,8 +91,8 @@ them (see "Removed in step 3").
 Reference material only, none of it mergeable: branch `h1` (worktree
 `/home/blmarket/h1`) and `stash@{0}`. Step 5 ported its PTY test client and
 replaced its minimal-scroll viewport with pane-boundary following. Still to
-port: the key map and its rendering test cases. Its mode flag and
-`src/layout/scrolling.rs` are superseded.
+port: the key map. Its mode flag and `src/layout/scrolling.rs` are
+superseded; step 6 wrote its own rendering cases.
 
 ### Step 3
 
@@ -100,10 +109,16 @@ port: the key map and its rendering test cases. Its mode flag and
 - Notifications are unchanged in shape: removal and detaching fire
   `window-layout-changed` (as `layout_close_pane` did); insertion is silent and
   its caller notifies; resize always fires; refit fires only on movement.
+  When the removed pane was active, `window_take_pane`
+  (`src/window/mod.rs:731`) makes its replacement active before arranging but
+  fires `window-pane-changed` only after `window-layout-changed`, the order
+  tmux and the tree used. Step 3 had reversed them; the fix came after step 6
+  and `tests/window_sizes.rs` checks the order for `kill-pane` and
+  `break-pane`.
 - The pane lost its `layout_cell` link, `place_in_layout`, `detach_layout`,
   `split_minimum_width` and `set_layout_offset`. `apply_layout` takes a
-  `layout_geometry`; every strip pane has the status row when
-  `pane-border-status` is on. `prepare_render` treats a pane outside its
+  `layout_geometry`; until step 6 every strip pane had the status row when
+  `pane-border-status` was on. `prepare_render` treats a pane outside its
   window's order as unplaced.
 - The horizontal minimum is the largest `minimum_layout_width` among the panes
   (it was the active pane's), so focus changes never change geometry.
@@ -112,8 +127,9 @@ port: the key map and its rendering test cases. Its mode flag and
   a strip that fit. Step 5 replaced it with the extent rule.
 - `#{window_layout}` is a single-row layout: a lone pane cell, or an `h` node of
   pane cells. `%layout-change` repeats it in the visible-layout field.
-- `display-panes` draws separators and status rows from `Window::pane_cells()`.
-  The redraw two-pane colour split always splits a vertical separator.
+- `display-panes` draws separators (and, until step 6, status rows) from
+  `Window::pane_cells()`. The redraw two-pane colour split always splits a
+  vertical separator.
 
 ### Step 4
 
@@ -125,7 +141,7 @@ port: the key map and its rendering test cases. Its mode flag and
   keeps it.
 - `strip::cells` and `strip::width` take the panes' widths; the arrange step
   reads them from the panes in order.
-- `Window::toggle_pane_width` (`src/window/api.rs:366`) flips the preference,
+- `Window::toggle_pane_width` (`src/window/api.rs:365`) flips the preference,
   arranges (which updates the client offsets since step 5), redraws and fires
   `window-layout-changed`, as `resize_window` does. Widening is refused when the
   extent would pass `WINDOW_MAXIMUM` (the strip width until step 5); narrowing
@@ -141,7 +157,7 @@ port: the key map and its rendering test cases. Its mode flag and
   first column plus the window width, at least the last pane's right edge, and
   the window width without panes. The arrange step records it in `extent`
   (`src/window/model.rs:54`) beside `strip_width`; `Window::logical_size()`
-  (`src/window/api.rs:412`) returns it. `window_strip_fits` checks the extent
+  (`src/window/api.rs:411`) returns it. `window_strip_fits` checks the extent
   against `WINDOW_MAXIMUM`, so three halves of a 5000-column window are the
   most it holds.
 - Following: `tty_window_offset1` (`src/tty.rs:1077`) runs `tty_follow_cell`
@@ -156,7 +172,7 @@ port: the key map and its rendering test cases. Its mode flag and
   only when the view leaves part of a pane out: a nonzero offset, or a strip
   wider or a window taller than the view. A view at the origin that shows every
   pane keeps the unclipped drawing path, as two halves did before step 5.
-- The arrange step (`window_arrange`, `src/window/mod.rs:810`) ends in
+- The arrange step (`window_arrange`, `src/window/mod.rs:798`) ends in
   `tty_update_window_offset`, so every geometry change re-follows. The explicit
   calls after the arrange in `toggle_pane_width` and `resize_window` went.
 - Panning: `Client::reset_pan` (`src/server_client/api.rs:476`) takes an
@@ -176,7 +192,7 @@ port: the key map and its rendering test cases. Its mode flag and
 - Mouse events were already translated by the client's view offset; the PTY
   tests confirm clicks after panning.
 - Positions measured across the panes rather than the extent: the `{left}`,
-  `{right}`, `{top}`, … targets (`window_find_string`, `src/window/mod.rs:634`)
+  `{right}`, `{top}`, … targets (`window_find_string`, `src/window/mod.rs:619`)
   use the strip width, `#{pane_at_right}` is the last pane in order, and the
   `display-panes` preview scales the strip widened to the window, not the
   extent.
@@ -187,6 +203,54 @@ port: the key map and its rendering test cases. Its mode flag and
   a client narrower than the active pane, mouse selection after panning,
   navigation ends and positional targets. `tests/window_sizes.rs`
   checks the maximum against the extent.
+
+### Step 6
+
+- Borders: `redraw_mark_pane_borders` (`src/screen_redraw.rs:389`) marks only
+  the vertical separators beside a pane, over the pane's rows: the one before
+  it when a column precedes the pane, the one after it while that column is
+  within the extent. The top and bottom borders, their corners and the
+  junction cell types (`redraw_get_cell_type`, the `REDRAW_BORDER_L/R/U/D`
+  masks) went, as did the top and bottom arrow indicators. A border span keeps
+  only its left and right panes, its style pane and its arrow flag
+  (`RedrawBorderSpan`, `src/shared/redraw.rs`); every separator draws the
+  vertical glyph, so `window_get_border_cell` and `WindowPane::border_cell`
+  lost their cell type. The `CELL_*` junctions stay for `screen_write` boxes.
+- Fill (decision 6): `redraw_reset_cell` (`src/screen_redraw.rs:186`) starts
+  every cell as outside, so whatever no pane, scrollbar or separator covers
+  shows the outside fill, past the last pane as much as below a shorter window.
+  The inside fill had no other use and went: the `Empty` span and
+  `REDRAW_EMPTY`, the Window's second fill cell (`fill_cell` in
+  `src/window/model.rs:68`, rendered by `Window::refresh_fill_cell`,
+  `src/window/api.rs:436`) and the `is_inside`/`is_outside` format variables.
+  The `fill-character` default is `#[fg=themelightgrey]#[acs]~`.
+- Indicator (decision 5): unchanged. `redraw_mark_two_pane_colours`
+  (`src/screen_redraw.rs:454`) still splits the one separator of a two-pane
+  window; with more panes every separator beside the active pane takes its
+  style whole, and the last pane's trailing border, which has one neighbour,
+  follows the same rule.
+- Pane status rows (decision 4): the `pane-border-status` and
+  `pane-border-format` options (the table has 256 entries), the status span
+  and `REDRAW_PANE_STATUS`, `make_status`, `redraw_get_status_border_cell_type`,
+  the pane's status screen and status-line ranges, `PANE_NEWSTATUS`,
+  `WindowPane::border_status`/`status_range` and
+  `Window::pane_border_status`. `apply_layout` no longer takes a row from each
+  pane, `#{pane_at_top}`/`#{pane_at_bottom}` and the `{top}`/`{bottom}`
+  targets use the full height, and a click on a pane border never selects a
+  control range (status-line control ranges are unchanged).
+- Mouse: a pane owns its rows and the separator column after it
+  (`window_get_active_at`, `src/window/mod.rs:595`); the row below a shorter
+  window is empty area, not a border. `mouse_location_in`
+  (`src/window_pane/mouse.rs:57`) reports anything outside the pane's
+  interior and scrollbar as its border.
+- `display-panes`: the preview draws one vertical line after every pane but
+  the last (`window_panes_draw_borders`, `src/window_panes.rs:341`).
+- Tests: the PTY screen model in `tests/common/mod.rs` keeps each cell's
+  foreground colour and maps DEC line drawing to UTF-8, so ACS and UTF-8
+  clients compare alike. `tests/borders.rs` covers the lone half pane's
+  border and fill, the even and odd widths, a shorter window and the panned
+  blank extent with no horizontal border, and the indicator with three panes
+  and with two. `tests/window_sizes.rs` checks the status options are gone.
 
 ### Overlays removed (decision 7)
 
@@ -268,10 +332,10 @@ borrows before resizing panes or dispatching callbacks.
 
 ### Arrange
 
-Done in steps 3 to 5. `window_arrange` (`src/window/mod.rs:810`) computes every
+Done in steps 3 to 5. `window_arrange` (`src/window/mod.rs:798`) computes every
 pane's rectangle from the pane order, the panes' width preferences,
 `Window::size()` and the pane scrollbar options (`src/window/strip.rs`), applies
-them through `apply_layout` (`src/window_pane/api.rs:831`), records the strip
+them through `apply_layout` (`src/window_pane/api.rs:800`), records the strip
 width and the extent, invalidates the scene on movement and updates the offsets
 of the clients showing the window. Every Window operation that changes an input
 ends in it; see "Step 3" and "Step 4" for the operations and their
@@ -283,11 +347,11 @@ With `(W, H) = Window::size()` and the panes in order:
 
 | Quantity | Value |
 | --- | --- |
-| Half width | `(W - 1) / 2` rounded down, raised to the horizontal minimum (the largest pane minimum, `src/window/mod.rs:766`) |
+| Half width | `(W - 1) / 2` rounded down, raised to the horizontal minimum (the largest pane minimum, `src/window/mod.rs:754`) |
 | Full width | `W`, raised to the same minimum |
 | Pane height | `H`, less scrollbar and status adjustments as today |
 | Pane first column | Previous pane's first column, plus its width, plus one separator |
-| Scrollable extent | Last pane's first column plus `W`, and at least the last pane's right edge; `W` without panes. `Window::logical_size()` (`src/window/api.rs:412`) returns it |
+| Scrollable extent | Last pane's first column plus `W`, and at least the last pane's right edge; `W` without panes. `Window::logical_size()` (`src/window/api.rs:411`) returns it |
 
 - Two halves and their separator always fit in `W`. An even `W` leaves one spare
   column at the right edge.
@@ -316,18 +380,20 @@ Done in step 5; see "Step 5" for the details.
 
 ### Borders
 
-- Keep the marking rule in `redraw_mark_pane_borders`
-  (`src/screen_redraw.rs:533`): left when there is a column before the pane,
-  right when it is within the extent.
-- Delete horizontal borders and junction cell types. The floating border and
-  clipping code went in step 1. Panes never overlap, so visible-range clipping
-  against other panes goes too.
-- Active-pane indicator (proposed): on every separator the top half takes the
-  left pane's style and the bottom half the right pane's. This replaces
-  `redraw_check_two_pane_colours` (`src/screen_redraw.rs:262`), which only
-  handles exactly two panes.
-- The `display-panes` preview (`src/window_panes.rs`) draws from the pane
-  rectangles since step 3.
+Done in step 6; see "Step 6" for the details.
+
+- `redraw_mark_pane_borders` (`src/screen_redraw.rs:389`) keeps the marking
+  rule: left when there is a column before the pane, right when it is within
+  the extent. Separators are as tall as the panes; there are no horizontal
+  borders or junctions. The floating border and clipping code went in step 1.
+- Everything else is the outside fill (decision 6).
+- Active-pane indicator: tmux's rule (decision 5).
+  `redraw_check_two_pane_colours` (`src/screen_redraw.rs:230`) splits the
+  separator of a two-pane window; otherwise the separators beside the active
+  pane take its style whole.
+- No pane status rows (decision 4).
+- The `display-panes` preview (`src/window_panes.rs:341`) draws one vertical
+  line after every pane but the last.
 
 ### Commands
 
@@ -369,7 +435,7 @@ rest. "Done" marks rows step 3 completed.
 | `Ctrl+a x` | Close the active pane | `kill-pane` | `confirm-before … kill-pane` (`:255`) |
 | `Ctrl+a Ctrl+a` | Send a literal Ctrl+a to the application | `send-prefix` | `C-b` (`:202`) |
 
-- The prefix default is `C-b` at `src/options_table.rs:1311`.
+- The prefix default is `C-b` at `src/options_table.rs:1308`.
 - Uppercase `H` and `L` are bound as literal characters, distinct from lowercase.
 - Remove the bindings for split and break features: splits (`"`, `%`) and `!`.
   Step 3 already removed the layout, tiled resize and border-drag bindings, and
@@ -429,8 +495,9 @@ tree still exists, so step 3 replaces a purely tiled tree.
    selection, navigation that stops at the ends with up/down removed, and
    positional targets measured across the panes. `tests/common/mod.rs` has a PTY client and `tests/viewport.rs`
    covers the viewport. See "Step 5".
-6. **Borders.** Delete horizontal borders and junctions, add the active-pane
-   indicator, and apply decisions 4 and 6.
+6. **Borders.** Done. Vertical separators only, the outside fill for whatever
+   no pane covers, tmux's active-pane indicator, and no pane status rows
+   (decisions 4 to 6). `tests/borders.rs` covers the rendering. See "Step 6".
 7. **Defaults and keys.** `C-a` prefix, the key map, removal of the split and
    break bindings, accurate help text. Fix tests that assume the old defaults;
    `h1` touched `client_file_protocol`, `copy_regex_cells`,
@@ -453,10 +520,10 @@ client that models its screen. Viewport and rendering cases use it.
 | Resizing | Grow and shrink the terminal; no repeated resize scheduling; silent when nothing moves |
 | Focus | Already visible pane; partially visible pane; offscreen pane in each direction; no wrapping at either end; no cursor-driven drift |
 | Viewport | The view rests on a pane boundary from both directions on even and odd widths; manual pan and reset; clients of different widths; active pane wider than a client |
-| Rendering | Right border of a lone half pane; spare column on even widths; active-pane indicator with three or more panes; mouse selection after panning |
+| Rendering | Right border of a lone half pane; spare column on even widths; no horizontal border below a shorter window; outside fill beside the last pane; active-pane indicator with two and with three panes; mouse selection after panning |
 | Environment | Session environment and `-e` overrides; `-c '#{pane_current_path}'` after `cd`; paths with spaces; directory fallback |
 | Defaults and keys | `C-a` prefix; c/h/l/f/H/L/x actions; uppercase/lowercase distinct; prefix passthrough; user overrides |
-| Compatibility | `split-window` inserts and ignores its split flags; removed commands, flags and options are rejected; `#{window_layout}` is a single-row layout |
+| Compatibility | `split-window` inserts and ignores its split flags; removed commands, flags and options (including `pane-border-status` and `pane-border-format`) are rejected; `#{window_layout}` is a single-row layout |
 | Regression | `tests/model_trait_boundary.rs`; copy mode and choosers; `src/compat/` untouched |
 
 Run the Rust tests after each step, then a build and isolated interactive smoke
@@ -473,6 +540,9 @@ checks.
 - The view keeps the nearest boundary rather than following content. Removing a
   pane before the active one can leave it showing the blank extent past the last
   pane until another pane is selected.
+- The two-pane separator split counts the window's panes, not the visible
+  ones: a view showing two of three panes colours a separator beside the
+  active pane whole (decision 5).
 - `job_run` keeps its `JOB_PTY` path (and the `sx`/`sy` arguments every caller
   passes as -1), although no caller asks for a pseudo-terminal since popups went.
 

@@ -12,7 +12,6 @@ use crate::src::server::{marked_pane, server_is_marked};
 use crate::src::server_client::Client as _;
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
-use crate::src::shared::borders::{CELL_NONE, CELL_UD};
 use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::{
@@ -28,8 +27,7 @@ use crate::src::shared::limits::SIZE_MAX;
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{
-    PANE_BORDER_ARROWS, PANE_BORDER_BOTH, PANE_BORDER_COLOUR, PANE_NEWSTATUS, PANE_SCROLLBARS_LEFT,
-    PANE_STATUS_BOTTOM, PANE_STATUS_OFF, PANE_STATUS_TOP,
+    PANE_BORDER_ARROWS, PANE_BORDER_BOTH, PANE_BORDER_COLOUR, PANE_SCROLLBARS_LEFT,
 };
 use crate::src::shared::prompt::prompt_draw_data;
 use crate::src::shared::redraw::{
@@ -67,10 +65,8 @@ use crate::src::window_border::{window_get_border_cell, window_get_fill_cell};
 use crate::src::window_copy::window_copy_get_current_offset;
 use std::cell::RefCell;
 
-pub const REDRAW_SPAN_SCROLLBAR: redraw_span_type = 5;
-pub const REDRAW_SPAN_BORDER: redraw_span_type = 4;
-pub const REDRAW_SPAN_STATUS: redraw_span_type = 3;
-pub const REDRAW_SPAN_EMPTY: redraw_span_type = 2;
+pub const REDRAW_SPAN_SCROLLBAR: redraw_span_type = 3;
+pub const REDRAW_SPAN_BORDER: redraw_span_type = 2;
 pub const REDRAW_SPAN_OUTSIDE: redraw_span_type = 1;
 pub const REDRAW_SPAN_PANE: redraw_span_type = 0;
 
@@ -100,20 +96,14 @@ pub struct redraw_build_ctx<'a> {
     pub cells: &'a mut [redraw_build_cell],
 }
 
-pub const REDRAW_SPAN_TYPES: ::core::ffi::c_int = 6 as ::core::ffi::c_int;
-pub const REDRAW_BORDER_L: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
-pub const REDRAW_BORDER_R: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const REDRAW_BORDER_U: ::core::ffi::c_int = 4;
-pub const REDRAW_BORDER_D: ::core::ffi::c_int = 8;
+pub const REDRAW_SPAN_TYPES: ::core::ffi::c_int = 4 as ::core::ffi::c_int;
 pub const REDRAW_BORDER_IS_ARROW: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const REDRAW_SCROLLBAR_LEFT: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
 pub const REDRAW_SCROLLBAR_RIGHT: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const REDRAW_SCROLLBAR_OVERLAY: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 pub const REDRAW_PANE: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;
 pub const REDRAW_OUTSIDE: ::core::ffi::c_int = 0x2 as ::core::ffi::c_int;
-pub const REDRAW_EMPTY: ::core::ffi::c_int = 0x4 as ::core::ffi::c_int;
 pub const REDRAW_PANE_BORDER: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
-pub const REDRAW_PANE_STATUS: ::core::ffi::c_int = 0x10 as ::core::ffi::c_int;
 pub const REDRAW_PANE_SCROLLBAR: ::core::ffi::c_int = 0x20 as ::core::ffi::c_int;
 pub const REDRAW_STATUS: ::core::ffi::c_int = 0x40 as ::core::ffi::c_int;
 pub const REDRAW_ALL: ::core::ffi::c_int = 0x7fffffff as ::core::ffi::c_int;
@@ -153,7 +143,6 @@ fn redraw_flags_to_string(flags: ::core::ffi::c_int) -> std::ffi::CString {
         (REDRAW_STATUS, "status"),
         (REDRAW_PANE, "pane"),
         (REDRAW_PANE_BORDER, "border"),
-        (REDRAW_PANE_STATUS, "pane-status"),
         (REDRAW_PANE_SCROLLBAR, "scrollbar"),
     ] {
         if flags & flag != 0 {
@@ -191,16 +180,12 @@ unsafe fn redraw_get_build_cell(
     let index = y as usize * (*bctx).sx as usize + x as usize;
     &raw mut (*bctx).cells[index]
 }
+/// Whatever a pane, its scrollbar or a separator does not cover shows the
+/// outside fill: the blank extent beside the last pane as much as the area
+/// beyond a smaller window.
 unsafe fn redraw_reset_cell(mut bctx: *mut redraw_build_ctx, mut x: u_int, mut y: u_int) {
     let mut bc: *mut redraw_build_cell = redraw_get_build_cell(bctx, x, y);
-    (*bc).data = redraw_span_data::default();
-    if (*bctx).ox.wrapping_add(x) < (*bctx).w.logical_size().0
-        && (*bctx).oy.wrapping_add(y) < (*bctx).w.logical_size().1
-    {
-        (*bc).data = redraw_span_data::Empty;
-    } else {
-        (*bc).data = redraw_span_data::Outside;
-    };
+    (*bc).data = redraw_span_data::Outside;
 }
 unsafe fn redraw_window_to_scene(
     mut bctx: *mut redraw_build_ctx,
@@ -240,23 +225,6 @@ unsafe fn redraw_pane_to_scene(
     let mut wx: ::core::ffi::c_int = wp.geometry().2 + px;
     let mut wy: ::core::ffi::c_int = wp.geometry().3 + py;
     redraw_window_to_scene(bctx, wx, wy, x, y)
-}
-unsafe fn redraw_get_cell_type(mut mask: ::core::ffi::c_int) -> ::core::ffi::c_int {
-    match mask {
-        15 => return 11 as ::core::ffi::c_int,
-        7 => return 8 as ::core::ffi::c_int,
-        11 => return 7 as ::core::ffi::c_int,
-        3 | REDRAW_BORDER_L | REDRAW_BORDER_R => return 2 as ::core::ffi::c_int,
-        13 => return 10 as ::core::ffi::c_int,
-        5 => return 6 as ::core::ffi::c_int,
-        9 => return 4 as ::core::ffi::c_int,
-        14 => return 9 as ::core::ffi::c_int,
-        6 => return 5 as ::core::ffi::c_int,
-        10 => return 3 as ::core::ffi::c_int,
-        12 | REDRAW_BORDER_U | REDRAW_BORDER_D => return 1 as ::core::ffi::c_int,
-        _ => {}
-    }
-    12 as ::core::ffi::c_int
 }
 /// Two strip panes share one vertical separator, which splits its colour.
 unsafe fn redraw_check_two_pane_colours(w: &WindowRef) -> bool {
@@ -359,177 +327,65 @@ fn redraw_data_has_pane(
     pane: &std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
 ) -> bool {
     let border = data.border();
-    [
-        &border.top_wp,
-        &border.bottom_wp,
-        &border.left_wp,
-        &border.right_wp,
-    ]
-    .iter()
-    .any(|observer| observer.ptr_eq(pane))
+    border.left_wp.ptr_eq(pane) || border.right_wp.ptr_eq(pane)
 }
+/// Mark the separator cell at window position (`wx`, `wy`) beside `wp`: the
+/// pane is on the cell's right when the cell precedes it, else on its left.
 unsafe fn redraw_mark_border_cell(
     mut bctx: *mut redraw_build_ctx,
     mut wx: ::core::ffi::c_int,
     mut wy: ::core::ffi::c_int,
     wp: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    mut top_owner: ::core::ffi::c_int,
-    mut bottom_owner: ::core::ffi::c_int,
-    mut mask: ::core::ffi::c_int,
-    mut pane_lines: pane_lines,
 ) {
-    let mut bc: *mut redraw_build_cell = ::core::ptr::null_mut::<redraw_build_cell>();
     let mut x: u_int = 0;
     let mut y: u_int = 0;
-    let mut reset: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     if redraw_window_to_scene(bctx, wx, wy, &raw mut x, &raw mut y) == 0 {
         return;
     }
-    bc = redraw_get_build_cell(bctx, x, y);
-    if (*bc).data.kind() as ::core::ffi::c_uint
-        == REDRAW_SPAN_EMPTY as ::core::ffi::c_int as ::core::ffi::c_uint
-        || (*bc).data.kind() as ::core::ffi::c_uint
-            == REDRAW_SPAN_OUTSIDE as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        reset = 1 as ::core::ffi::c_int;
-    } else if (*bc).data.kind() as ::core::ffi::c_uint
-        != REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return;
+    let bc = redraw_get_build_cell(bctx, x, y);
+    match (*bc).data.kind() {
+        REDRAW_SPAN_OUTSIDE => (*bc).data = redraw_span_data::Border(Default::default()),
+        REDRAW_SPAN_BORDER => {}
+        _ => return,
     }
-    if reset != 0 {
-        (*bc).data = redraw_span_data::Border(Default::default());
-    }
-    if top_owner != 0 {
-        (*bc).data.border_mut().top_wp = std::rc::Rc::downgrade(wp);
-        (*bc).data.border_mut().top_lines = pane_lines;
-    }
-    if bottom_owner != 0 {
-        (*bc).data.border_mut().bottom_wp = std::rc::Rc::downgrade(wp);
-        (*bc).data.border_mut().bottom_lines = pane_lines;
-    }
-    if mask & (REDRAW_BORDER_U | REDRAW_BORDER_D) != 0 {
-        if wx < wp.geometry().2 {
-            (*bc).data.border_mut().right_wp = std::rc::Rc::downgrade(wp);
-            (*bc).data.border_mut().right_lines = pane_lines;
-        } else if wx >= wp.geometry().2 + wp.geometry().0 as ::core::ffi::c_int {
-            (*bc).data.border_mut().left_wp = std::rc::Rc::downgrade(wp);
-            (*bc).data.border_mut().left_lines = pane_lines;
-        }
-    }
-    mask |= (*bc).data.border().cell_mask;
-    (*bc).data.border_mut().cell_mask = mask;
-    (*bc).data.border_mut().cell_type = redraw_get_cell_type(mask);
-}
-unsafe fn redraw_mark_border_status(
-    mut bctx: *mut redraw_build_ctx,
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    mut right: ::core::ffi::c_int,
-    mut top: ::core::ffi::c_int,
-    mut bottom: ::core::ffi::c_int,
-) {
-    let wp = wp_owner;
-    let mut bc: *mut redraw_build_cell = ::core::ptr::null_mut::<redraw_build_cell>();
-    let mut x: u_int = 0;
-    let mut y: u_int = 0;
-    let mut off: u_int = 0 as u_int;
-    let mut pane_status: ::core::ffi::c_int = 0;
-    let mut wy: ::core::ffi::c_int = 0;
-    let mut sx: ::core::ffi::c_int = 0;
-    let mut ex: ::core::ffi::c_int = 0;
-    let mut wx: ::core::ffi::c_int = 0;
-    let mut cell_type: ::core::ffi::c_int = 0;
-    pane_status = wp.border_status();
-    if pane_status == PANE_STATUS_OFF {
-        return;
-    }
-    if pane_status == PANE_STATUS_TOP {
-        wy = top;
+    let border = (*bc).data.border_mut();
+    if wx < wp.geometry().2 {
+        border.right_wp = std::rc::Rc::downgrade(wp);
     } else {
-        wy = bottom;
-    }
-    sx = wp.geometry().2 + 2 as ::core::ffi::c_int;
-    ex = right - 1 as ::core::ffi::c_int;
-    if sx > ex {
-        return;
-    }
-    wx = sx;
-    while wx <= ex {
-        if !(redraw_window_to_scene(bctx, wx, wy, &raw mut x, &raw mut y) == 0) {
-            bc = redraw_get_build_cell(bctx, x, y);
-            if !((*bc).data.kind() as ::core::ffi::c_uint
-                != REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint)
-            {
-                cell_type = (*bc).data.border().cell_type;
-                (*bc).data = redraw_span_data::Status(Default::default());
-                (*bc).data.status_mut().wp = std::rc::Rc::downgrade(wp);
-                (*bc).data.status_mut().offset = off;
-                (*bc).data.status_mut().cell_type = cell_type;
-            }
-        }
-        wx += 1;
-        off = off.wrapping_add(1);
+        border.left_wp = std::rc::Rc::downgrade(wp);
     }
 }
+/// Mark the arrow cells on the second row of the separators at `left` and
+/// `right` beside `wp`.
 unsafe fn redraw_mark_border_arrows(
     mut bctx: *mut redraw_build_ctx,
     wp: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut left: ::core::ffi::c_int,
     mut right: ::core::ffi::c_int,
-    mut top: ::core::ffi::c_int,
-    mut bottom: ::core::ffi::c_int,
 ) {
-    let mut bc: *mut redraw_build_cell = ::core::ptr::null_mut::<redraw_build_cell>();
     let mut x: u_int = 0;
     let mut y: u_int = 0;
-    let mut wx: ::core::ffi::c_int = 0;
-    let mut wy: ::core::ffi::c_int = 0;
     if (*bctx).ind != PANE_BORDER_ARROWS && (*bctx).ind != PANE_BORDER_BOTH {
         return;
     }
-    wx = wp.geometry().2 + 1 as ::core::ffi::c_int;
-    if wx >= left && wx <= right {
-        wy = top;
-        if redraw_window_to_scene(bctx, wx, wy, &raw mut x, &raw mut y) != 0 {
-            bc = redraw_get_build_cell(bctx, x, y);
-            if (*bc).data.kind() as ::core::ffi::c_uint
-                == REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                (*bc).data.border_mut().flags |= REDRAW_BORDER_IS_ARROW;
-            }
-        }
-        wy = bottom;
-        if redraw_window_to_scene(bctx, wx, wy, &raw mut x, &raw mut y) != 0 {
-            bc = redraw_get_build_cell(bctx, x, y);
-            if (*bc).data.kind() as ::core::ffi::c_uint
-                == REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                (*bc).data.border_mut().flags |= REDRAW_BORDER_IS_ARROW;
-            }
-        }
+    let (_, sy, _, yoff) = wp.geometry();
+    let wy = yoff + 1;
+    if wy >= yoff + sy as ::core::ffi::c_int {
+        return;
     }
-    wy = wp.geometry().3 + 1 as ::core::ffi::c_int;
-    if wy >= top && wy <= bottom {
-        wx = left;
+    for wx in [left, right] {
         if redraw_window_to_scene(bctx, wx, wy, &raw mut x, &raw mut y) != 0 {
-            bc = redraw_get_build_cell(bctx, x, y);
-            if (*bc).data.kind() as ::core::ffi::c_uint
-                == REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                (*bc).data.border_mut().flags |= REDRAW_BORDER_IS_ARROW;
-            }
-        }
-        wx = right;
-        if redraw_window_to_scene(bctx, wx, wy, &raw mut x, &raw mut y) != 0 {
-            bc = redraw_get_build_cell(bctx, x, y);
-            if (*bc).data.kind() as ::core::ffi::c_uint
-                == REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
+            let bc = redraw_get_build_cell(bctx, x, y);
+            if (*bc).data.kind() == REDRAW_SPAN_BORDER {
                 (*bc).data.border_mut().flags |= REDRAW_BORDER_IS_ARROW;
             }
         }
     }
 }
+/// Mark the vertical separators beside `wp`, as tall as the pane: the one
+/// before it when a column precedes the pane, and the one after it while that
+/// column is within the extent. There are no horizontal borders; every pane
+/// spans the window's height.
 unsafe fn redraw_mark_pane_borders(
     mut bctx: *mut redraw_build_ctx,
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
@@ -537,135 +393,25 @@ unsafe fn redraw_mark_pane_borders(
     mut sb_left: ::core::ffi::c_int,
 ) {
     let wp = wp_owner;
-    let mut pane_lines: pane_lines = wp.pane_lines();
-    let mut pane_status: ::core::ffi::c_int = 0;
-    let mut left: ::core::ffi::c_int = 0;
-    let mut right: ::core::ffi::c_int = 0;
-    let mut top: ::core::ffi::c_int = 0;
-    let mut bottom: ::core::ffi::c_int = 0;
-    let mut wx: ::core::ffi::c_int = 0;
-    let mut wy: ::core::ffi::c_int = 0;
-    let mut mark_top: ::core::ffi::c_int = 0;
-    let mut mark_bottom: ::core::ffi::c_int = 0;
-    let mut mark_left: ::core::ffi::c_int = 0;
-    let mut mark_right: ::core::ffi::c_int = 0;
-    let mut mask: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    pane_status = wp.border_status();
-    left = wp.geometry().2 - 1 as ::core::ffi::c_int;
-    right = (wp.geometry().2 as u_int).wrapping_add(wp.geometry().0) as ::core::ffi::c_int;
-    if sb_w != 0 as ::core::ffi::c_int {
+    let (sx, sy, xoff, yoff) = wp.geometry();
+    let mut left = xoff - 1;
+    let mut right = xoff + sx as ::core::ffi::c_int;
+    if sb_w != 0 {
         if sb_left != 0 {
             left -= sb_w;
         } else {
             right += sb_w;
         }
     }
-    top = wp.geometry().3 - 1 as ::core::ffi::c_int;
-    bottom = (wp.geometry().3 as u_int).wrapping_add(wp.geometry().1) as ::core::ffi::c_int;
-    mark_left = (left >= 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
-    mark_top = (top >= 0 as ::core::ffi::c_int) as ::core::ffi::c_int;
-    mark_right = (right <= (*bctx).w.logical_size().0 as ::core::ffi::c_int) as ::core::ffi::c_int;
-    mark_bottom =
-        (bottom <= (*bctx).w.logical_size().1 as ::core::ffi::c_int) as ::core::ffi::c_int;
-    if pane_status == PANE_STATUS_TOP && bottom < (*bctx).w.logical_size().1 as ::core::ffi::c_int {
-        mark_bottom = 0 as ::core::ffi::c_int;
-    } else if pane_status == PANE_STATUS_BOTTOM {
-        mark_top = 0 as ::core::ffi::c_int;
-    }
-    if mark_top != 0 {
-        wx = left;
-        while wx <= right {
-            mask = 0 as ::core::ffi::c_int;
-            if wx > left {
-                mask |= REDRAW_BORDER_L;
+    let extent = (*bctx).w.logical_size().0 as ::core::ffi::c_int;
+    for (mark, wx) in [(left >= 0, left), (right <= extent, right)] {
+        if mark {
+            for wy in yoff..yoff + sy as ::core::ffi::c_int {
+                redraw_mark_border_cell(bctx, wx, wy, wp);
             }
-            if wx < right {
-                mask |= REDRAW_BORDER_R;
-            }
-            redraw_mark_border_cell(
-                bctx,
-                wx,
-                top,
-                wp,
-                0 as ::core::ffi::c_int,
-                1 as ::core::ffi::c_int,
-                mask,
-                pane_lines,
-            );
-            wx += 1;
         }
     }
-    if mark_bottom != 0 {
-        wx = left;
-        while wx <= right {
-            mask = 0 as ::core::ffi::c_int;
-            if wx > left {
-                mask |= REDRAW_BORDER_L;
-            }
-            if wx < right {
-                mask |= REDRAW_BORDER_R;
-            }
-            redraw_mark_border_cell(
-                bctx,
-                wx,
-                bottom,
-                wp,
-                1 as ::core::ffi::c_int,
-                0 as ::core::ffi::c_int,
-                mask,
-                pane_lines,
-            );
-            wx += 1;
-        }
-    }
-    if mark_left != 0 {
-        wy = top;
-        while wy <= bottom {
-            mask = 0 as ::core::ffi::c_int;
-            if wy > top {
-                mask |= REDRAW_BORDER_U;
-            }
-            if wy < bottom {
-                mask |= REDRAW_BORDER_D;
-            }
-            redraw_mark_border_cell(
-                bctx,
-                left,
-                wy,
-                wp,
-                0 as ::core::ffi::c_int,
-                0 as ::core::ffi::c_int,
-                mask,
-                pane_lines,
-            );
-            wy += 1;
-        }
-    }
-    if mark_right != 0 {
-        wy = top;
-        while wy <= bottom {
-            mask = 0 as ::core::ffi::c_int;
-            if wy > top {
-                mask |= REDRAW_BORDER_U;
-            }
-            if wy < bottom {
-                mask |= REDRAW_BORDER_D;
-            }
-            redraw_mark_border_cell(
-                bctx,
-                right,
-                wy,
-                wp,
-                0 as ::core::ffi::c_int,
-                0 as ::core::ffi::c_int,
-                mask,
-                pane_lines,
-            );
-            wy += 1;
-        }
-    }
-    redraw_mark_border_status(bctx, wp_owner, right, top, bottom);
-    redraw_mark_border_arrows(bctx, wp, left, right, top, bottom);
+    redraw_mark_border_arrows(bctx, wp, left, right);
 }
 unsafe fn redraw_mark_pane(
     mut bctx: *mut redraw_build_ctx,
@@ -747,11 +493,8 @@ fn redraw_compare_data(a: &redraw_build_cell, b: &redraw_build_cell) -> bool {
     match (&a.data, &b.data) {
         (Pane(a), Pane(b)) => a.wp.ptr_eq(&b.wp) && a.py == b.py && a.px.wrapping_add(1) == b.px,
         (Border(a), Border(b)) => a == b && a.flags & REDRAW_BORDER_IS_ARROW == 0,
-        (Status(a), Status(b)) => {
-            a.wp.ptr_eq(&b.wp) && a.offset.wrapping_add(1) == b.offset && a.cell_type == b.cell_type
-        }
         (Scrollbar(a), Scrollbar(b)) => a == b,
-        (Outside, Outside) | (Empty, Empty) => true,
+        (Outside, Outside) => true,
         _ => false,
     }
 }
@@ -987,7 +730,6 @@ unsafe fn redraw_draw_pane_span(
         ),
         n,
         (x, y),
-        false,
     );
 }
 unsafe fn redraw_get_default_border_style(
@@ -1051,14 +793,10 @@ fn redraw_get_pane_for_border_style(
             }
         }
     }
-    [
-        &border.top_wp,
-        &border.bottom_wp,
-        &border.left_wp,
-        &border.right_wp,
-    ]
-    .iter()
-    .find_map(|observer| observer.upgrade())
+    border
+        .left_wp
+        .upgrade()
+        .or_else(|| border.right_wp.upgrade())
 }
 unsafe fn redraw_draw_border_arrow(
     dctx: &mut redraw_draw_ctx<'_>,
@@ -1080,10 +818,6 @@ unsafe fn redraw_draw_border_arrow(
         ch = ',' as i32 as ::core::ffi::c_char;
     } else if span.data.border().right_wp.ptr_eq(active) {
         ch = '+' as i32 as ::core::ffi::c_char;
-    } else if span.data.border().top_wp.ptr_eq(active) {
-        ch = '-' as i32 as ::core::ffi::c_char;
-    } else if span.data.border().bottom_wp.ptr_eq(active) {
-        ch = '.' as i32 as ::core::ffi::c_char;
     } else {
         return;
     }
@@ -1121,54 +855,28 @@ unsafe fn redraw_draw_border_span(
     };
     let mut pane_lines: pane_lines = PANE_LINES_SINGLE;
     let mut i: u_int = 0;
-    let mut cell_type: u_int = 0;
+    let border = span.data.kind() == REDRAW_SPAN_BORDER;
     let mut border_pane_owner = None;
     let mut isolates: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
-    if span.data.kind() as ::core::ffi::c_uint
-        != REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        cell_type = CELL_NONE as u_int;
-    } else {
+    if border {
         border_pane_owner = redraw_get_pane_for_border_style(Some(&dctx.active), span);
-        cell_type = span.data.border().cell_type as u_int;
     }
-    if border_pane_owner.is_none() {
-        redraw_get_default_border_style(dctx, &raw mut gc, &raw mut pane_lines);
-        if span.data.kind() as ::core::ffi::c_uint
-            == REDRAW_SPAN_OUTSIDE as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            window_get_fill_cell(&window_owner, 0 as ::core::ffi::c_int, &raw mut gc);
-        } else if span.data.kind() as ::core::ffi::c_uint
-            == REDRAW_SPAN_EMPTY as ::core::ffi::c_int as ::core::ffi::c_uint
-        {
-            window_get_fill_cell(&window_owner, 1 as ::core::ffi::c_int, &raw mut gc);
-        } else {
-            if span.data.kind() as ::core::ffi::c_uint
-                != REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
-            {
-                pane_lines = PANE_LINES_SINGLE;
-            }
-            window_get_border_cell(None, pane_lines, cell_type as ::core::ffi::c_int, &mut gc);
-        }
+    if let Some(owner) = border_pane_owner.as_ref() {
+        gc = owner.border_style(&client_owner);
+        owner.border_cell(&mut gc);
     } else {
-        gc = border_pane_owner
-            .as_ref()
-            .expect("border pane")
-            .border_style(&client_owner);
-        border_pane_owner
-            .as_ref()
-            .expect("border pane")
-            .border_cell(cell_type as i32, &mut gc);
+        redraw_get_default_border_style(dctx, &raw mut gc, &raw mut pane_lines);
+        if border {
+            window_get_border_cell(None, pane_lines, &mut gc);
+        } else {
+            window_get_fill_cell(&window_owner, &raw mut gc);
+        }
     }
-    if span.data.kind() as ::core::ffi::c_uint
-        == REDRAW_SPAN_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
-        && dctx.marked.strong_count() != 0
-        && redraw_data_has_pane(&span.data, &dctx.marked)
-    {
+    if border && dctx.marked.strong_count() != 0 && redraw_data_has_pane(&span.data, &dctx.marked) {
         gc.attr = (gc.attr as ::core::ffi::c_int ^ GRID_ATTR_REVERSE) as u_short;
     }
     redraw_draw_border_arrow(dctx, span, &raw mut gc);
-    if cell_type == CELL_UD as u_int && dctx.flags & REDRAW_ISOLATES != 0 {
+    if border && dctx.flags & REDRAW_ISOLATES != 0 {
         isolates = 1 as ::core::ffi::c_int;
     }
     {
@@ -1193,33 +901,6 @@ unsafe fn redraw_draw_border_span(
         };
     }
 }
-unsafe fn redraw_draw_status_span(
-    dctx: &mut redraw_draw_ctx<'_>,
-    span: &redraw_span,
-    mut x: u_int,
-    mut y: u_int,
-    mut n: u_int,
-) {
-    let Some(pane) = span.data.status().wp.upgrade() else {
-        return;
-    };
-    let Some(client) = dctx.scene.c.upgrade() else {
-        return;
-    };
-    pane.draw_line(
-        &client,
-        (
-            span.data
-                .status()
-                .offset
-                .wrapping_add(x.wrapping_sub(span.x)),
-            0,
-        ),
-        n,
-        (x, y),
-        true,
-    );
-}
 unsafe fn redraw_draw_scrollbar_span(
     dctx: &mut redraw_draw_ctx<'_>,
     span: &redraw_span,
@@ -1241,31 +922,18 @@ unsafe fn redraw_draw_span(dctx: &mut redraw_draw_ctx<'_>, span: &redraw_span, m
     if dctx.scene.c.strong_count() == 0 {
         return;
     }
-    if type_0 as ::core::ffi::c_uint
-        == REDRAW_SPAN_STATUS as ::core::ffi::c_int as ::core::ffi::c_uint
-        && data
-            .status()
-            .wp
-            .upgrade()
-            .is_none_or(|owner| !owner.has_new_status())
-    {
-        return;
-    }
     if span.width == 0 {
         return;
     }
     let (x, n) = (span.x, span.width);
     match type_0 as ::core::ffi::c_uint {
-        0 => {
+        REDRAW_SPAN_PANE => {
             redraw_draw_pane_span(dctx, span, x, y, n);
         }
-        4 | 2 | 1 => {
+        REDRAW_SPAN_BORDER | REDRAW_SPAN_OUTSIDE => {
             redraw_draw_border_span(dctx, span, x, y, n);
         }
-        3 => {
-            redraw_draw_status_span(dctx, span, x, y, n);
-        }
-        5 => {
+        REDRAW_SPAN_SCROLLBAR => {
             redraw_draw_scrollbar_span(dctx, span, x, y, n);
         }
         _ => {}
@@ -1310,8 +978,6 @@ unsafe fn redraw_draw_lines(dctx: &mut redraw_draw_ctx<'_>, flags: ::core::ffi::
     let masks = [
         REDRAW_PANE,
         REDRAW_OUTSIDE,
-        REDRAW_EMPTY,
-        REDRAW_PANE_STATUS,
         REDRAW_PANE_BORDER,
         REDRAW_PANE_SCROLLBAR,
     ];
@@ -1330,55 +996,6 @@ unsafe fn redraw_draw_lines(dctx: &mut redraw_draw_ctx<'_>, flags: ::core::ffi::
             }
         }
     }
-}
-unsafe fn redraw_pane_status_line(
-    dctx: &mut redraw_draw_ctx<'_>,
-    wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    mut line: *mut u_int,
-) -> ::core::ffi::c_int {
-    let wp = wp_owner;
-    let scene = dctx.scene;
-    let mut pane_status: ::core::ffi::c_int = 0;
-    let mut wy: ::core::ffi::c_int = 0;
-    pane_status = wp.border_status();
-    if pane_status == PANE_STATUS_OFF {
-        return 0 as ::core::ffi::c_int;
-    }
-    if pane_status == PANE_STATUS_TOP {
-        wy = wp.geometry().3 - 1 as ::core::ffi::c_int;
-    } else {
-        wy = (wp.geometry().3 as u_int).wrapping_add(wp.geometry().1) as ::core::ffi::c_int;
-    }
-    if wy < 0 as ::core::ffi::c_int || wy < scene.oy as ::core::ffi::c_int {
-        return 0 as ::core::ffi::c_int;
-    }
-    if wy as u_int >= scene.oy.wrapping_add(scene.sy) {
-        return 0 as ::core::ffi::c_int;
-    }
-    *line = (wy as u_int).wrapping_sub(scene.oy);
-    1 as ::core::ffi::c_int
-}
-unsafe fn redraw_pane_status_width<'scene>(
-    dctx: &mut redraw_draw_ctx<'scene>,
-    pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-) -> Option<(u_int, &'scene redraw_spans, usize)> {
-    let wp = pane;
-    let mut y = 0;
-    if redraw_pane_status_line(dctx, wp, &mut y) == 0 {
-        return None;
-    }
-    let spans = &dctx.scene.lines[y as usize][REDRAW_SPAN_STATUS as usize];
-    let mut width = 0;
-    let mut first_index = spans.len();
-    for (index, span) in spans.iter().enumerate() {
-        if span.data.status().wp.ptr_eq(&std::rc::Rc::downgrade(wp)) {
-            if first_index == spans.len() {
-                first_index = index;
-            }
-            width = width.max(span.data.status().offset.wrapping_add(span.width));
-        }
-    }
-    Some((width, spans, first_index))
 }
 unsafe fn redraw_set_draw_context(scene: &redraw_scene) -> Option<redraw_draw_ctx<'_>> {
     let window_owner = scene.w.upgrade()?;
@@ -1516,38 +1133,13 @@ unsafe fn redraw_draw_scene(
     let mut i: u_int = 0;
     let mut y: u_int = 0;
     let mut lines: u_int = 0;
-    let _j: u_int = 0;
-    let mut redraw: ::core::ffi::c_int = 0;
     let Some(mut dctx) = redraw_set_draw_context(scene) else {
         window_owner.release(c"unavailable redraw context");
         return;
     };
-    if flags & (REDRAW_PANE_BORDER | REDRAW_PANE_STATUS) != 0 {
+    if flags & REDRAW_PANE_BORDER != 0 {
         for pane_owner in window_owner.pane_snapshot() {
             pane_owner.reset_border_cache();
-        }
-    }
-    if flags & REDRAW_PANE_STATUS != 0 {
-        redraw = 0 as ::core::ffi::c_int;
-        for pane_owner in window_owner.pane_snapshot() {
-            pane_owner.set_new_status(flags == REDRAW_ALL);
-            if let Some((width, status_spans, first_status_span)) =
-                redraw_pane_status_width(&mut dctx, &pane_owner)
-            {
-                if width != 0
-                    && pane_owner.make_status(client_owner, width, status_spans, first_status_span)
-                {
-                    pane_owner.set_new_status(true);
-                    redraw = 1 as ::core::ffi::c_int;
-                }
-            }
-        }
-        if redraw == 0 && !(flags == REDRAW_ALL) {
-            flags &= !REDRAW_PANE_STATUS;
-            if flags == 0 as ::core::ffi::c_int {
-                window_owner.release(c"unchanged pane status");
-                return;
-            }
         }
     }
     if flags & REDRAW_PANE != 0 {
@@ -1635,46 +1227,6 @@ unsafe fn redraw_draw_scene(
     ));
     window_owner.release(c"redraw scene");
 }
-pub fn redraw_get_status_border_cell_type(
-    spans: &redraw_spans,
-    span_index: &mut usize,
-    mut x: u_int,
-) -> ::core::ffi::c_int {
-    let mut start: u_int = 0;
-    let mut end: u_int = 0;
-    let entries = &spans;
-    let mut index = *span_index;
-    if index >= entries.len()
-        || entries[index].data.kind() as ::core::ffi::c_uint
-            != REDRAW_SPAN_STATUS as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
-        return 2 as ::core::ffi::c_int;
-    }
-    let pane_observer = &entries[index].data.status().wp;
-    while index < entries.len() {
-        let span = entries[index].as_ref();
-        if !(span.data.kind() as ::core::ffi::c_uint
-            != REDRAW_SPAN_STATUS as ::core::ffi::c_int as ::core::ffi::c_uint)
-            && span.data.status().wp.ptr_eq(pane_observer)
-        {
-            start = span.data.status().offset;
-            end = start.wrapping_add(span.width);
-            if x >= start && x < end {
-                *span_index = index;
-                return span.data.status().cell_type;
-            }
-            if start > x {
-                *span_index = index;
-                break;
-            }
-        }
-        index += 1;
-    }
-    if index == entries.len() {
-        *span_index = entries.len();
-    }
-    2 as ::core::ffi::c_int
-}
 pub unsafe fn redraw_screen(client_owner: &ClientRef) {
     let mut c: Option<ClientRef> = Some(client_owner.clone());
     let mut flags: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
@@ -1682,10 +1234,10 @@ pub unsafe fn redraw_screen(client_owner: &ClientRef) {
         redraw_draw(client_owner, None, REDRAW_ALL);
     } else {
         if c.as_ref().expect("live client").flags() & CLIENT_REDRAWBORDERS as uint64_t != 0 {
-            flags |= REDRAW_PANE_BORDER | REDRAW_PANE_STATUS;
+            flags |= REDRAW_PANE_BORDER;
         }
         if c.as_ref().expect("live client").flags() & CLIENT_REDRAWSTATUS as uint64_t != 0 {
-            flags |= REDRAW_STATUS | REDRAW_PANE_STATUS;
+            flags |= REDRAW_STATUS;
         }
         if flags != 0 as ::core::ffi::c_int {
             redraw_draw(client_owner, None, flags);

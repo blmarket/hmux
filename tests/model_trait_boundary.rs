@@ -409,7 +409,6 @@ fn migrated_name_and_window_notification_helpers_use_holders() {
                 "window_panes_scaled_geometry",
                 "window_panes_get_geometry",
                 "window_panes_get_border_cell",
-                "window_panes_mark_pane_status_borders",
                 "window_panes_draw_borders",
                 "window_panes_draw_format",
             ][..],
@@ -736,7 +735,6 @@ fn window_state_is_private_and_pane_implementation_is_a_sibling_module() {
                 | "window_pane_stack_first"
                 | "window_pane_stack_next"
                 | "window_get_pane_lines"
-                | "window_get_pane_status"
         );
         if order_edit || whole_model_query || name == "window_replace_name" {
             assert!(

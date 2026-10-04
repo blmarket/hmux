@@ -113,8 +113,8 @@ use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resizes, PANE_CHANGED, PANE_DESTROYED,
     PANE_EMPTY, PANE_EXITED, PANE_FOCUSED, PANE_INPUTOFF, PANE_MINIMUM, PANE_REDRAW,
     PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT,
-    PANE_SCROLLBARS_MODAL, PANE_STATUSREADY, PANE_STATUS_BOTTOM, PANE_STATUS_OFF, PANE_STATUS_TOP,
-    PANE_STYLECHANGED, PANE_THEMECHANGED, PANE_UNSEENCHANGES,
+    PANE_SCROLLBARS_MODAL, PANE_STATUSREADY, PANE_STYLECHANGED, PANE_THEMECHANGED,
+    PANE_UNSEENCHANGES,
 };
 use crate::src::shared::posix_io::FNM_CASEFOLD;
 use crate::src::shared::posix_terminal::{winsize, TIOCSWINSZ};
@@ -598,33 +598,18 @@ unsafe fn window_get_active_at(
     mut y: u_int,
 ) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
     let w = window_owner.get();
-    let mut pane_status: ::core::ffi::c_int = 0;
     let mut xoff: ::core::ffi::c_int = 0;
     let mut yoff: ::core::ffi::c_int = 0;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
-    pane_status = window_get_pane_status(&*w);
-    if pane_status == PANE_STATUS_TOP {
-        for candidate in (*w).panes.snapshot() {
-            (xoff, yoff, sx, sy) = candidate.outer_geometry();
-            if !((x as ::core::ffi::c_int) < xoff || x > (xoff as u_int).wrapping_add(sx))
-                && y as ::core::ffi::c_int == yoff - 1 as ::core::ffi::c_int
-            {
-                return Some(candidate);
-            }
-        }
-    }
+    // A pane owns its rows and the separator column after it; there is no
+    // border row below the panes.
     for candidate in (*w).panes.snapshot() {
         (xoff, yoff, sx, sy) = candidate.outer_geometry();
         if (x as ::core::ffi::c_int) < xoff || x > (xoff as u_int).wrapping_add(sx) {
             continue;
         }
-        let top = if pane_status == PANE_STATUS_TOP {
-            yoff - 1
-        } else {
-            yoff
-        };
-        if (y as ::core::ffi::c_int) < top || y > (yoff as u_int).wrapping_add(sy) {
+        if (y as ::core::ffi::c_int) < yoff || y >= (yoff as u_int).wrapping_add(sy) {
             continue;
         }
         return Some(candidate);
@@ -641,17 +626,10 @@ unsafe fn window_find_string(
     let s = name.as_ptr();
     let mut x: u_int = 0;
     let mut y: u_int = 0;
-    let mut top: u_int = 0 as u_int;
-    let mut bottom: u_int = wsy.wrapping_sub(1 as u_int);
-    let mut status: ::core::ffi::c_int = 0;
+    let top: u_int = 0 as u_int;
+    let bottom: u_int = wsy.wrapping_sub(1 as u_int);
     x = wsx.wrapping_div(2 as u_int);
     y = wsy.wrapping_div(2 as u_int);
-    status = window_get_pane_status(&*w);
-    if status == PANE_STATUS_TOP {
-        top = top.wrapping_add(1);
-    } else if status == PANE_STATUS_BOTTOM {
-        bottom = bottom.wrapping_sub(1);
-    }
     if strcasecmp(s, c"top".as_ptr()) == 0 as ::core::ffi::c_int {
         y = top;
     } else if strcasecmp(s, c"bottom".as_ptr()) == 0 as ::core::ffi::c_int {
@@ -708,7 +686,12 @@ unsafe fn window_add_pane(
     window_arrange(window);
     pane
 }
-unsafe fn window_lost_pane(window: &WindowRef, pane: &Rc<UnsafeCell<window_pane>>) {
+/// Retire `pane`'s selection state. When it was active, its replacement
+/// becomes active at once and is returned for the caller to announce.
+unsafe fn window_lost_pane(
+    window: &WindowRef,
+    pane: &Rc<UnsafeCell<window_pane>>,
+) -> Option<Rc<UnsafeCell<window_pane>>> {
     let w = window.get();
     let observer = Rc::downgrade(pane);
     log_debug(format_args!(
@@ -723,8 +706,9 @@ unsafe fn window_lost_pane(window: &WindowRef, pane: &Rc<UnsafeCell<window_pane>
         server_clear_marked();
     }
     pane_history_remove(&mut (*w).last_panes, &observer);
+    let mut replacement = None;
     if (*w).active.ptr_eq(&observer) {
-        let mut replacement = crate::src::shared::pane::pane_history_first(&(*w).last_panes);
+        replacement = crate::src::shared::pane::pane_history_first(&(*w).last_panes);
         if replacement.is_none() {
             replacement = (*w)
                 .panes
@@ -732,20 +716,20 @@ unsafe fn window_lost_pane(window: &WindowRef, pane: &Rc<UnsafeCell<window_pane>
                 .or_else(|| (*w).panes.next(&observer));
         }
         (*w).active = replacement.as_ref().map_or_else(Weak::new, Rc::downgrade);
-        if let Some(replacement) = replacement {
-            pane_history_remove(&mut (*w).last_panes, &Rc::downgrade(&replacement));
+        if let Some(replacement) = replacement.as_ref() {
+            pane_history_remove(&mut (*w).last_panes, &Rc::downgrade(replacement));
             replacement.on_selected(false);
-            window_fire_pane_changed(window, &replacement, Some(pane));
-            window_update_focus(Some(window));
         }
     }
     (*w).invalidate_scene();
+    replacement
 }
 
 /// Retire selection and membership, then close the gap. The pane itself stays
-/// alive for the caller.
+/// alive for the caller. As in tmux, the layout change is announced before the
+/// pane that replaces an active one.
 unsafe fn window_take_pane(window: &WindowRef, pane: &Rc<UnsafeCell<window_pane>>) {
-    window_lost_pane(window, pane);
+    let replacement = window_lost_pane(window, pane);
     let w = window.get();
     assert!(
         (*w).panes.remove(&Rc::downgrade(pane)),
@@ -754,6 +738,10 @@ unsafe fn window_take_pane(window: &WindowRef, pane: &Rc<UnsafeCell<window_pane>
     (*w).invalidate_scene();
     window_arrange(window);
     events_fire_window(c"window-layout-changed".as_ptr(), window.clone());
+    if let Some(replacement) = replacement {
+        window_fire_pane_changed(window, &replacement, Some(pane));
+        window_update_focus(Some(window));
+    }
 }
 
 unsafe fn window_remove_pane(window: &WindowRef, pane: &Rc<UnsafeCell<window_pane>>) {
@@ -944,13 +932,6 @@ unsafe fn window_get_pane_lines(w: &window) -> pane_lines {
         w.options.as_deref().expect("window options"),
         c"pane-border-lines",
     ) as pane_lines
-}
-
-unsafe fn window_get_pane_status(w: &window) -> ::core::ffi::c_int {
-    options_get_number_ref(
-        w.options.as_deref().expect("window options"),
-        c"pane-border-status",
-    ) as ::core::ffi::c_int
 }
 
 impl Drop for window {

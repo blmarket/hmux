@@ -194,31 +194,71 @@ fn field(text: &str, key: &str) -> u32 {
     digits.parse().expect("numeric layout field")
 }
 
+/// One character cell and the foreground colour it was drawn in, `None` for
+/// the terminal default or a colour the model does not track.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Cell {
+    pub ch: char,
+    pub fg: Option<u8>,
+}
+
+const BLANK: Cell = Cell { ch: ' ', fg: None };
+
+/// The DEC special graphics set, as UTF-8, so line drawing compares the same
+/// whether the server sent it as ACS or as UTF-8.
+fn line_drawing(ch: char) -> char {
+    match ch {
+        'x' => '│',
+        'q' => '─',
+        '~' => '·',
+        'l' => '┌',
+        'k' => '┐',
+        'm' => '└',
+        'j' => '┘',
+        't' => '├',
+        'u' => '┤',
+        'v' => '┴',
+        'w' => '┬',
+        'n' => '┼',
+        _ => ch,
+    }
+}
+
 /// The cells a terminal client shows, kept by interpreting the subset of
 /// escape sequences the server sends.
 pub struct Screen {
-    pub cells: Vec<Vec<char>>,
+    pub cells: Vec<Vec<Cell>>,
     pub x: usize,
     pub y: usize,
     pending: Vec<u8>,
     saved: (usize, usize),
     region: (usize, usize),
+    fg: Option<u8>,
+    /// Whether G0 holds the DEC special graphics set.
+    graphics: bool,
 }
 
 impl Screen {
     fn new(width: usize, height: usize) -> Self {
         Self {
-            cells: vec![vec![' '; width]; height],
+            cells: vec![vec![BLANK; width]; height],
             x: 0,
             y: 0,
             pending: Vec::new(),
             saved: (0, 0),
             region: (0, height - 1),
+            fg: None,
+            graphics: false,
         }
     }
 
     pub fn row(&self, y: usize) -> String {
-        self.cells[y].iter().collect()
+        self.cells[y].iter().map(|cell| cell.ch).collect()
+    }
+
+    /// The characters of column `x`, top to bottom.
+    pub fn column(&self, x: usize) -> String {
+        self.cells.iter().map(|row| row[x].ch).collect()
     }
 
     /// The first column of `text` on row `y`.
@@ -231,7 +271,7 @@ impl Screen {
         if self.y == self.region.1 {
             let width = self.cells[0].len();
             self.cells.remove(self.region.0);
-            self.cells.insert(self.region.1, vec![' '; width]);
+            self.cells.insert(self.region.1, vec![BLANK; width]);
         } else {
             self.y = (self.y + 1).min(self.cells.len() - 1);
         }
@@ -269,43 +309,43 @@ impl Screen {
             b'J' if !private => {
                 let rows = match values[0] {
                     0 => {
-                        self.cells[self.y][x..].fill(' ');
+                        self.cells[self.y][x..].fill(BLANK);
                         self.y + 1..h
                     }
                     1 => {
-                        self.cells[self.y][..=x].fill(' ');
+                        self.cells[self.y][..=x].fill(BLANK);
                         0..self.y
                     }
                     _ => 0..h,
                 };
                 for row in &mut self.cells[rows] {
-                    row.fill(' ');
+                    row.fill(BLANK);
                 }
             }
             b'K' if !private => match values[0] {
-                0 => self.cells[self.y][x..].fill(' '),
-                1 => self.cells[self.y][..=x].fill(' '),
-                _ => self.cells[self.y].fill(' '),
+                0 => self.cells[self.y][x..].fill(BLANK),
+                1 => self.cells[self.y][..=x].fill(BLANK),
+                _ => self.cells[self.y].fill(BLANK),
             },
             b'X' => {
                 let end = (x + get(0, 1)).min(w);
-                self.cells[self.y][x..end].fill(' ');
+                self.cells[self.y][x..end].fill(BLANK);
             }
             b'P' => {
                 let n = get(0, 1).min(w - x);
                 self.cells[self.y].drain(x..x + n);
-                self.cells[self.y].resize(w, ' ');
+                self.cells[self.y].resize(w, BLANK);
             }
             b'@' => {
                 for _ in 0..get(0, 1).min(w - x) {
-                    self.cells[self.y].insert(x, ' ');
+                    self.cells[self.y].insert(x, BLANK);
                     self.cells[self.y].pop();
                 }
             }
             b'b' => {
-                let ch = self.cells[self.y][x.saturating_sub(1)];
+                let cell = self.cells[self.y][x.saturating_sub(1)];
                 for _ in 0..get(0, 1) {
-                    self.put(ch);
+                    self.put_cell(cell);
                 }
             }
             b'r' if !private => {
@@ -317,13 +357,37 @@ impl Screen {
             b'L' => {
                 for _ in 0..get(0, 1).min(h - self.y) {
                     self.cells.remove(self.region.1);
-                    self.cells.insert(self.y, vec![' '; w]);
+                    self.cells.insert(self.y, vec![BLANK; w]);
                 }
             }
             b'M' => {
                 for _ in 0..get(0, 1).min(h - self.y) {
                     self.cells.remove(self.y);
-                    self.cells.insert(self.region.1, vec![' '; w]);
+                    self.cells.insert(self.region.1, vec![BLANK; w]);
+                }
+            }
+            b'm' if !private => {
+                let mut params = values.iter().copied();
+                while let Some(param) = params.next() {
+                    match param {
+                        0 | 39 => self.fg = None,
+                        30..=37 => self.fg = Some((param - 30) as u8),
+                        90..=97 => self.fg = Some((param - 90 + 8) as u8),
+                        38 | 48 => {
+                            let colour = match params.next() {
+                                Some(5) => params.next().map(|n| n as u8),
+                                Some(2) => {
+                                    params.by_ref().take(3).for_each(drop);
+                                    None
+                                }
+                                _ => None,
+                            };
+                            if param == 38 {
+                                self.fg = colour;
+                            }
+                        }
+                        _ => (),
+                    }
                 }
             }
             _ => (),
@@ -331,11 +395,16 @@ impl Screen {
     }
 
     fn put(&mut self, ch: char) {
+        let ch = if self.graphics { line_drawing(ch) } else { ch };
+        self.put_cell(Cell { ch, fg: self.fg });
+    }
+
+    fn put_cell(&mut self, cell: Cell) {
         if self.x == self.cells[0].len() {
             self.x = 0;
             self.newline();
         }
-        self.cells[self.y][self.x] = ch;
+        self.cells[self.y][self.x] = cell;
         self.x += 1;
     }
 
@@ -370,6 +439,9 @@ impl Screen {
                     b'(' | b')' | b'%' => {
                         if i + 2 == bytes.len() {
                             break;
+                        }
+                        if kind == b'(' {
+                            self.graphics = bytes[i + 2] == b'0';
                         }
                         i += 3;
                     }
