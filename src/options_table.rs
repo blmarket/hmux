@@ -1305,7 +1305,7 @@ pub static options_table: [options_table_entry; 256] = [
             maximum: 0,
             choices: &[],
             default_str: None,
-            default_num: ('b' as i32 as ::core::ffi::c_ulonglong | KEYC_CTRL)
+            default_num: ('a' as i32 as ::core::ffi::c_ulonglong | KEYC_CTRL)
                 as ::core::ffi::c_longlong,
             default_arr: None,
             separator: None,

@@ -1,8 +1,8 @@
 # Scrolling window implementation plan
 
 Status: written on 2026-10-03 against `main` at `f457d591`; it replaces the
-layout-based design. Steps 1 to 6 are done (see "Where things stand"); step 7
-is next. Line references are current as of step 6.
+layout-based design. Every step is done (see "Where things stand"). Line
+references are current as of step 6, except in "Default keys" (step 7).
 
 ## Direction
 
@@ -84,15 +84,18 @@ them (see "Removed in step 3").
 | Step 5: viewport | The commit after `ebd35f47` | Done |
 | Overlays removed: menus, popups (decision 7) | With step 5 | Done |
 | Step 6: borders, pane status rows removed (decisions 4 to 6) | The commit after `f09340de` | Done |
+| Step 7: defaults and keys | The commit after `21b931eb` | Done |
+| Step 8: README | With step 7 | Done |
 | Window sizing split (`Window::size()` vs. `layout::logical_size`) | `8e6e80db` | Kept. `Window::size()` stays the sizing basis; `Window::logical_size()` replaces `layout::logical_size` and, since step 5, is the scrollable extent (see Geometry) |
 | Sticky layouts (`sticky-layout` option, `sticky` and `lastlayout` fields) | `4b6e6435` | Removed in step 3 with `tests/sticky_layout.rs` |
 | Shared server harness (`tests/common/mod.rs`) | `4b6e6435` | Kept |
 
 Reference material only, none of it mergeable: branch `h1` (worktree
 `/home/blmarket/h1`) and `stash@{0}`. Step 5 ported its PTY test client and
-replaced its minimal-scroll viewport with pane-boundary following. Still to
-port: the key map. Its mode flag and `src/layout/scrolling.rs` are
-superseded; step 6 wrote its own rendering cases.
+replaced its minimal-scroll viewport with pane-boundary following; step 7
+took its key map, without its `-L` on `c`. Its mode flag and
+`src/layout/scrolling.rs` are superseded; step 6 wrote its own rendering
+cases.
 
 ### Step 3
 
@@ -251,6 +254,34 @@ superseded; step 6 wrote its own rendering cases.
   border and fill, the even and odd widths, a shorter window and the panned
   blank extent with no horizontal border, and the indicator with three panes
   and with two. `tests/window_sizes.rs` checks the status options are gone.
+
+### Step 7
+
+- The `prefix` default is `C-a` (`src/options_table.rs:1308`), and `C-a`
+  after it is `send-prefix`.
+- Prefix table (`src/key_bindings.rs`): `c` is
+  `new-pane -c '#{pane_current_path}'`, `h`/`l` `select-pane -L`/`-R`, `f`
+  `resize-pane -W`, `H`/`L` `swap-pane -U`/`-D`, and `x` `kill-pane` without
+  the confirmation. `new-window`, `find-window`, `last-window` and
+  `switch-client -l` lost these keys and have no other. `"`, `%` and `!` are
+  unbound. The defaults array has 248 entries.
+- Help text: `{`/`}` swap with the pane to the left/right, not above/below,
+  and `DC` returns the view to the active pane rather than the cursor.
+- Tests: `tests/default_keys.rs` drives a PTY client through `c` after a `cd`
+  into a path with a space, `h`, `l`, `f` twice, `H`, `L`, `x` and `C-a C-a`
+  into `cat -v`, checks the split and break bindings are gone, and overrides
+  the prefix and `c` at run time. `tests/plugins.rs` expects `C-a`. No other
+  test assumed the old keys; the `h1` fixes it named were for its own layout
+  and step 3 had already made the equivalent ones.
+
+### Step 8
+
+- `README.md` describes the strip and viewport, the default keys and the
+  commands behind them, the keys that lost bindings, `new-pane` and the moves
+  between strips, the `split-window` alias and the removed names.
+- `agentmon-tui/src/agentmon/services.py:1274` runs
+  `split-window -d -v -t … -l N% -c … -P -F '#{pane_id}'`; through the alias
+  it inserts a half pane and prints its id.
 
 ### Overlays removed (decision 7)
 
@@ -426,25 +457,27 @@ rest. "Done" marks rows step 3 completed.
 
 `Ctrl+a` is a prefix sequence: release it before pressing the following key.
 
-| Keys | Action | Command | Today (`src/key_bindings.rs`) |
-| --- | --- | --- | --- |
-| `Ctrl+a c` | Insert a half-width pane after the active pane, using its current directory | `new-pane -c '#{pane_current_path}'` | `new-window` (`:238`) |
-| `Ctrl+a h` / `Ctrl+a l` | Focus the pane to the left/right; stop at the strip ends | `select-pane -L` / `select-pane -R` | `h` unbound; `l` is `last-window` (`:242`) |
-| `Ctrl+a f` | Toggle the active pane between half-width and full-width | `resize-pane -W` | `find-window` prompt (`:240`) |
-| `Ctrl+a H` / `Ctrl+a L` | Reorder the active pane one position left/right | `swap-pane -U` / `swap-pane -D` | `H` unbound; `L` is `switch-client -l` (`:233`) |
-| `Ctrl+a x` | Close the active pane | `kill-pane` | `confirm-before … kill-pane` (`:255`) |
-| `Ctrl+a Ctrl+a` | Send a literal Ctrl+a to the application | `send-prefix` | `C-b` (`:202`) |
+Done in step 7; see "Step 7" for the details.
 
-- The prefix default is `C-b` at `src/options_table.rs:1308`.
+| Keys | Action | Command | Before step 7 |
+| --- | --- | --- | --- |
+| `Ctrl+a c` | Insert a half-width pane after the active pane, using its current directory | `new-pane -c '#{pane_current_path}'` | `new-window` |
+| `Ctrl+a h` / `Ctrl+a l` | Focus the pane to the left/right; stop at the strip ends | `select-pane -L` / `select-pane -R` | `h` unbound; `l` was `last-window` |
+| `Ctrl+a f` | Toggle the active pane between half-width and full-width | `resize-pane -W` | `find-window` prompt |
+| `Ctrl+a H` / `Ctrl+a L` | Reorder the active pane one position left/right | `swap-pane -U` / `swap-pane -D` | `H` unbound; `L` was `switch-client -l` |
+| `Ctrl+a x` | Close the active pane | `kill-pane` | `confirm-before … kill-pane` |
+| `Ctrl+a Ctrl+a` | Send a literal Ctrl+a to the application | `send-prefix` | `C-b` |
+
+- The prefix default is `C-a` at `src/options_table.rs:1308`.
 - Uppercase `H` and `L` are bound as literal characters, distinct from lowercase.
-- Remove the bindings for split and break features: splits (`"`, `%`) and `!`.
-  Step 3 already removed the layout, tiled resize and border-drag bindings, and
-  steps 1 and 2 the floating and zoom ones; see "Removed in step 3".
-- `Tab` and `BTab` already open their choosers in a temporary pane with
-  `new-pane -E` (`src/key_bindings.rs:252-253`, step 1).
-- The defaults array has a hardcoded length of 249 (`src/key_bindings.rs:201`);
-  step 5 removed the `Up`/`Down` pane selection bindings and decision 7 the
-  menu bindings.
+- The split (`"`, `%`) and break (`!`) bindings are gone. Step 3 removed the
+  layout, tiled resize and border-drag bindings, and steps 1 and 2 the
+  floating and zoom ones; see "Removed in step 3".
+- `Tab` and `BTab` open their choosers in a temporary pane with `new-pane -E`
+  (`src/key_bindings.rs:251-252`, step 1).
+- The defaults array has a hardcoded length of 248 (`src/key_bindings.rs:201`).
+- The prefix takes precedence over mode tables, as in tmux, so `C-a` no
+  longer reaches emacs copy mode's `start-of-line`; `Home` still does.
 
 ### Working directory and environment
 
@@ -498,13 +531,14 @@ tree still exists, so step 3 replaces a purely tiled tree.
 6. **Borders.** Done. Vertical separators only, the outside fill for whatever
    no pane covers, tmux's active-pane indicator, and no pane status rows
    (decisions 4 to 6). `tests/borders.rs` covers the rendering. See "Step 6".
-7. **Defaults and keys.** `C-a` prefix, the key map, removal of the split and
-   break bindings, accurate help text. Fix tests that assume the old defaults;
-   `h1` touched `client_file_protocol`, `copy_regex_cells`,
-   `mode_prompt_cleanup`, `plugins` and `session_group_membership`.
-8. **Documentation.** README section describing the strip, the removed names
-   and the `split-window` alias. `agentmon-tui/src/agentmon/services.py:1274`
-   keeps working through the alias (decision 2).
+7. **Defaults and keys.** Done. `C-a` prefix, the key map, removal of the
+   split and break bindings, accurate help text. `tests/default_keys.rs`
+   covers the keys; only `tests/plugins.rs` assumed the old prefix. See
+   "Step 7".
+8. **Documentation.** Done. README section describing the strip, the keys,
+   the removed names and the `split-window` alias.
+   `agentmon-tui/src/agentmon/services.py:1274` keeps working through the
+   alias (decision 2). See "Step 8".
 
 ## Validation
 
