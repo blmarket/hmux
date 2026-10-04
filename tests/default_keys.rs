@@ -1,6 +1,6 @@
-//! The default prefix is C-a. After it, c inserts a pane in the active pane's
-//! directory, h and l select, f toggles the width, H and L reorder, x kills
-//! and a second C-a reaches the application.
+//! C-b keeps tmux's prefix table. C-a enters the strip table, where c inserts
+//! a pane in the active pane's directory, h and l select, f toggles the width,
+//! H and L reorder, x kills and a second C-a reaches the application.
 
 #![cfg(unix)]
 
@@ -33,14 +33,8 @@ fn attached() -> (Server, TerminalClient) {
 }
 
 #[test]
-fn prefix_keys_drive_the_strip() {
+fn ctrl_a_keys_drive_the_strip() {
     let (server, mut client) = attached();
-    assert_eq!(server.success(&["show-options", "-gv", "prefix"]), "C-a\n");
-    let prefix = server.success(&["list-keys", "-T", "prefix"]);
-    for command in ["split-window", "break-pane"] {
-        assert!(!prefix.contains(command), "{command} is still bound");
-    }
-
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("clock after epoch")
@@ -92,19 +86,37 @@ fn prefix_keys_drive_the_strip() {
 }
 
 #[test]
-fn configuration_overrides_the_defaults() {
+fn ctrl_b_keeps_the_tmux_prefix_table() {
     let (server, mut client) = attached();
-    server.success(&["set", "-g", "prefix", "C-b"]);
-    server.success(&["bind", "c", "new-window"]);
+    assert_eq!(server.success(&["show-options", "-gv", "prefix"]), "C-b\n");
+    let prefix = server.success(&["list-keys", "-T", "prefix"]);
+    for command in ["new-window", "split-window", "break-pane", "last-window"] {
+        assert!(prefix.contains(command), "{command} is not bound");
+    }
 
-    // C-a is now an ordinary key for the pane; C-b c runs the override.
-    client.send(b"\x01c\x02c");
+    client.send(b"\x02c");
     wait_until("the new window", || {
         server.display("#{session_windows}") == "2"
     });
     assert_eq!(server.display("#{window_panes}"), "1");
-    assert_eq!(
-        server.success(&["display-message", "-p", "-t", ":0", "#{window_panes}"]),
-        "1\n"
-    );
+}
+
+#[test]
+fn configuration_overrides_the_ctrl_a_keys() {
+    let (server, mut client) = attached();
+    server.success(&["bind", "-T", "strip", "c", "new-window"]);
+    client.send(b"\x01c");
+    wait_until("the new window", || {
+        server.display("#{session_windows}") == "2"
+    });
+    assert_eq!(server.display("#{window_panes}"), "1");
+
+    // Without the root binding C-a is an ordinary key for the pane.
+    server.success(&["unbind", "-n", "C-a"]);
+    client.send(b"cat -v\n");
+    wait_until("cat", || server.display("#{pane_current_command}") == "cat");
+    client.send(b"\x01\n");
+    wait_until("the literal C-a", || {
+        server.success(&["capture-pane", "-p"]).contains("^A")
+    });
 }

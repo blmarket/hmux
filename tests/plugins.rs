@@ -186,7 +186,7 @@ fn defaults_match_hmux_and_plugin_output_preserves_user_options() {
         server.run(&["show-options", "-gwv", "window-status-current-format"]),
         HMUX_STATUS
     );
-    assert_eq!(server.run(&["show-options", "-gv", "prefix"]), "C-a");
+    assert_eq!(server.run(&["show-options", "-gv", "prefix"]), "C-b");
     assert!(server
         .format(&pane, "#{E:window-status-format}")
         .contains("💲#[default] project"));

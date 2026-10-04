@@ -32,6 +32,7 @@ assumes the proposed answer to an open decision and marks it "proposed".
 | 5 | Active-pane indicator: half-coloured border on every separator, or tmux's rule | Settled: keep tmux's rule | Step 6 |
 | 6 | Blank area beside a trailing half pane: inside fill or outside fill | Settled: outside fill, as tmux paints beyond a smaller window | Step 6 |
 | 7 | Menus and popups, the client overlays | Settled: delete, with the overlay mechanism | Done after step 5 |
+| 8 | `C-a`: replace the `C-b` prefix and its bindings, or add a key table beside them | Settled: keep `C-b` and its bindings unchanged; `C-a` enters a `strip` table | Step 7 |
 
 Steps 1 and 2 had kept stub names while decision 1 was open; step 3 deleted
 them (see "Removed in step 3").
@@ -71,7 +72,8 @@ them (see "Removed in step 3").
 - Reuse the current `new-pane` environment and working-directory capabilities;
   do not add inheritance mechanics or shell integration. Use the existing `-c`
   option when the new pane should follow the source pane's current directory.
-- Use `Ctrl+a` as the default prefix, with the key bindings specified below.
+- Keep tmux's `C-b` prefix and every binding in its table. `Ctrl+a` enters a
+  separate `strip` key table with the keys specified below (decision 8).
 
 ## Where things stand
 
@@ -257,28 +259,29 @@ cases.
 
 ### Step 7
 
-- The `prefix` default is `C-a` (`src/options_table.rs:1308`), and `C-a`
-  after it is `send-prefix`.
-- Prefix table (`src/key_bindings.rs`): `c` is
-  `new-pane -c '#{pane_current_path}'`, `h`/`l` `select-pane -L`/`-R`, `f`
-  `resize-pane -W`, `H`/`L` `swap-pane -U`/`-D`, and `x` `kill-pane` without
-  the confirmation. `new-window`, `find-window`, `last-window` and
-  `switch-client -l` lost these keys and have no other. `"`, `%` and `!` are
-  unbound. The defaults array has 248 entries.
-- Help text: `{`/`}` swap with the pane to the left/right, not above/below,
-  and `DC` returns the view to the active pane rather than the cursor.
-- Tests: `tests/default_keys.rs` drives a PTY client through `c` after a `cd`
-  into a path with a space, `h`, `l`, `f` twice, `H`, `L`, `x` and `C-a C-a`
-  into `cat -v`, checks the split and break bindings are gone, and overrides
-  the prefix and `c` at run time. `tests/plugins.rs` expects `C-a`. No other
-  test assumed the old keys; the `h1` fixes it named were for its own layout
-  and step 3 had already made the equivalent ones.
+- `609ec24b` made `C-a` the prefix and rebound `C-b`'s table; the commit after
+  it restores `src/options_table.rs`, the prefix table and `tests/plugins.rs`
+  as they were at `21b931eb` (decision 8).
+- `C-b` is still the prefix, and its table, notes included, is unchanged.
+- The root table binds `C-a` to `switch-client -Tstrip`. The `strip` table
+  (`src/key_bindings.rs`): `c` is `new-pane -c '#{pane_current_path}'`,
+  `h`/`l` `select-pane -L`/`-R`, `f` `resize-pane -W`, `H`/`L`
+  `swap-pane -U`/`-D`, `x` `kill-pane` without confirmation, and `C-a`
+  `send-keys C-a`. Like the prefix table, it lasts for one key. The defaults
+  array has 258 entries.
+- Tests: `tests/default_keys.rs` drives a PTY client through `C-a` and `c`
+  after a `cd` into a path with a space, `h`, `l`, `f` twice, `H`, `L`, `x`
+  and `C-a C-a` into `cat -v`. It checks that `C-b` is still the prefix with
+  tmux's bindings and that `C-b c` opens a window, then rebinds a `strip` key
+  and unbinds the root `C-a` at run time. No existing test assumed other
+  keys; the `h1` fixes the plan named were for its own layout, and step 3 had
+  already made the equivalent ones.
 
 ### Step 8
 
-- `README.md` describes the strip and viewport, the default keys and the
-  commands behind them, the keys that lost bindings, `new-pane` and the moves
-  between strips, the `split-window` alias and the removed names.
+- `README.md` describes the strip and viewport, the `C-a` keys and the
+  commands behind them, `new-pane` and the moves between strips, the
+  `split-window` alias and the removed names.
 - `agentmon-tui/src/agentmon/services.py:1274` runs
   `split-window -d -v -t … -l N% -c … -P -F '#{pane_id}'`; through the alias
   it inserts a half pane and prints its id.
@@ -455,29 +458,30 @@ rest. "Done" marks rows step 3 completed.
 
 ### Default keys
 
-`Ctrl+a` is a prefix sequence: release it before pressing the following key.
+Done in step 7; see "Step 7" for the details. `C-b` stays the prefix with
+tmux's table (decision 8). `Ctrl+a` is a root binding that enters the `strip`
+table: release it before pressing the following key.
 
-Done in step 7; see "Step 7" for the details.
+| Keys | Action | Command |
+| --- | --- | --- |
+| `Ctrl+a c` | Insert a half-width pane after the active pane, using its current directory | `new-pane -c '#{pane_current_path}'` |
+| `Ctrl+a h` / `Ctrl+a l` | Focus the pane to the left/right; stop at the strip ends | `select-pane -L` / `select-pane -R` |
+| `Ctrl+a f` | Toggle the active pane between half-width and full-width | `resize-pane -W` |
+| `Ctrl+a H` / `Ctrl+a L` | Reorder the active pane one position left/right | `swap-pane -U` / `swap-pane -D` |
+| `Ctrl+a x` | Close the active pane | `kill-pane` |
+| `Ctrl+a Ctrl+a` | Send a literal Ctrl+a to the application | `send-keys C-a` |
 
-| Keys | Action | Command | Before step 7 |
-| --- | --- | --- | --- |
-| `Ctrl+a c` | Insert a half-width pane after the active pane, using its current directory | `new-pane -c '#{pane_current_path}'` | `new-window` |
-| `Ctrl+a h` / `Ctrl+a l` | Focus the pane to the left/right; stop at the strip ends | `select-pane -L` / `select-pane -R` | `h` unbound; `l` was `last-window` |
-| `Ctrl+a f` | Toggle the active pane between half-width and full-width | `resize-pane -W` | `find-window` prompt |
-| `Ctrl+a H` / `Ctrl+a L` | Reorder the active pane one position left/right | `swap-pane -U` / `swap-pane -D` | `H` unbound; `L` was `switch-client -l` |
-| `Ctrl+a x` | Close the active pane | `kill-pane` | `confirm-before … kill-pane` |
-| `Ctrl+a Ctrl+a` | Send a literal Ctrl+a to the application | `send-prefix` | `C-b` |
-
-- The prefix default is `C-a` at `src/options_table.rs:1308`.
 - Uppercase `H` and `L` are bound as literal characters, distinct from lowercase.
-- The split (`"`, `%`) and break (`!`) bindings are gone. Step 3 removed the
+- The prefix table keeps every binding it had, including `"`, `%` and `!`
+  (now insertion through the alias and `break-pane`). Step 3 removed the
   layout, tiled resize and border-drag bindings, and steps 1 and 2 the
   floating and zoom ones; see "Removed in step 3".
 - `Tab` and `BTab` open their choosers in a temporary pane with `new-pane -E`
-  (`src/key_bindings.rs:251-252`, step 1).
-- The defaults array has a hardcoded length of 248 (`src/key_bindings.rs:201`).
-- The prefix takes precedence over mode tables, as in tmux, so `C-a` no
-  longer reaches emacs copy mode's `start-of-line`; `Home` still does.
+  (`src/key_bindings.rs:252-253`, step 1).
+- The defaults array has a hardcoded length of 258 (`src/key_bindings.rs:201`).
+- A pane in a mode looks keys up in the mode's table first, so in emacs copy
+  mode `C-a` stays `start-of-line` and the `strip` keys are unavailable; the
+  `C-b` prefix still works there.
 
 ### Working directory and environment
 
@@ -531,10 +535,9 @@ tree still exists, so step 3 replaces a purely tiled tree.
 6. **Borders.** Done. Vertical separators only, the outside fill for whatever
    no pane covers, tmux's active-pane indicator, and no pane status rows
    (decisions 4 to 6). `tests/borders.rs` covers the rendering. See "Step 6".
-7. **Defaults and keys.** Done. `C-a` prefix, the key map, removal of the
-   split and break bindings, accurate help text. `tests/default_keys.rs`
-   covers the keys; only `tests/plugins.rs` assumed the old prefix. See
-   "Step 7".
+7. **Defaults and keys.** Done. `C-b` and its bindings unchanged, and a
+   `C-a` key table for the strip keys (decision 8). `tests/default_keys.rs`
+   covers both. See "Step 7".
 8. **Documentation.** Done. README section describing the strip, the keys,
    the removed names and the `split-window` alias.
    `agentmon-tui/src/agentmon/services.py:1274` keeps working through the
@@ -556,7 +559,7 @@ client that models its screen. Viewport and rendering cases use it.
 | Viewport | The view rests on a pane boundary from both directions on even and odd widths; manual pan and reset; clients of different widths; active pane wider than a client |
 | Rendering | Right border of a lone half pane; spare column on even widths; no horizontal border below a shorter window; outside fill beside the last pane; active-pane indicator with two and with three panes; mouse selection after panning |
 | Environment | Session environment and `-e` overrides; `-c '#{pane_current_path}'` after `cd`; paths with spaces; directory fallback |
-| Defaults and keys | `C-a` prefix; c/h/l/f/H/L/x actions; uppercase/lowercase distinct; prefix passthrough; user overrides |
+| Defaults and keys | `C-b` prefix table unchanged; `C-a` c/h/l/f/H/L/x actions; uppercase/lowercase distinct; `C-a` passthrough; user overrides |
 | Compatibility | `split-window` inserts and ignores its split flags; removed commands, flags and options (including `pane-border-status` and `pane-border-format`) are rejected; `#{window_layout}` is a single-row layout |
 | Regression | `tests/model_trait_boundary.rs`; copy mode and choosers; `src/compat/` untouched |
 

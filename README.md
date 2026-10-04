@@ -14,7 +14,8 @@ Each client's view rests on a pane's first column and shows the active pane
 completely, so selecting a pane scrolls the strip; moving the cursor inside a
 visible pane does not. Left and right selection stop at the ends of the strip.
 
-The default prefix is `C-a`; release it before the next key.
+The `C-b` prefix keeps tmux's bindings. `C-a` enters the `strip` key table
+for the strip's own keys; release it before the next key.
 
 | Key | Action | Command |
 | --- | --- | --- |
@@ -23,11 +24,10 @@ The default prefix is `C-a`; release it before the next key.
 | `f` | Toggle the active pane between half and full width | `resize-pane -W` |
 | `H` / `L` | Move the active pane left / right | `swap-pane -U` / `-D` |
 | `x` | Kill the active pane | `kill-pane` |
-| `C-a` | Send a literal `C-a` to the application | `send-prefix` |
+| `C-a` | Send a literal `C-a` to the application | `send-keys C-a` |
 
-`new-window`, `find-window`, `last-window` and `switch-client -l` no longer
-have prefix keys, and `"`, `%` and `!` are unbound. The `prefix` option and
-`bind-key` override any of these.
+`bind-key -T strip` changes these keys, and `unbind-key -n C-a` gives `C-a`
+back to applications. In emacs copy mode `C-a` stays `start-of-line`.
 
 `new-pane -b` inserts before the target instead. `-c`, `-e` and `-d` work as
 in tmux; without `-c` the new pane does not follow the target pane's `cd`.
