@@ -1,4 +1,4 @@
-//! Authoritative border line kinds and the pane rectangle type.
+//! Authoritative border line kinds, the pane rectangle and width preference.
 
 use super::abi::u_int;
 
@@ -21,6 +21,23 @@ pub struct layout_geometry {
     pub sy: u_int,
     pub xoff: ::core::ffi::c_int,
     pub yoff: ::core::ffi::c_int,
+}
+
+/// A pane's share of the visible window width in the strip.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub enum PaneWidth {
+    #[default]
+    Half,
+    Full,
+}
+
+impl PaneWidth {
+    pub fn toggled(self) -> Self {
+        match self {
+            Self::Half => Self::Full,
+            Self::Full => Self::Half,
+        }
+    }
 }
 
 #[cfg(test)]

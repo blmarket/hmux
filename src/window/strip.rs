@@ -1,35 +1,55 @@
-//! The scrolling strip. Every pane's rectangle derives from the pane order and
-//! the window size; the Window's arrange step is the only writer of pane
-//! geometry, so the arrangement holds by construction.
+//! The scrolling strip. Every pane's rectangle derives from the pane order,
+//! each pane's width preference and the window size; the Window's arrange step
+//! is the only writer of pane geometry, so the arrangement holds by
+//! construction.
 
-use crate::src::shared::layout::layout_geometry;
+use crate::src::shared::layout::{layout_geometry, PaneWidth};
 use std::ffi::CString;
 
-/// A pane is half the window beside its separator column, never narrower than
-/// `minimum`. Two halves and their separator therefore fit in the window.
-fn half_width(sx: u32, minimum: u32) -> u32 {
-    (sx.saturating_sub(1) / 2).max(minimum)
+/// A half pane is half the window beside its separator column, so two halves
+/// and their separator fit in the window. A full pane is the window's width.
+/// Neither is narrower than `minimum`.
+fn pane_width(width: PaneWidth, sx: u32, minimum: u32) -> u32 {
+    match width {
+        PaneWidth::Half => sx.saturating_sub(1) / 2,
+        PaneWidth::Full => sx,
+    }
+    .max(minimum)
 }
 
-/// Rectangles of a `count`-pane strip in an `sx` by `sy` window, in pane
-/// order. Each pane starts one separator column after the previous one ends
-/// and uses the full height.
-pub(super) fn cells(count: usize, (sx, sy): (u32, u32), minimum: u32) -> Vec<layout_geometry> {
-    let width = half_width(sx, minimum);
-    (0..count as u32)
-        .map(|index| layout_geometry {
-            sx: width,
-            sy,
-            xoff: index.saturating_mul(width + 1) as i32,
-            yoff: 0,
+/// Rectangles of a strip whose panes have `widths`, in an `sx` by `sy`
+/// window, in pane order. Each pane starts one separator column after the
+/// previous one ends and uses the full height.
+pub(super) fn cells(
+    widths: &[PaneWidth],
+    (sx, sy): (u32, u32),
+    minimum: u32,
+) -> Vec<layout_geometry> {
+    let mut xoff = 0u32;
+    widths
+        .iter()
+        .map(|&width| {
+            let width = pane_width(width, sx, minimum);
+            let cell = layout_geometry {
+                sx: width,
+                sy,
+                xoff: xoff as i32,
+                yoff: 0,
+            };
+            xoff = xoff.saturating_add(width + 1);
+            cell
         })
         .collect()
 }
 
-/// Columns a `count`-pane strip occupies, up to the last pane's right edge.
-pub(super) fn width(count: usize, (sx, _): (u32, u32), minimum: u32) -> u32 {
-    (count as u32)
-        .saturating_mul(half_width(sx, minimum) + 1)
+/// Columns a strip whose panes have `widths` occupies, up to the last pane's
+/// right edge.
+pub(super) fn width(widths: &[PaneWidth], (sx, _): (u32, u32), minimum: u32) -> u32 {
+    widths
+        .iter()
+        .fold(0u32, |columns, &width| {
+            columns.saturating_add(pane_width(width, sx, minimum) + 1)
+        })
         .saturating_sub(1)
 }
 
@@ -136,31 +156,50 @@ mod tests {
         cells.iter().map(|cell| cell.xoff).collect()
     }
 
+    const HALVES: [PaneWidth; 3] = [PaneWidth::Half; 3];
+
     #[test]
     fn panes_are_half_width_and_extend_the_strip() {
         // Odd width: two halves and their separator fill the window exactly.
-        let odd = cells(3, (81, 24), 1);
+        let odd = cells(&HALVES, (81, 24), 1);
         assert!(odd
             .iter()
             .all(|cell| (cell.sx, cell.sy, cell.yoff) == (40, 24, 0)));
         assert_eq!(starts(&odd), [0, 41, 82]);
-        assert_eq!(width(2, (81, 24), 1), 81);
+        assert_eq!(width(&HALVES[..2], (81, 24), 1), 81);
         // Even width: one spare column remains at the right edge.
-        let even = cells(2, (80, 24), 1);
+        let even = cells(&HALVES[..2], (80, 24), 1);
         assert_eq!((even[0].sx, starts(&even)), (39, vec![0, 40]));
-        assert_eq!(width(2, (80, 24), 1), 79);
+        assert_eq!(width(&HALVES[..2], (80, 24), 1), 79);
         // A lone pane stays half-width.
-        assert_eq!(width(1, (80, 24), 1), 39);
-        assert_eq!(width(0, (80, 24), 1), 0);
+        assert_eq!(width(&HALVES[..1], (80, 24), 1), 39);
+        assert_eq!(width(&[], (80, 24), 1), 0);
+    }
+
+    #[test]
+    fn full_panes_take_the_window_width_beside_halves() {
+        use PaneWidth::{Full, Half};
+        let mixed = cells(&[Half, Full, Half], (80, 24), 1);
+        assert_eq!(
+            mixed.iter().map(|cell| cell.sx).collect::<Vec<_>>(),
+            [39, 80, 39]
+        );
+        assert_eq!(starts(&mixed), [0, 40, 121]);
+        assert_eq!(width(&[Half, Full, Half], (80, 24), 1), 160);
+        // A lone full pane fills the window exactly.
+        assert_eq!(cells(&[Full], (81, 24), 1)[0].sx, 81);
+        assert_eq!(width(&[Full], (81, 24), 1), 81);
+        assert_eq!(width(&[Full, Full], (81, 24), 1), 163);
     }
 
     #[test]
     fn tiny_windows_raise_panes_to_the_minimum() {
-        let tiny = cells(2, (2, 3), 2);
+        let tiny = cells(&HALVES[..2], (2, 3), 2);
         assert!(tiny.iter().all(|cell| cell.sx == 2));
         assert_eq!(starts(&tiny), [0, 3]);
-        assert_eq!(width(2, (2, 3), 2), 5);
-        assert_eq!(cells(1, (1, 1), 1)[0].sx, 1);
+        assert_eq!(width(&HALVES[..2], (2, 3), 2), 5);
+        assert_eq!(cells(&HALVES[..1], (1, 1), 1)[0].sx, 1);
+        assert_eq!(cells(&[PaneWidth::Full], (1, 1), 2)[0].sx, 2);
     }
 
     fn entry(xoff: i32, id: u32, index: u32, active: bool, last: Option<u32>) -> LayoutEntry {

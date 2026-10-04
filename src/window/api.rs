@@ -85,8 +85,9 @@ pub trait Window {
         hlimit: u32,
         flags: i32,
     ) -> Rc<UnsafeCell<window_pane>>;
-    /// Whether one more pane keeps the strip within WINDOW_MAXIMUM columns.
-    unsafe fn has_room_for_pane(&self) -> bool;
+    /// Whether one more pane of `width` keeps the strip within
+    /// WINDOW_MAXIMUM columns.
+    unsafe fn has_room_for_pane(&self, width: PaneWidth) -> bool;
     /// Insert a pane already reparented to this window after `target`, or
     /// before it, and arrange the strip. The caller notifies.
     unsafe fn insert_pane(
@@ -117,6 +118,10 @@ pub trait Window {
         other: &WindowRef,
         second: &Weak<UnsafeCell<window_pane>>,
     );
+    /// Toggle a pane between half and full width, arrange the strip and
+    /// redraw; window-layout-changed fires. Widening is refused, returning
+    /// false, when it would take the strip past WINDOW_MAXIMUM columns.
+    unsafe fn toggle_pane_width(&self, pane: &Rc<UnsafeCell<window_pane>>) -> bool;
     /// Move the last pane to the front (`down`) or the first pane to the end,
     /// and arrange the strip. Neither selection nor notifications change.
     unsafe fn rotate_panes(&self, down: bool);
@@ -317,10 +322,10 @@ impl Window for WindowRef {
     ) -> Rc<UnsafeCell<window_pane>> {
         window_add_pane(self, other, hlimit, flags)
     }
-    unsafe fn has_room_for_pane(&self) -> bool {
-        let count = (*self.get()).panes.storage.len() + 1;
-        let minimum = window_horizontal_minimum(self);
-        strip::width(count, self.size(), minimum) <= WINDOW_MAXIMUM as u32
+    unsafe fn has_room_for_pane(&self, width: PaneWidth) -> bool {
+        let mut widths = window_pane_widths(self);
+        widths.push(width);
+        window_strip_fits(self, &widths)
     }
     unsafe fn insert_pane(
         &self,
@@ -374,6 +379,29 @@ impl Window for WindowRef {
         }
         (*self.get()).invalidate_scene();
         window_arrange(self);
+    }
+    unsafe fn toggle_pane_width(&self, pane: &Rc<UnsafeCell<window_pane>>) -> bool {
+        let position = (*self.get())
+            .panes
+            .position(&Rc::downgrade(pane))
+            .expect("pane belongs to window");
+        let width = pane.width_preference().toggled();
+        // Narrowing always succeeds, even in a strip a resize took past the
+        // maximum.
+        if width == PaneWidth::Full {
+            let mut widths = window_pane_widths(self);
+            widths[position] = width;
+            if !window_strip_fits(self, &widths) {
+                return false;
+            }
+        }
+        pane.set_width_preference(width);
+        (*self.get()).invalidate_scene();
+        window_arrange(self);
+        tty_update_window_offset(self);
+        server_redraw_window(self);
+        events_fire_window(c"window-layout-changed".as_ptr(), self.clone());
+        true
     }
     unsafe fn rotate_panes(&self, down: bool) {
         let state = &mut *self.get();
@@ -785,7 +813,7 @@ impl Window for WindowRef {
                 .is_some_and(|window| Rc::ptr_eq(window, self)),
             "spawn link belongs to window"
         );
-        if !self.has_room_for_pane() {
+        if !self.has_room_for_pane(PaneWidth::Half) {
             return Err(c"no space for a new pane".to_owned());
         }
         let mut cause = None;

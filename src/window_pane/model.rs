@@ -14,6 +14,9 @@ pub struct window_pane {
     pub(super) sy: u_int,
     pub(super) xoff: ::core::ffi::c_int,
     pub(super) yoff: ::core::ffi::c_int,
+    /// Strip width preference; it travels with the pane between positions and
+    /// windows. Only the Window's width toggle changes it.
+    pub(super) width: crate::src::shared::layout::PaneWidth,
     pub(super) flags: ::core::ffi::c_int,
     /// Owns the bitmap for synchronized output; readers borrow its bytes.
     pub(super) sync_dirty: Option<Box<[bitstr_t]>>,
@@ -92,6 +95,7 @@ impl Default for window_pane {
             sy: Default::default(),
             xoff: Default::default(),
             yoff: Default::default(),
+            width: Default::default(),
             flags: Default::default(),
             sync_dirty: Default::default(),
             sync_dirty_size: Default::default(),

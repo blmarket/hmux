@@ -134,7 +134,7 @@ pub use crate::src::shared::window::{
     window_mode, window_mode_entry, window_winlinks, windows, winlink, winlink_stack, winlinks,
 };
 use crate::src::shared::window::{
-    WINDOW_ACTIVITY, WINDOW_ALERTFLAGS, WINDOW_MODE_NO_STACK, WINDOW_PANE_NO_MODE,
+    WINDOW_ACTIVITY, WINDOW_ALERTFLAGS, WINDOW_MAXIMUM, WINDOW_MODE_NO_STACK, WINDOW_PANE_NO_MODE,
     WINLINK_ACTIVITY, WINLINK_ALERTFLAGS, WINLINK_BELL, WINLINK_SILENCE, WINLINK_VISITED,
 };
 use libc::{REG_EXTENDED, REG_ICASE};
@@ -776,22 +776,38 @@ unsafe fn window_horizontal_minimum(window: &WindowRef) -> u_int {
         .unwrap_or(PANE_MINIMUM as u_int)
 }
 
+/// Whether a strip whose panes have `widths` stays within WINDOW_MAXIMUM
+/// columns.
+unsafe fn window_strip_fits(window: &WindowRef, widths: &[PaneWidth]) -> bool {
+    strip::width(widths, window.size(), window_horizontal_minimum(window))
+        <= WINDOW_MAXIMUM as u_int
+}
+
+/// The current panes' width preferences, in order.
+unsafe fn window_pane_widths(window: &WindowRef) -> Vec<PaneWidth> {
+    window
+        .pane_snapshot()
+        .iter()
+        .map(|pane| pane.width_preference())
+        .collect()
+}
+
 /// The strip's rectangles for the current panes, in order.
 unsafe fn window_strip_cells(
     window: &WindowRef,
 ) -> Vec<(Rc<UnsafeCell<window_pane>>, layout_geometry)> {
     let panes = window.pane_snapshot();
-    let cells = strip::cells(
-        panes.len(),
-        window.size(),
-        window_horizontal_minimum(window),
-    );
+    let widths = panes
+        .iter()
+        .map(|pane| pane.width_preference())
+        .collect::<Vec<_>>();
+    let cells = strip::cells(&widths, window.size(), window_horizontal_minimum(window));
     panes.into_iter().zip(cells).collect()
 }
 
 /// The arrange step: the only writer of pane geometry. Every operation that
-/// changes the pane order, the window size or the options the strip reads ends
-/// here. Returns whether any pane moved.
+/// changes the pane order, a width preference, the window size or the options
+/// the strip reads ends here. Returns whether any pane moved.
 unsafe fn window_arrange(window: &WindowRef) -> bool {
     let cells = window_strip_cells(window);
     (*window.get()).strip_width = cells

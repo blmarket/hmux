@@ -7,6 +7,7 @@ use crate::src::server_client::Client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::colour::colour_palette;
 use crate::src::shared::command::{cmd, cmd_retval};
+use crate::src::shared::layout::PaneWidth;
 use crate::src::shared::pane::{PANE_ACTIVITY, PANE_DROP, PANE_MINIMUM, PANE_NEWSTATUS};
 use crate::src::shared::screen::MODE_SYNC;
 use crate::src::shared::window::{WindowRef, WindowWeak};
@@ -131,6 +132,10 @@ pub trait WindowPane {
 
     /// Columns the strip must give this pane, including a reserved scrollbar.
     unsafe fn minimum_layout_width(&self, reserve_scrollbar: bool) -> u32;
+    /// The strip width preference; it moves with the pane.
+    unsafe fn width_preference(&self) -> PaneWidth;
+    /// Only the Window's width toggle calls this, and arranges afterward.
+    unsafe fn set_width_preference(&self, width: PaneWidth);
     /// Apply a strip rectangle, including pane border and scrollbar policy.
     /// Only the Window's arrange step calls this. Returns whether the visible
     /// geometry changed; resize callbacks run after the pane's placement
@@ -840,6 +845,12 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         } else {
             PANE_MINIMUM as u32
         }
+    }
+    unsafe fn width_preference(&self) -> PaneWidth {
+        (*self.get()).width
+    }
+    unsafe fn set_width_preference(&self, width: PaneWidth) {
+        (*self.get()).width = width;
     }
     unsafe fn apply_layout(
         &self,

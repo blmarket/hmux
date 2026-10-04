@@ -1,8 +1,8 @@
 # Scrolling window implementation plan
 
 Status: written on 2026-10-03 against `main` at `f457d591`; it replaces the
-layout-based design. Steps 1 to 3 are done (see "Where things stand"); step 4
-is next. Line references are current as of step 3.
+layout-based design. Steps 1 to 4 are done (see "Where things stand"); step 5
+is next. Line references are current as of step 4.
 
 ## Direction
 
@@ -69,7 +69,8 @@ them (see "Removed in step 3").
 | --- | --- | --- |
 | Step 1: floating and modal panes removed | `b35d5683` | Done |
 | Step 2: zoom removed | `bfc3730b` | Done |
-| Step 3: the strip replaces the tree | The commit after `bfc3730b` | Done |
+| Step 3: the strip replaces the tree | `c61820db` | Done |
+| Step 4: width preference and `resize-pane -W` | The commit after `c61820db` | Done |
 | Window sizing split (`Window::size()` vs. `layout::logical_size`) | `8e6e80db` | Kept. `Window::size()` stays the sizing basis; `Window::logical_size()` replaces `layout::logical_size`, and step 5 changes its extent rule (see Geometry) |
 | Sticky layouts (`sticky-layout` option, `sticky` and `lastlayout` fields) | `4b6e6435` | Removed in step 3 with `tests/sticky_layout.rs` |
 | Shared server harness (`tests/common/mod.rs`) | `4b6e6435` | Kept |
@@ -110,6 +111,26 @@ and test cases. Its mode flag and `src/layout/scrolling.rs` are superseded.
 - `display-panes` draws separators and status rows from `Window::pane_cells()`.
   The redraw two-pane colour split always splits a vertical separator.
 
+### Step 4
+
+- `PaneWidth` (`src/shared/layout.rs`) is `Half` or `Full`. The preference is
+  the pane's `width` (`src/window_pane/model.rs:19`), read and written through
+  `WindowPane::width_preference` and `set_width_preference`. It starts `Half`
+  and only `Window::toggle_pane_width` writes it, so it travels with the pane
+  through swaps, rotation, `join-pane` and `break-pane`, and respawn-window
+  keeps it.
+- `strip::cells` and `strip::width` take the panes' widths; the arrange step
+  reads them from the panes in order.
+- `Window::toggle_pane_width` (`src/window/api.rs:383`) flips the preference,
+  arranges, updates the client offsets, redraws and fires
+  `window-layout-changed`, as `resize_window` does. Widening is refused when the
+  strip would pass `WINDOW_MAXIMUM`; narrowing never fails, even in a strip a
+  resize took past it.
+- `has_room_for_pane` takes the incoming pane's width: `new-pane` asks for a half
+  pane, `join-pane` for the moving pane's preference.
+- `resize-pane -W` (template `TWt:`) toggles the target and fails with "no space
+  for a full-width pane" on refusal. `-W` and `-T` combine.
+
 ### Removed in step 3 (decision 1)
 
 - Commands: `select-layout`, `next-layout`, `previous-layout`.
@@ -144,24 +165,24 @@ borrows before resizing panes or dispatching callbacks.
 
 | State | Where | Change |
 | --- | --- | --- |
-| Pane order | `panes` (`src/window/model.rs:47`) | Existing; it is the strip order |
-| Strip width | `strip_width` (`src/window/model.rs:49`) | Added in step 3; written only by the arrange step |
+| Pane order | `panes` (`src/window/model.rs:49`) | Existing; it is the strip order |
+| Strip width | `strip_width` (`src/window/model.rs:51`) | Added in step 3; written only by the arrange step |
 | Active pane, pane history | `active`, `last_panes` | Existing |
 | Size | `sx`, `sy`, pending and manual sizes | Existing |
-| Width preference | New value in the pane model (`src/window_pane/model.rs`) | Half by default |
+| Width preference | `width` in the pane model (`src/window_pane/model.rs:19`) | Added in step 4; half by default, written only by the width toggle |
 | Pane rectangle | Pane `sx`, `sy`, `xoff`, `yoff` (`src/window_pane/model.rs:13-16`) | Existing; written only by the arrange step |
 | Removed in steps 1 and 2 | `z_index`, `modal`, `modal_last`, `last_new_pane_x/y`, `saved_layout_root`, `was_zoomed`, the `WINDOW_ZOOMED` flag; the pane's `saved_layout_cell` and `PANE_ZOOMED` flag | Done |
 | Removed in step 3 | `layout_root`, `old_layout`, `lastlayout`, `sticky`; the pane's `layout_cell` | Done |
 
 ### Arrange
 
-Done in step 3. `window_arrange` (`src/window/mod.rs:804`) computes every
-pane's rectangle from the pane order, `Window::size()` and the pane scrollbar
-options (`src/window/strip.rs`), applies them through `apply_layout`
-(`src/window_pane/api.rs:844`), records the strip width and invalidates the
-scene on movement. Every Window operation that changes an input ends in it; see
-"Step 3" for the operations and their notifications. Step 4 adds the width
-preferences as an input; the width toggle notifies like the other operations.
+Done in steps 3 and 4. `window_arrange` (`src/window/mod.rs:811`) computes every
+pane's rectangle from the pane order, the panes' width preferences,
+`Window::size()` and the pane scrollbar options (`src/window/strip.rs`), applies
+them through `apply_layout` (`src/window_pane/api.rs:855`), records the strip
+width and invalidates the scene on movement. Every Window operation that changes
+an input ends in it; see "Step 3" and "Step 4" for the operations and their
+notifications.
 
 ### Geometry
 
@@ -169,19 +190,19 @@ With `(W, H) = Window::size()` and the panes in order:
 
 | Quantity | Value |
 | --- | --- |
-| Half width | `(W - 1) / 2` rounded down, raised to the horizontal minimum (the largest pane minimum, `src/window/mod.rs:778`) |
+| Half width | `(W - 1) / 2` rounded down, raised to the horizontal minimum (the largest pane minimum, `src/window/mod.rs:769`) |
 | Full width | `W`, raised to the same minimum |
 | Pane height | `H`, less scrollbar and status adjustments as today |
 | Pane first column | Previous pane's first column, plus its width, plus one separator |
-| Scrollable extent | Last pane's first column plus `W`, from step 5. Until then `Window::logical_size()` (`src/window/api.rs:402`) is `W` widened to the last pane's right edge |
+| Scrollable extent | Last pane's first column plus `W`, from step 5. Until then `Window::logical_size()` (`src/window/api.rs:430`) is `W` widened to the last pane's right edge |
 
 - Two halves and their separator always fit in `W`. An even `W` leaves one spare
   column at the right edge.
 - The extent rule makes every pane boundary reachable and gives the last pane's
   right border room to be drawn. A lone pane has an extent of exactly `W`.
 - Removing a pane closes the gap without enlarging its neighbors.
-- Refuse an insertion that would take the extent past `WINDOW_MAXIMUM` (10000);
-  resizes and removals cannot fail.
+- Refuse an insertion or a widening that would take the extent past
+  `WINDOW_MAXIMUM` (10000); resizes, narrowing and removals cannot fail.
 
 ### Viewport
 
@@ -199,20 +220,20 @@ With `(W, H) = Window::size()` and the panes in order:
   `src/window_pane/mod.rs:1804`, `:1849`) becomes the previous/next pane in
   order and stops at the ends. Up/down navigation has no target.
 - Menus and popups are placed against the logical size
-  (`src/cmd/entries/display_menu.rs:522`, `src/window/api.rs:487`). Place them
+  (`src/cmd/entries/display_menu.rs:522`, `src/window/api.rs:515`). Place them
   within the target client's viewport.
 
 ### Borders
 
 - Keep the marking rule in `redraw_mark_pane_borders`
-  (`src/screen_redraw.rs:542`): left when there is a column before the pane,
+  (`src/screen_redraw.rs:540`): left when there is a column before the pane,
   right when it is within the extent.
 - Delete horizontal borders and junction cell types. The floating border and
   clipping code went in step 1. Panes never overlap, so visible-range clipping
   against other panes goes too.
 - Active-pane indicator (proposed): on every separator the top half takes the
   left pane's style and the bottom half the right pane's. This replaces
-  `redraw_check_two_pane_colours` (`src/screen_redraw.rs:271`), which only
+  `redraw_check_two_pane_colours` (`src/screen_redraw.rs:269`), which only
   handles exactly two panes.
 - The `display-panes` preview (`src/window_panes.rs`) draws from the pane
   rectangles since step 3.
@@ -227,8 +248,8 @@ rest. "Done" marks rows step 3 completed.
 | `new-pane` | Inserts a half-width pane after the target; `-b` before it. `-c`, `-e`, `-E` and `-d` as today. Floating and modal flags (`-L`, `-M`, `-O`, `-x`, `-y`, `-X`, `-Y`) and the split flags (`-f`, `-h`, `-l`, `-p`, `-v`) are removed | Done |
 | `kill-pane` | Unchanged; the strip closes the gap | Done |
 | `select-pane -L` / `-R` | Previous/next pane, stopping at the ends | Confirmed |
-| `resize-pane -W` | New. Toggles the target between half and full width. The template is `Tt:` (`src/cmd/entries/resize_pane.rs:16`) | Confirmed |
-| `swap-pane -U` / `-D`, `-s`/`-t` | Reorder the pane list; the width preference travels with the pane; `-U`/`-D` stop at the ends | Done, except the width preference (step 4) |
+| `resize-pane -W` | New. Toggles the target between half and full width; a widening past `WINDOW_MAXIMUM` fails | Done |
+| `swap-pane -U` / `-D`, `-s`/`-t` | Reorder the pane list; the width preference travels with the pane; `-U`/`-D` stop at the ends | Done |
 | `refresh-client -L` / `-R` / `-c` | Manual pan and reset, unchanged | Confirmed |
 | `display-panes` | Kept; the preview draws the strip | Done |
 | `split-window` | Alias for insertion; `-f`, `-h`, `-l`, `-p` and `-v` are accepted and ignored | Done (decision 2) |
@@ -305,8 +326,11 @@ tree still exists, so step 3 replaces a purely tiled tree.
    deleted, `tests/window_sizes.rs` covers the strip and its lifecycle, and the
    harness and four other test files use `new-pane`. `copy_regex_cells` widens
    its window so its lone half pane keeps ten columns. See "Step 3".
-4. **Width preference.** Add the pane value and `resize-pane -W`. Reordering
-   carries the preference.
+4. **Width preference.** Done. `PaneWidth` on the pane, the strip geometry over
+   it, `Window::toggle_pane_width` and `resize-pane -W`. Reordering and moving
+   between windows carry the preference, and `join-pane` checks room for the
+   moving pane's width. `tests/window_sizes.rs` covers the toggle, mixed widths,
+   resizing, movement and the maximum. See "Step 4".
 5. **Viewport.** Pane-boundary following, the extent rule, pan reset on
    selection, navigation that stops at the ends, menu and popup placement,
    mouse coordinates after panning. Add a PTY client to `tests/common/mod.rs`.
@@ -349,6 +373,8 @@ checks.
 - Session-restore tools that replay `select-layout <string>` fail on the
   removed command; the panes they create still form a strip in order.
 - Two-dimensional tiling is gone whatever a command asks for.
+- A `swap-pane` between windows does not check room, so carrying a full pane
+  into a long strip can take it past `WINDOW_MAXIMUM`, as a window resize can.
 
 ## Completion criteria
 

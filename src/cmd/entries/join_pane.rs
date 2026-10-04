@@ -85,8 +85,11 @@ unsafe fn cmd_join_pane_exec(
             });
             return CMD_RETURN_ERROR;
         }
-        // Moving within one strip keeps its pane count.
-        if !std::rc::Rc::ptr_eq(src_owner, &dst_window) && !dst_window.has_room_for_pane() {
+        // Moving within one strip keeps its width. The pane brings its own
+        // width preference to another.
+        if !std::rc::Rc::ptr_eq(src_owner, &dst_window)
+            && !dst_window.has_room_for_pane(src_pane_owner.width_preference())
+        {
             cmdq_error(item_handle, |out| out.write_all(b"no space for a new pane"));
             return CMD_RETURN_ERROR;
         }
