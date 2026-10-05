@@ -1,34 +1,36 @@
 //! The tiling layout: the panes divide the window between them, and nothing
 //! extends past it. A fixed rule over the pane list places them: the first
 //! pane takes the window, and each next pane splits the previous pane's
-//! rectangle in two along its longer side, the earlier pane keeping the first
-//! half.
+//! rectangle in two, the earlier pane keeping the first half. The first split
+//! is along the window's longer side; the splits after it alternate, so a wide
+//! window does not end up as one row of narrow columns.
 
 use super::{window_geometry, LayoutNode};
 use crate::src::shared::layout::layout_geometry;
 
 /// `count` panes, each splitting the previous one's rectangle.
 pub(super) fn tree(count: usize, size: (u32, u32)) -> LayoutNode {
-    split_from(0, count, window_geometry(size))
+    let g = window_geometry(size);
+    split_from(0, count, g, splits_across(g))
 }
 
-/// Panes `first` onwards of `count`, in rectangle `g`.
-fn split_from(first: usize, count: usize, g: layout_geometry) -> LayoutNode {
+/// Panes `first` onwards of `count`, in rectangle `g`, split `across` or
+/// stacked; the next split goes the other way.
+fn split_from(first: usize, count: usize, g: layout_geometry, across: bool) -> LayoutNode {
     if first + 1 == count {
         return LayoutNode::Pane(first);
     }
-    let across = splits_across(g);
     LayoutNode::Split {
         across,
         children: vec![
             (1, LayoutNode::Pane(first)),
-            (1, split_from(first + 1, count, second_half(g, across))),
+            (1, split_from(first + 1, count, second_half(g, across), !across)),
         ],
     }
 }
 
-/// Whether a split of `g` puts its halves side by side: its longer side, as
-/// the eye sees it, is across. A terminal cell is about twice as tall as it is
+/// Whether the first split of `g` puts its halves side by side: its longer
+/// side, as the eye sees it, is across. A terminal cell is about twice as tall as it is
 /// wide.
 fn splits_across(g: layout_geometry) -> bool {
     g.sx >= 2 * g.sy
@@ -83,15 +85,15 @@ mod tests {
     }
 
     #[test]
-    fn each_pane_splits_the_previous_one_along_its_longer_side() {
+    fn the_first_split_is_along_the_longer_side_and_the_rest_alternate() {
         // 80x24 looks wider than tall: side by side.
         assert_eq!(rects(2, (80, 24)), [(40, 24, 0, 0), (39, 24, 41, 0)]);
-        // The second pane's 39x24 looks taller than wide: stacked.
+        // Then stacked.
         assert_eq!(
             rects(3, (80, 24)),
             [(40, 24, 0, 0), (39, 12, 41, 0), (39, 11, 41, 13)]
         );
-        // The third pane's 39x11 looks wider again: side by side.
+        // Then side by side again.
         assert_eq!(
             rects(4, (80, 24)),
             [
@@ -99,6 +101,26 @@ mod tests {
                 (39, 12, 41, 0),
                 (19, 11, 41, 13),
                 (19, 11, 61, 13)
+            ]
+        );
+        // 40x60 looks taller than wide: stacked first, then side by side.
+        assert_eq!(
+            rects(3, (40, 60)),
+            [(40, 30, 0, 0), (20, 29, 0, 31), (19, 29, 21, 31)]
+        );
+    }
+
+    #[test]
+    fn a_wide_window_does_not_become_a_row_of_columns() {
+        // The second pane's 99x24 still looks wider than tall, but the split
+        // after a side-by-side one stacks.
+        assert_eq!(
+            rects(4, (200, 24)),
+            [
+                (100, 24, 0, 0),
+                (99, 12, 101, 0),
+                (49, 11, 101, 13),
+                (49, 11, 151, 13)
             ]
         );
     }

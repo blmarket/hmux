@@ -1,6 +1,7 @@
 //! The tiling layout divides the window between the panes by a fixed rule over
 //! the pane list: the first pane takes the window, and each next pane splits
-//! the previous one's rectangle in two along its longer side. select-layout
+//! the previous one's rectangle in two, first along the window's longer side
+//! and then alternating between side by side and stacked. select-layout
 //! switches a window between the scrolling strip and tiling, and closing a
 //! pane gives its share back.
 
@@ -67,10 +68,10 @@ fn select_layout_switches_between_tiles_and_the_strip() {
 }
 
 #[test]
-fn a_new_pane_splits_the_active_pane_along_its_longer_side() {
+fn a_new_pane_splits_the_active_pane_the_other_way_from_the_last_split() {
     let (server, ids) = left_and_right_column();
     // 80 by 24 looks wider than tall, so the second pane went beside the
-    // first; 39 by 24 looks taller than wide, so the third went below it.
+    // first; the next split alternates, so the third went below it.
     assert_eq!(
         rects(&server),
         [(0, 40, 0, 24), (41, 39, 0, 12), (41, 39, 13, 11)]
