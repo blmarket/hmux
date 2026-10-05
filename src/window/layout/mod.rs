@@ -2,8 +2,9 @@
 //! each pane's place in the list and its layout metadata, such as its strip
 //! width, give the rectangles. The window stores only which layout it uses,
 //! a `LayoutKind`, whose functions are the only layout code that touches
-//! panes: they read each pane's metadata and call the layout's own pure
-//! functions. A layout's metadata type is private to its module.
+//! panes: they dispatch to the layout's `Layout` implementation, which reads
+//! each pane's metadata and calls the layout's own pure functions. A layout's
+//! metadata type is private to its module.
 
 mod presets;
 mod scrolling;
@@ -34,6 +35,96 @@ pub enum LayoutKind {
     MainCentered,
     MainHorizontal,
     Grid,
+}
+
+/// One layout's behaviour. A layout keeps no state of its own, so its
+/// functions take no receiver and `LayoutKind` picks the implementation
+/// statically. The defaults are those of a layout that fills the window with
+/// a shape, as tmux's layouts do.
+trait Layout {
+    /// The shape of `count` panes, at least one.
+    fn shape(count: usize, size: (u32, u32)) -> LayoutNode;
+
+    /// The panes' rectangles in list order: by default the shape, filling the
+    /// window.
+    fn arrange(panes: &[Rc<UnsafeCell<window_pane>>], size: (u32, u32)) -> Vec<layout_geometry> {
+        let tree = (!panes.is_empty()).then(|| Self::shape(panes.len(), size));
+        place(tree, panes.len(), size)
+    }
+
+    /// Whether the layout takes the pane list in this window, or why not: by
+    /// default while every pane stays inside the window.
+    fn admits(
+        panes: &[Rc<UnsafeCell<window_pane>>],
+        size: (u32, u32),
+    ) -> Result<(), &'static CStr> {
+        fits(
+            &Self::arrange(panes, size),
+            size,
+            c"no space for a new pane: the panes would not fit in the window",
+        )
+    }
+
+    /// The area a view can scroll across: by default the window itself.
+    /// Builds no rectangles.
+    fn logical_size(
+        _panes: impl Iterator<Item = Rc<UnsafeCell<window_pane>>>,
+        size: (u32, u32),
+    ) -> (u32, u32) {
+        size
+    }
+
+    /// A pane's metadata after `action`, or why this layout can't do it: by
+    /// default it can't.
+    fn apply(
+        action: LayoutAction,
+        _meta: Option<&dyn Any>,
+    ) -> Result<Option<Box<dyn Any>>, &'static CStr> {
+        match action {
+            LayoutAction::ToggleZoom => Err(c"this layout can't zoom a pane"),
+        }
+    }
+
+    /// Whether a separator with a pane on each side splits its colour, half
+    /// in each pane's border style, to show which side is active. By default
+    /// only with two panes, as tmux does: every pane is in view, so two panes
+    /// share one separator, and more show the active one by the outline of
+    /// its borders.
+    fn splits_separator_colours(panes: usize) -> bool {
+        panes == 2
+    }
+}
+
+/// `$body` with `$L` naming the `Layout` implementation of `$kind`.
+macro_rules! with_layout {
+    ($kind:expr, $L:ident => $body:expr) => {
+        match $kind {
+            LayoutKind::Scrolling => {
+                type $L = scrolling::Scrolling;
+                $body
+            }
+            LayoutKind::Tiling => {
+                type $L = tiling::Tiling;
+                $body
+            }
+            LayoutKind::MainVertical => {
+                type $L = presets::MainVertical;
+                $body
+            }
+            LayoutKind::MainCentered => {
+                type $L = presets::MainCentered;
+                $body
+            }
+            LayoutKind::MainHorizontal => {
+                type $L = presets::MainHorizontal;
+                $body
+            }
+            LayoutKind::Grid => {
+                type $L = presets::Grid;
+                $body
+            }
+        }
+    };
 }
 
 impl LayoutKind {
@@ -70,26 +161,13 @@ impl LayoutKind {
         Self::ALL[(index + 1) % Self::ALL.len()]
     }
 
-    /// The shape of `count` panes, for a layout without metadata, or the
-    /// strip's row.
-    fn shape(self, count: usize, size: (u32, u32)) -> LayoutNode {
-        match self {
-            LayoutKind::Scrolling => scrolling::tree(count),
-            LayoutKind::Tiling => tiling::tree(count, size),
-            LayoutKind::MainVertical => presets::main_vertical(count),
-            LayoutKind::MainCentered => presets::main_centered(count),
-            LayoutKind::MainHorizontal => presets::main_horizontal(count),
-            LayoutKind::Grid => LayoutNode::grid(count),
-        }
-    }
-
     /// The panes as a split tree, for the layout string; none without panes.
     pub(super) fn tree(
         self,
         panes: &[Rc<UnsafeCell<window_pane>>],
         size: (u32, u32),
     ) -> Option<LayoutNode> {
-        (!panes.is_empty()).then(|| self.shape(panes.len(), size))
+        (!panes.is_empty()).then(|| with_layout!(self, L => L::shape(panes.len(), size)))
     }
 
     /// The panes' rectangles in list order.
@@ -98,10 +176,7 @@ impl LayoutKind {
         panes: &[Rc<UnsafeCell<window_pane>>],
         size: (u32, u32),
     ) -> Vec<layout_geometry> {
-        match self {
-            LayoutKind::Scrolling => scrolling::arrange(panes, size),
-            _ => place(self.tree(panes, size), panes.len(), size),
-        }
+        with_layout!(self, L => L::arrange(panes, size))
     }
 
     /// Whether this layout takes the pane list in this window, or why not.
@@ -112,16 +187,7 @@ impl LayoutKind {
         panes: &[Rc<UnsafeCell<window_pane>>],
         size: (u32, u32),
     ) -> Result<(), &'static CStr> {
-        if self == LayoutKind::Scrolling {
-            return scrolling::admits(panes, size);
-        }
-        if inside(&self.arrange(panes, size), size) {
-            Ok(())
-        } else if self == LayoutKind::Tiling {
-            Err(c"no space for a new pane: the pane is too small to split")
-        } else {
-            Err(c"no space for a new pane: the panes would not fit in the window")
-        }
+        with_layout!(self, L => L::admits(panes, size))
     }
 
     /// The area a view can scroll across: the strip's length by the window
@@ -130,12 +196,9 @@ impl LayoutKind {
     pub(super) fn logical_size(
         self,
         panes: impl Iterator<Item = Rc<UnsafeCell<window_pane>>>,
-        (sx, sy): (u32, u32),
+        size: (u32, u32),
     ) -> (u32, u32) {
-        match self {
-            LayoutKind::Scrolling => (scrolling::logical_width(panes, sx), sy),
-            _ => (sx, sy),
-        }
+        with_layout!(self, L => L::logical_size(panes, size))
     }
 
     /// A pane's metadata after `action`, or why this layout can't do it.
@@ -144,10 +207,13 @@ impl LayoutKind {
         action: LayoutAction,
         meta: Option<&dyn Any>,
     ) -> Result<Option<Box<dyn Any>>, &'static CStr> {
-        match (self, action) {
-            (LayoutKind::Scrolling, LayoutAction::ToggleZoom) => Ok(Some(scrolling::toggled(meta))),
-            (_, LayoutAction::ToggleZoom) => Err(c"this layout can't zoom a pane"),
-        }
+        with_layout!(self, L => L::apply(action, meta))
+    }
+
+    /// Whether a separator between two of the window's `panes` panes splits
+    /// its colour between their border styles.
+    pub fn splits_separator_colours(self, panes: usize) -> bool {
+        with_layout!(self, L => L::splits_separator_colours(panes))
     }
 }
 
@@ -170,11 +236,17 @@ fn place(tree: Option<LayoutNode>, count: usize, size: (u32, u32)) -> Vec<layout
     cells
 }
 
-/// Whether every rectangle of `cells` stays inside the window.
-fn inside(cells: &[layout_geometry], (sx, sy): (u32, u32)) -> bool {
+/// Whether every rectangle of `cells` stays inside the window, or `reason`.
+fn fits(
+    cells: &[layout_geometry],
+    (sx, sy): (u32, u32),
+    reason: &'static CStr,
+) -> Result<(), &'static CStr> {
     cells
         .iter()
         .all(|cell| cell.xoff as u32 + cell.sx <= sx && cell.yoff as u32 + cell.sy <= sy)
+        .then_some(())
+        .ok_or(reason)
 }
 
 /// Columns the panes occupy, up to the rightmost pane's right edge.

@@ -5,13 +5,35 @@
 //! is along the window's longer side; the splits after it alternate, so a wide
 //! window does not end up as one row of narrow columns.
 
-use super::{window_geometry, LayoutNode};
+use super::{fits, window_geometry, Layout, LayoutNode};
 use crate::src::shared::layout::layout_geometry;
+use crate::src::shared::pane::window_pane;
+use std::cell::UnsafeCell;
+use std::ffi::CStr;
+use std::rc::Rc;
 
-/// `count` panes, each splitting the previous one's rectangle.
-pub(super) fn tree(count: usize, size: (u32, u32)) -> LayoutNode {
-    let g = window_geometry(size);
-    split_from(0, count, g, splits_across(g))
+/// The tiling layout.
+pub(super) struct Tiling;
+
+impl Layout for Tiling {
+    /// `count` panes, each splitting the previous one's rectangle.
+    fn shape(count: usize, size: (u32, u32)) -> LayoutNode {
+        let g = window_geometry(size);
+        split_from(0, count, g, splits_across(g))
+    }
+
+    /// Only a split adds a pane, so a list that does not fit is a pane too
+    /// small to split.
+    fn admits(
+        panes: &[Rc<UnsafeCell<window_pane>>],
+        size: (u32, u32),
+    ) -> Result<(), &'static CStr> {
+        fits(
+            &Self::arrange(panes, size),
+            size,
+            c"no space for a new pane: the pane is too small to split",
+        )
+    }
 }
 
 /// Panes `first` onwards of `count`, in rectangle `g`, split `across` or

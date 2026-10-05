@@ -2,7 +2,7 @@
 //! extend beyond the window, each using half or all of the visible width, as
 //! its metadata says, and the full height.
 
-use super::LayoutNode;
+use super::{Layout, LayoutAction, LayoutNode};
 use crate::src::shared::layout::layout_geometry;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::PANE_MINIMUM;
@@ -37,49 +37,60 @@ fn widths(panes: &[Rc<UnsafeCell<window_pane>>]) -> Vec<Width> {
         .collect()
 }
 
-/// The metadata after `resize-pane -Z`: the other width.
-pub(super) fn toggled(meta: Option<&dyn Any>) -> Box<dyn Any> {
-    Box::new(match width_of(meta) {
-        Width::Half => Width::Full,
-        Width::Full => Width::Half,
-    })
-}
+/// The scrolling layout.
+pub(super) struct Scrolling;
 
-/// A lone pane, or one row of `count` panes.
-pub(super) fn tree(count: usize) -> LayoutNode {
-    LayoutNode::line(true, 0..count)
-}
+impl Layout for Scrolling {
+    /// A lone pane, or one row of `count` panes.
+    fn shape(count: usize, _size: (u32, u32)) -> LayoutNode {
+        LayoutNode::line(true, 0..count)
+    }
 
-/// The strip of `panes` at their widths.
-pub(super) fn arrange(
-    panes: &[Rc<UnsafeCell<window_pane>>],
-    size: (u32, u32),
-) -> Vec<layout_geometry> {
-    cells(&widths(panes), size)
-}
+    /// The strip of `panes` at their widths.
+    fn arrange(panes: &[Rc<UnsafeCell<window_pane>>], size: (u32, u32)) -> Vec<layout_geometry> {
+        cells(&widths(panes), size)
+    }
 
-/// Columns a view of the strip of `panes` in an `sx`-column window can
-/// scroll across.
-pub(super) fn logical_width(
-    panes: impl Iterator<Item = Rc<UnsafeCell<window_pane>>>,
-    sx: u32,
-) -> u32 {
-    strip_length(
-        panes.map(|pane| unsafe { width_of(pane.borrow_layout_meta().as_deref()) }),
-        sx,
-    )
-}
+    /// The strip takes panes while its length stays within WINDOW_MAXIMUM
+    /// columns.
+    fn admits(
+        panes: &[Rc<UnsafeCell<window_pane>>],
+        size: (u32, u32),
+    ) -> Result<(), &'static CStr> {
+        if strip_length(widths(panes).into_iter(), size.0) <= WINDOW_MAXIMUM as u32 {
+            Ok(())
+        } else {
+            Err(c"no space: the strip would pass its maximum width")
+        }
+    }
 
-/// The strip takes panes while its length stays within WINDOW_MAXIMUM
-/// columns.
-pub(super) fn admits(
-    panes: &[Rc<UnsafeCell<window_pane>>],
-    size: (u32, u32),
-) -> Result<(), &'static CStr> {
-    if logical_width(panes.iter().cloned(), size.0) <= WINDOW_MAXIMUM as u32 {
-        Ok(())
-    } else {
-        Err(c"no space: the strip would pass its maximum width")
+    /// Columns a view of the strip can scroll across, by the window height.
+    fn logical_size(
+        panes: impl Iterator<Item = Rc<UnsafeCell<window_pane>>>,
+        (sx, sy): (u32, u32),
+    ) -> (u32, u32) {
+        let widths = panes.map(|pane| unsafe { width_of(pane.borrow_layout_meta().as_deref()) });
+        (strip_length(widths, sx), sy)
+    }
+
+    /// `resize-pane -Z` switches the pane to the other width.
+    fn apply(
+        action: LayoutAction,
+        meta: Option<&dyn Any>,
+    ) -> Result<Option<Box<dyn Any>>, &'static CStr> {
+        match action {
+            LayoutAction::ToggleZoom => Ok(Some(Box::new(match width_of(meta) {
+                Width::Half => Width::Full,
+                Width::Full => Width::Half,
+            }))),
+        }
+    }
+
+    /// Every separator between two panes, whatever the pane count: a view
+    /// shows two panes and the one separator between them however many the
+    /// strip holds.
+    fn splits_separator_colours(_panes: usize) -> bool {
+        true
     }
 }
 

@@ -155,29 +155,32 @@ fn separators_beside_the_active_pane_take_its_style() {
             .map(|y| (screen.cells[y][x].ch == BORDER).then_some(screen.cells[y][x].fg))
             .collect::<Vec<_>>()
     };
-    let solid = |fg| vec![Some(fg); 24];
-    for (active, [first, second, last]) in [
-        (0, [GREEN, RED, RED]),
-        (1, [GREEN, GREEN, RED]),
-        (2, [RED, GREEN, GREEN]),
-    ] {
-        server.success(&["select-pane", "-t", &ids[active]]);
-        server.success(&["refresh-client", "-t", &client.tty, "-L", "999"]);
-        client.wait_screen(|screen| colours(screen, 40) == solid(first));
-        server.success(&["refresh-client", "-t", &client.tty, "-R", "42"]);
-        client.wait_screen(|screen| {
-            colours(screen, 39) == solid(second) && colours(screen, 80) == solid(last)
-        });
-    }
-    // With two panes their one separator is split: the top half takes the
-    // left pane's style and the bottom half the right pane's.
-    server.success(&["kill-pane", "-t", &ids[2]]);
-    server.success(&["select-pane", "-t", &ids[0]]);
+    // A separator between two panes is split whatever the pane count: the
+    // top half takes the left pane's style and the bottom half the right
+    // pane's. The last pane's right border has one pane beside it.
     let split = |top, bottom| {
         (0..24)
             .map(|y| Some(if y <= 12 { top } else { bottom }))
             .collect::<Vec<_>>()
     };
+    let solid = |fg| vec![Some(fg); 24];
+    for (active, [first, second], last) in [
+        (0, [(GREEN, RED), (RED, RED)], RED),
+        (1, [(RED, GREEN), (GREEN, RED)], RED),
+        (2, [(RED, RED), (RED, GREEN)], GREEN),
+    ] {
+        server.success(&["select-pane", "-t", &ids[active]]);
+        server.success(&["refresh-client", "-t", &client.tty, "-L", "999"]);
+        client.wait_screen(|screen| colours(screen, 40) == split(first.0, first.1));
+        server.success(&["refresh-client", "-t", &client.tty, "-R", "42"]);
+        client.wait_screen(|screen| {
+            colours(screen, 39) == split(second.0, second.1) && colours(screen, 80) == solid(last)
+        });
+    }
+    // Two panes split their one separator the same way.
+    server.success(&["kill-pane", "-t", &ids[2]]);
+    server.success(&["select-pane", "-t", &ids[0]]);
+    server.success(&["refresh-client", "-t", &client.tty, "-L", "999"]);
     client.wait_screen(|screen| colours(screen, 40) == split(GREEN, RED));
     server.success(&["select-pane", "-t", &ids[1]]);
     client.wait_screen(|screen| colours(screen, 40) == split(RED, GREEN));

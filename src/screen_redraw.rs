@@ -252,9 +252,10 @@ unsafe fn redraw_pane_to_scene(
     let mut wy: ::core::ffi::c_int = wp.geometry().3 + py;
     redraw_window_to_scene(bctx, wx, wy, x, y)
 }
-/// Two strip panes share one vertical separator, which splits its colour.
-unsafe fn redraw_check_two_pane_colours(w: &WindowRef) -> bool {
-    w.pane_snapshot().len() == 2
+/// Whether the window's layout splits the colour of a separator between two
+/// panes.
+unsafe fn redraw_check_split_colours(w: &WindowRef) -> bool {
+    w.layout().splits_separator_colours(w.pane_snapshot().len())
 }
 
 unsafe fn redraw_mark_pane_inside(
@@ -580,9 +581,10 @@ unsafe fn redraw_mark_border_status(
         });
     }
 }
-/// With two panes, their separator splits its colour: a vertical one at half
-/// the window's height, a horizontal one at half its width.
-unsafe fn redraw_mark_two_pane_colours(mut bctx: *mut redraw_build_ctx) {
+/// When the layout says so, a separator between two panes splits its colour:
+/// a vertical one at half the window's height, a horizontal one at half its
+/// width.
+unsafe fn redraw_mark_split_colours(mut bctx: *mut redraw_build_ctx) {
     let mut bc: *mut redraw_build_cell = ::core::ptr::null_mut::<redraw_build_cell>();
     let mut sd: *mut redraw_span_data = ::core::ptr::null_mut::<redraw_span_data>();
     let mut x: u_int = 0;
@@ -591,7 +593,7 @@ unsafe fn redraw_mark_two_pane_colours(mut bctx: *mut redraw_build_ctx) {
     if (*bctx).ind != PANE_BORDER_COLOUR && (*bctx).ind != PANE_BORDER_BOTH {
         return;
     }
-    if !redraw_check_two_pane_colours((*bctx).w) {
+    if !redraw_check_split_colours((*bctx).w) {
         return;
     }
     y = 0 as u_int;
@@ -677,7 +679,7 @@ unsafe fn redraw_build_cells<'a>(
         redraw_mark_pane(bctx, &pane_owner);
     }
     redraw_set_border_types(bctx);
-    redraw_mark_two_pane_colours(bctx);
+    redraw_mark_split_colours(bctx);
     for pane_owner in (*bctx).w.pane_snapshot() {
         redraw_mark_border_status(bctx, &pane_owner);
     }

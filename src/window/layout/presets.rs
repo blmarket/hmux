@@ -2,7 +2,7 @@
 //! the list is the main pane; the rest are side panes, in order. Swapping or
 //! rotating the list is enough to change which pane is the main one.
 
-use super::LayoutNode;
+use super::{Layout, LayoutNode};
 
 /// The main pane, then the side panes in a line the other way, sharing the
 /// split equally.
@@ -20,33 +20,54 @@ fn main_and_sides(count: usize, across: bool) -> LayoutNode {
 }
 
 /// The main pane on the left half; the side panes stacked on the right half.
-pub(super) fn main_vertical(count: usize) -> LayoutNode {
-    main_and_sides(count, true)
+pub(super) struct MainVertical;
+
+impl Layout for MainVertical {
+    fn shape(count: usize, _size: (u32, u32)) -> LayoutNode {
+        main_and_sides(count, true)
+    }
 }
 
 /// The main pane on the top half; the side panes side by side on the bottom
 /// half.
-pub(super) fn main_horizontal(count: usize) -> LayoutNode {
-    main_and_sides(count, false)
+pub(super) struct MainHorizontal;
+
+impl Layout for MainHorizontal {
+    fn shape(count: usize, _size: (u32, u32)) -> LayoutNode {
+        main_and_sides(count, false)
+    }
 }
 
 /// The main pane in the middle half; the side panes stacked in a column on
 /// either side, the right one taking the first half of them. A lone side pane
 /// sits on the right.
-pub(super) fn main_centered(count: usize) -> LayoutNode {
-    let sides = count - 1;
-    if sides < 2 {
-        return main_and_sides(count, true);
+pub(super) struct MainCentered;
+
+impl Layout for MainCentered {
+    fn shape(count: usize, _size: (u32, u32)) -> LayoutNode {
+        let sides = count - 1;
+        if sides < 2 {
+            return main_and_sides(count, true);
+        }
+        let right = 1..1 + sides.div_ceil(2);
+        let left = right.end..count;
+        LayoutNode::Split {
+            across: true,
+            children: vec![
+                (1, LayoutNode::line(false, left)),
+                (2, LayoutNode::Pane(0)),
+                (1, LayoutNode::line(false, right)),
+            ],
+        }
     }
-    let right = 1..1 + sides.div_ceil(2);
-    let left = right.end..count;
-    LayoutNode::Split {
-        across: true,
-        children: vec![
-            (1, LayoutNode::line(false, left)),
-            (2, LayoutNode::Pane(0)),
-            (1, LayoutNode::line(false, right)),
-        ],
+}
+
+/// Every pane an equal share of an even grid.
+pub(super) struct Grid;
+
+impl Layout for Grid {
+    fn shape(count: usize, _size: (u32, u32)) -> LayoutNode {
+        LayoutNode::grid(count)
     }
 }
 
