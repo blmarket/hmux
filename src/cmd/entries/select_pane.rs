@@ -25,6 +25,7 @@ use crate::src::server_fn::{
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::events::event_payload;
+use crate::src::shared::layout::Direction;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::tty::tty_window_bigger;
@@ -45,12 +46,12 @@ pub static cmd_select_pane_entry: cmd_entry = {
         name: c"select-pane",
         alias: Some(c"selectp"),
         args: args_parse {
-            template: c"degLlMmP:RT:t:",
+            template: c"DdegLlMmP:RT:t:U",
             lower: 0 as ::core::ffi::c_int,
             upper: 0 as ::core::ffi::c_int,
             cb: None,
         },
-        usage: c"[-deLlMmR] [-T title] [-t target-pane]",
+        usage: c"[-DdeLlMmRU] [-T title] [-t target-pane]",
         source: cmd_entry_flag {
             flag: 0,
             type_0: CMD_FIND_PANE,
@@ -282,13 +283,19 @@ unsafe fn cmd_select_pane_exec(
             cmdq_print(item_handle, |out| write_cstr(out, style.as_ptr()));
             return CMD_RETURN_NORMAL;
         }
-        // Left and right are the previous and next panes in the strip; they
-        // stop at its ends.
-        let left = args_has(arguments, b'L') != 0;
-        let pane = if left || args_has(arguments, b'R') != 0 {
-            let Some(selected) =
-                window.step_pane(Some(&std::rc::Rc::downgrade(&original_pane)), left)
-            else {
+        // A direction selects the layout's neighbouring pane; there is none
+        // past the edge.
+        let direction = [
+            (b'L', Direction::Left),
+            (b'R', Direction::Right),
+            (b'U', Direction::Up),
+            (b'D', Direction::Down),
+        ]
+        .into_iter()
+        .find(|&(flag, _)| args_has(arguments, flag) != 0)
+        .map(|(_, direction)| direction);
+        let pane = if let Some(direction) = direction {
+            let Some(selected) = window.pane_in_direction(&original_pane, direction) else {
                 return CMD_RETURN_NORMAL;
             };
             selected

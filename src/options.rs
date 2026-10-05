@@ -1663,6 +1663,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
         || strcmp(name, c"status-position".as_ptr()) == 0 as ::core::ffi::c_int
         || strcmp(name, c"pane-border-indicators".as_ptr()) == 0 as ::core::ffi::c_int
         || strcmp(name, c"pane-border-lines".as_ptr()) == 0 as ::core::ffi::c_int
+        || strcmp(name, c"pane-border-status".as_ptr()) == 0 as ::core::ffi::c_int
         || strcmp(name, c"pane-scrollbars".as_ptr()) == 0 as ::core::ffi::c_int
         || strcmp(name, c"pane-scrollbars-timeout".as_ptr()) == 0 as ::core::ffi::c_int
         || strcmp(name, c"pane-scrollbars-position".as_ptr()) == 0 as ::core::ffi::c_int
@@ -1696,7 +1697,8 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
             pane_owner.refresh_palette();
         }
     }
-    if strcmp(name, c"pane-scrollbars".as_ptr()) == 0 as ::core::ffi::c_int
+    if strcmp(name, c"pane-border-status".as_ptr()) == 0 as ::core::ffi::c_int
+        || strcmp(name, c"pane-scrollbars".as_ptr()) == 0 as ::core::ffi::c_int
         || strcmp(name, c"pane-scrollbars-position".as_ptr()) == 0 as ::core::ffi::c_int
     {
         let mut window_cursor = windows.first();

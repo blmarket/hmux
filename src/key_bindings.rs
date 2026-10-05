@@ -198,7 +198,7 @@ unsafe fn key_bindings_init_done() -> cmd_retval {
 }
 
 pub unsafe fn key_bindings_init() {
-    static defaults: [&CStr; 258] = [
+    static defaults: [&CStr; 264] = [
         c"bind -N 'Send the prefix key' C-b { send-prefix }",
         c"bind -N 'Rotate through the panes' C-o { rotate-window }",
         c"bind -N 'Suspend the current client' C-z { suspend-client }",
@@ -259,6 +259,9 @@ pub unsafe fn key_bindings_init() {
         c"bind -N 'Enter copy mode and scroll up' PPage { copy-mode -u }",
         c"bind -N 'Select the pane to the left of the active pane' -r Left { select-pane -L }",
         c"bind -N 'Select the pane to the right of the active pane' -r Right { select-pane -R }",
+        c"bind -N 'Select the pane above the active pane' -r Up { select-pane -U }",
+        c"bind -N 'Select the pane below the active pane' -r Down { select-pane -D }",
+        c"bind -N 'Arrange the window in the next layout' Space { select-layout -n }",
         c"bind -N 'Select the next window with an alert' M-n { next-window -a }",
         c"bind -N 'Rotate through the panes in reverse' M-o { rotate-window -D }",
         c"bind -N 'Select the previous window with an alert' M-p { previous-window -a }",
@@ -271,7 +274,10 @@ pub unsafe fn key_bindings_init() {
         c"bind -N 'Insert a pane after the active pane in its directory' -Tstrip c { new-pane -c '#{pane_current_path}' }",
         c"bind -N 'Select the pane to the left of the active pane' -Tstrip h { select-pane -L }",
         c"bind -N 'Select the pane to the right of the active pane' -Tstrip l { select-pane -R }",
-        c"bind -N 'Toggle the active pane between half and full width' -Tstrip f { resize-pane -W }",
+        c"bind -N 'Select the pane above the active pane' -Tstrip k { select-pane -U }",
+        c"bind -N 'Select the pane below the active pane' -Tstrip j { select-pane -D }",
+        c"bind -N 'Arrange the window in the next layout' -Tstrip Space { select-layout -n }",
+        c"bind -N 'Toggle the active pane between half and full width' -Tstrip f { resize-pane -Z }",
         c"bind -N 'Swap the active pane with the pane to the left' -Tstrip H { swap-pane -U }",
         c"bind -N 'Swap the active pane with the pane to the right' -Tstrip L { swap-pane -D }",
         c"bind -N 'Kill the active pane' -Tstrip x { kill-pane }",

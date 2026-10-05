@@ -220,7 +220,19 @@ pub(crate) unsafe fn prepare_respawn_window(
         }
         let source_pane_owner = window.next_pane(None).expect("respawn window has a pane");
         (*sc).wp0 = std::rc::Rc::downgrade(&source_pane_owner);
-        window.reset_to_pane(&source_pane_owner);
+        // The window keeps only the source pane, and selects it.
+        let rest = window
+            .pane_snapshot()
+            .into_iter()
+            .filter(|pane| !std::rc::Rc::ptr_eq(pane, &source_pane_owner))
+            .collect::<Vec<_>>();
+        window
+            .rearrange_panes(std::slice::from_ref(&source_pane_owner))
+            .expect("a removal is never refused");
+        for pane in rest {
+            pane.destroy();
+        }
+        window.select_pane(&source_pane_owner, false);
         true
     })();
     window.release(c"prepare respawn window");
@@ -235,12 +247,6 @@ pub(crate) unsafe fn initialize_spawned_window(sc: *mut spawn_context, window: &
         window.initialize_name(default_window_name_cstring(window), false);
     }
     window.refresh_fill_cells();
-}
-pub unsafe fn spawn_pane(
-    mut sc: *mut spawn_context,
-    cause: *mut Option<CString>,
-) -> Option<std::rc::Rc<std::cell::UnsafeCell<window_pane>>> {
-    <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as WindowPane>::spawn_process(sc, cause)
 }
 impl Drop for spawn_editor_state {
     fn drop(&mut self) {
@@ -367,7 +373,9 @@ pub(crate) unsafe fn spawn_editor(
         sc.idx = -(1 as ::core::ffi::c_int);
         sc.cwd = Some(c"/tmp/".to_owned());
         // A full strip or a failed spawn drops the owner, removing the file.
-        let pane = original_window.new_pane(&mut sc).ok()?;
+        let pane = <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as WindowPane>::spawn_process(
+            &mut sc, &mut None,
+        )?;
         Some(pane.install_editor(owner))
     })();
     original_window.release(c"spawn editor");

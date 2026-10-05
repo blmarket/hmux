@@ -85,22 +85,42 @@ unsafe fn cmd_join_pane_exec(
             });
             return CMD_RETURN_ERROR;
         }
-        // Moving within one strip keeps its width. The pane brings its own
-        // width preference to another.
-        if !std::rc::Rc::ptr_eq(src_owner, &dst_window)
-            && !dst_window.has_room_for_pane(src_pane_owner.width_preference())
-        {
-            cmdq_error(item_handle, |out| out.write_all(b"no space for a new pane"));
+        let before = args_has(args, 'b' as i32 as u_char) != 0;
+        let same_window = std::rc::Rc::ptr_eq(src_owner, &dst_window);
+        // The pane's place beside its target, in the destination's list.
+        let mut order = dst_window
+            .pane_snapshot()
+            .into_iter()
+            .filter(|pane| !std::rc::Rc::ptr_eq(pane, &src_pane_owner))
+            .collect::<Vec<_>>();
+        let target = order
+            .iter()
+            .position(|pane| std::rc::Rc::ptr_eq(pane, &dst_pane_owner))
+            .expect("join target belongs to window");
+        order.insert(target + usize::from(!before), src_pane_owner.clone());
+        // The destination changes first, so a layout without room refuses
+        // before anything moves.
+        if !same_window {
+            src_pane_owner.reparent(&dst_window);
+        }
+        if let Err(reason) = dst_window.rearrange_panes(&order) {
+            src_pane_owner.reparent(src_owner);
+            cmdq_error(item_handle, |out| out.write_all(reason.to_bytes()));
             return CMD_RETURN_ERROR;
         }
         ClientRef::forget_pane(&src_pane_owner);
-        src_owner.detach_pane(&src_pane_owner);
-        src_pane_owner.reparent(&dst_window);
-        dst_window.insert_pane(
-            &src_pane_owner,
-            &dst_pane_owner,
-            args_has(args, 'b' as i32 as u_char) != 0,
-        );
+        if !same_window {
+            let rest = src_owner
+                .pane_snapshot()
+                .into_iter()
+                .filter(|pane| !std::rc::Rc::ptr_eq(pane, &src_pane_owner))
+                .collect::<Vec<_>>();
+            src_owner
+                .rearrange_panes(&rest)
+                .expect("a removal is never refused");
+            // The pane follows its new window's options from here.
+            dst_window.refit();
+        }
         src_pane_owner.refresh_palette();
         recalculate_sizes();
         server_redraw_window(src_owner);

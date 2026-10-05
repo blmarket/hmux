@@ -238,6 +238,14 @@ unsafe fn format_cb_window_layout(ft: *mut format_tree) -> Option<CString> {
     value
 }
 
+/// The name of the window's layout, as `select-layout` takes it.
+unsafe fn format_cb_window_layout_name(ft: *mut format_tree) -> Option<CString> {
+    let window = (*ft).w.upgrade()?;
+    let name = window.layout().name().to_owned();
+    window.release(c"format window layout name");
+    Some(name)
+}
+
 unsafe fn pane_format_value(key: &CStr, context: &mut format_tree) -> Option<FormatValue> {
     match context.wp.upgrade() {
         Some(pane) => pane.format_value(key, context),
@@ -1638,7 +1646,7 @@ pub(crate) unsafe fn window_format_value(
     format_table_get(key)?.evaluate(context)
 }
 
-pub(super) static FORMAT_TABLE: [FormatTableEntry; 205] = [
+pub(super) static FORMAT_TABLE: [FormatTableEntry; 206] = [
     FormatTableEntry {
         key: c"active_window_index",
         callback: FormatCallback::String(format_cb_active_window_index),
@@ -2394,6 +2402,10 @@ pub(super) static FORMAT_TABLE: [FormatTableEntry; 205] = [
     FormatTableEntry {
         key: c"window_layout",
         callback: FormatCallback::String(format_cb_window_layout),
+    },
+    FormatTableEntry {
+        key: c"window_layout_name",
+        callback: FormatCallback::String(format_cb_window_layout_name),
     },
     FormatTableEntry {
         key: c"window_linked",

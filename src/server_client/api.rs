@@ -9,6 +9,7 @@ use crate::src::session::SessionIndex as _;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::control::control_state;
 use crate::src::shared::environment::environ;
+use crate::src::shared::layout::Direction;
 use crate::src::shared::prompt::{prompt_free_cb, prompt_type};
 use crate::src::shared::session::{SessionRef, SessionWeak};
 use crate::src::shared::status::status_prompt_input_cb;
@@ -19,14 +20,6 @@ use std::cell::UnsafeCell;
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::rc::{Rc, Weak};
 use std::time::{Duration, SystemTime};
-
-#[derive(Clone, Copy)]
-pub enum PanDirection {
-    Left,
-    Right,
-    Up,
-    Down,
-}
 
 /// The caller serializes access on the server thread and releases model and
 /// component borrows before callbacks. Logical client loss remains explicit;
@@ -113,7 +106,7 @@ pub trait Client {
     /// Apply and clamp this window's explicit pan, if active, to a viewport.
     /// Window dimensions are read before borrowing Client state.
     unsafe fn apply_pan(&self, window: &WindowRef, view: &mut tty_window_view) -> bool;
-    unsafe fn pan_window(&self, window: &WindowRef, direction: PanDirection, amount: u32);
+    unsafe fn pan_window(&self, window: &WindowRef, direction: Direction, amount: u32);
     type Status<'a>: std::ops::Deref<Target = crate::src::shared::status::status_line>
     where
         Self: 'a;
@@ -500,7 +493,7 @@ impl Client for ClientRef {
         view.oy = state.pan_oy;
         true
     }
-    unsafe fn pan_window(&self, window: &WindowRef, direction: PanDirection, amount: u32) {
+    unsafe fn pan_window(&self, window: &WindowRef, direction: Direction, amount: u32) {
         let (width, height) = window.logical_size();
         let observer = Rc::downgrade(window);
         let state = &mut *self.get();
@@ -510,15 +503,15 @@ impl Client for ClientRef {
             state.pan_oy = state.tty.ooy;
         }
         match direction {
-            PanDirection::Left => state.pan_ox = state.pan_ox.saturating_sub(amount),
-            PanDirection::Right => {
+            Direction::Left => state.pan_ox = state.pan_ox.saturating_sub(amount),
+            Direction::Right => {
                 state.pan_ox = state
                     .pan_ox
                     .wrapping_add(amount)
                     .min(width.wrapping_sub(state.tty.osx));
             }
-            PanDirection::Up => state.pan_oy = state.pan_oy.saturating_sub(amount),
-            PanDirection::Down => {
+            Direction::Up => state.pan_oy = state.pan_oy.saturating_sub(amount),
+            Direction::Down => {
                 state.pan_oy = state
                     .pan_oy
                     .wrapping_add(amount)

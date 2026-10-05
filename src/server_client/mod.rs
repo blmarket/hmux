@@ -12,7 +12,7 @@ use std::{cell::UnsafeCell, rc::Rc};
 mod api;
 mod format;
 mod model;
-pub use api::{Client, PanDirection};
+pub use api::Client;
 pub use model::client;
 
 use crate::src::alerts::alerts_check_session;
@@ -1607,6 +1607,16 @@ unsafe fn server_client_check_mouse(
                 } else if loc as ::core::ffi::c_uint
                     == KEYC_MOUSE_LOCATION_BORDER as ::core::ffi::c_int as ::core::ffi::c_uint
                 {
+                    if let Some(range) = selected_pane
+                        .as_ref()
+                        .expect("mouse border pane")
+                        .status_range(px, py)
+                    {
+                        n = range.argument;
+                        loc = (KEYC_MOUSE_LOCATION_CONTROL0 as ::core::ffi::c_int as u_int)
+                            .wrapping_add(n)
+                            as key_code_mouse_location;
+                    }
                     log_debug(format_args!("mouse on pane %{} border", {
                         selected_pane.as_ref().expect("selected pane").id()
                     }));

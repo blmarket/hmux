@@ -22,7 +22,7 @@ pub struct redraw_scene {
     pub oy: u_int,
 }
 
-pub type redraw_line = [redraw_spans; 5];
+pub type redraw_line = [redraw_spans; 6];
 
 /// Preserve stable heap allocation while drawing helpers borrow spans.
 pub type redraw_spans = Vec<Box<redraw_span>>;
@@ -40,6 +40,7 @@ pub enum redraw_span_data {
     Pane(RedrawPaneSpan),
     Outside,
     Empty,
+    Status(RedrawStatusSpan),
     Border(RedrawBorderSpan),
     Scrollbar(RedrawScrollbarSpan),
 }
@@ -56,8 +57,9 @@ impl redraw_span_data {
             Self::Pane(_) => 0,
             Self::Outside => 1,
             Self::Empty => 2,
-            Self::Border(_) => 3,
-            Self::Scrollbar(_) => 4,
+            Self::Status(_) => 3,
+            Self::Border(_) => 4,
+            Self::Scrollbar(_) => 5,
         }
     }
     pub fn pane(&self) -> &RedrawPaneSpan {
@@ -84,6 +86,18 @@ impl redraw_span_data {
         };
         data
     }
+    pub fn status(&self) -> &RedrawStatusSpan {
+        let Self::Status(data) = self else {
+            panic!("status span expected")
+        };
+        data
+    }
+    pub fn status_mut(&mut self) -> &mut RedrawStatusSpan {
+        let Self::Status(data) = self else {
+            panic!("status span expected")
+        };
+        data
+    }
     pub fn scrollbar(&self) -> &RedrawScrollbarSpan {
         let Self::Scrollbar(data) = self else {
             panic!("scrollbar span expected")
@@ -105,14 +119,25 @@ pub struct RedrawPaneSpan {
     pub py: u_int,
 }
 
-/// A separator cell. Every border is vertical: the pane on its left and the
-/// pane on its right, either missing at a strip end.
+/// A separator cell: the pane before it (on its left, or above a horizontal
+/// separator) and the pane after it, either missing at an edge, and the
+/// line it draws, a `CELL_*` kind from the separators it joins.
 #[derive(Clone, Default)]
 pub struct RedrawBorderSpan {
     pub left_wp: Weak<UnsafeCell<window_pane>>,
     pub right_wp: Weak<UnsafeCell<window_pane>>,
     pub style_wp: Weak<UnsafeCell<window_pane>>,
     pub flags: ::core::ffi::c_int,
+    pub cell_type: ::core::ffi::c_int,
+}
+
+/// A cell of a pane's status row: `offset` columns into its status line,
+/// over a separator cell that draws `cell_type`.
+#[derive(Clone, Default)]
+pub struct RedrawStatusSpan {
+    pub wp: Weak<UnsafeCell<window_pane>>,
+    pub offset: u_int,
+    pub cell_type: ::core::ffi::c_int,
 }
 
 #[derive(Clone, Default)]
@@ -129,6 +154,7 @@ impl PartialEq for RedrawBorderSpan {
             && self.right_wp.ptr_eq(&other.right_wp)
             && self.style_wp.ptr_eq(&other.style_wp)
             && self.flags == other.flags
+            && self.cell_type == other.cell_type
     }
 }
 impl Eq for RedrawBorderSpan {}
@@ -139,6 +165,15 @@ impl PartialEq for RedrawPaneSpan {
     }
 }
 impl Eq for RedrawPaneSpan {}
+
+impl PartialEq for RedrawStatusSpan {
+    fn eq(&self, other: &Self) -> bool {
+        self.wp.ptr_eq(&other.wp)
+            && self.offset == other.offset
+            && self.cell_type == other.cell_type
+    }
+}
+impl Eq for RedrawStatusSpan {}
 
 impl PartialEq for RedrawScrollbarSpan {
     fn eq(&self, other: &Self) -> bool {

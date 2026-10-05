@@ -154,25 +154,30 @@ fn recalculation_is_silent_when_nothing_moves() {
 }
 
 #[test]
-fn pane_status_rows_are_gone() {
+fn border_status_takes_a_row_from_every_pane_without_resizing() {
     let server = Server::new();
     server.start(41, 12, 3);
-    for args in [
-        &["set", "-w", "pane-border-status", "top"][..],
-        &["set", "-w", "pane-border-format", "#{pane_index}"],
-        &["set", "-p", "pane-border-status", "bottom"],
-    ] {
-        assert!(
-            !server.run(args).status.success(),
-            "{args:?} still accepted"
-        );
-    }
-    // Every pane keeps the window's full height.
+    server.count_events();
+    server.success(&["set", "-w", "pane-border-status", "top"]);
+    assert!(server
+        .panes()
+        .iter()
+        .all(|&(_, _, _, top, height)| (top, height) == (1, 11)));
+    assert_eq!(server.display("#{pane_at_top}#{pane_at_bottom}"), "11");
+    server.success(&["set", "-w", "pane-border-status", "bottom"]);
+    assert!(server
+        .panes()
+        .iter()
+        .all(|&(_, _, _, top, height)| (top, height) == (0, 11)));
+    assert_eq!(server.display("#{pane_at_top}#{pane_at_bottom}"), "11");
+    server.success(&["set", "-w", "pane-border-status", "off"]);
     assert!(server
         .panes()
         .iter()
         .all(|&(_, _, _, top, height)| (top, height) == (0, 12)));
-    assert_eq!(server.display("#{pane_at_top}#{pane_at_bottom}"), "11");
+    assert_eq!(server.window_size(), (41, 12));
+    assert_eq!(server.events().1, 0);
+    server.success(&["set", "-w", "pane-border-format", "#{pane_index}"]);
 }
 
 #[test]
@@ -340,7 +345,8 @@ fn insertion_is_refused_past_the_maximum_extent() {
     let before = ids(&server);
     let output = server.run(&["new-pane", "sleep 60"]);
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("no space for a new pane"));
+    assert!(String::from_utf8_lossy(&output.stderr)
+        .contains("no space: the strip would pass its maximum width"));
     assert_eq!(ids(&server), before);
 }
 
@@ -352,7 +358,7 @@ fn width_toggle_switches_one_pane_between_half_and_full() {
     server.success(&["select-pane", "-t", &before[2]]);
     server.count_events();
 
-    server.success(&["resize-pane", "-W", "-t", &before[1]]);
+    server.success(&["resize-pane", "-Z", "-t", &before[1]]);
     assert_eq!(columns(&server), [(0, 20), (21, 41), (63, 20)]);
     assert_eq!(ids(&server), before);
     assert_eq!(server.display("#{pane_id}"), before[2], "focus stays");
@@ -364,9 +370,9 @@ fn width_toggle_switches_one_pane_between_half_and_full() {
 
     // Toggling again restores the half width; the default target is the
     // active pane.
-    server.success(&["resize-pane", "-W", "-t", &before[1]]);
+    server.success(&["resize-pane", "-Z", "-t", &before[1]]);
     assert_eq!(columns(&server), [(0, 20), (21, 20), (42, 20)]);
-    server.success(&["resize-pane", "-W"]);
+    server.success(&["resize-pane", "-Z"]);
     assert_eq!(columns(&server), [(0, 20), (21, 20), (42, 41)]);
 }
 
@@ -374,7 +380,7 @@ fn width_toggle_switches_one_pane_between_half_and_full() {
 fn a_lone_full_pane_fills_the_window() {
     let server = Server::new();
     server.start(80, 10, 1);
-    server.success(&["resize-pane", "-W"]);
+    server.success(&["resize-pane", "-Z"]);
     assert_eq!(columns(&server), [(0, 80)]);
     assert_eq!(server.root_size(), (80, 10));
     // Mixed widths on an even window.
@@ -388,7 +394,7 @@ fn width_preference_survives_resizing() {
     let server = Server::new();
     server.start(41, 10, 3);
     let before = ids(&server);
-    server.success(&["resize-pane", "-W", "-t", &before[0]]);
+    server.success(&["resize-pane", "-Z", "-t", &before[0]]);
     server.success(&["resize-window", "-x", "61"]);
     assert_eq!(columns(&server), [(0, 61), (62, 30), (93, 30)]);
     server.success(&["resize-window", "-x", "2"]);
@@ -396,11 +402,11 @@ fn width_preference_survives_resizing() {
 }
 
 #[test]
-fn width_preference_moves_with_the_pane() {
+fn the_strip_width_moves_with_the_pane() {
     let server = Server::new();
     server.start(41, 10, 3);
     let before = ids(&server);
-    server.success(&["resize-pane", "-W", "-t", &before[0]]);
+    server.success(&["resize-pane", "-Z", "-t", &before[0]]);
 
     server.success(&["swap-pane", "-D", "-t", &before[0]]);
     assert_eq!(
@@ -415,14 +421,15 @@ fn width_preference_moves_with_the_pane() {
     );
     assert_eq!(columns(&server), [(0, 20), (21, 20), (42, 41)]);
 
-    // Between windows too.
+    // The width is the pane's own: it follows the pane to another window.
     server.success(&["new-window", "sleep 60"]);
     let target = server.display("#{pane_id}");
     server.success(&["join-pane", "-s", &before[0], "-t", &target]);
     assert_eq!(ids(&server), [&target, &before[0]].map(String::clone));
     assert_eq!(columns(&server), [(0, 20), (21, 41)]);
+    server.success(&["resize-pane", "-Z", "-t", &before[0]]);
     server.success(&["break-pane", "-s", &before[0]]);
-    assert_eq!(columns(&server), [(0, 41)]);
+    assert_eq!(columns(&server), [(0, 20)]);
 }
 
 #[test]
@@ -432,28 +439,43 @@ fn widening_is_refused_past_the_maximum_extent() {
     let before = ids(&server);
     server.count_events();
     // Widening the first pane moves the last pane's first column.
-    let output = server.run(&["resize-pane", "-W", "-t", &before[0]]);
+    let output = server.run(&["resize-pane", "-Z", "-t", &before[0]]);
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("no space for a full-width pane"));
+    assert!(String::from_utf8_lossy(&output.stderr)
+        .contains("no space: the strip would pass its maximum width"));
     assert_eq!(columns(&server), [(0, 2499), (2500, 2499), (5000, 2499)]);
     assert_eq!(server.events(), (0, 0));
     // Widening the last pane leaves the extent at the maximum.
-    server.success(&["resize-pane", "-W", "-t", &before[2]]);
+    server.success(&["resize-pane", "-Z", "-t", &before[2]]);
     assert_eq!(columns(&server), [(0, 2499), (2500, 2499), (5000, 5000)]);
     // Narrowing always succeeds.
-    server.success(&["resize-pane", "-W", "-t", &before[2]]);
+    server.success(&["resize-pane", "-Z", "-t", &before[2]]);
     assert_eq!(columns(&server), [(0, 2499), (2500, 2499), (5000, 2499)]);
+}
+
+#[test]
+fn narrowing_succeeds_after_a_resize_passed_the_maximum_extent() {
+    let server = Server::new();
+    server.start(4000, 10, 3);
+    let before = ids(&server);
+    server.success(&["resize-pane", "-Z", "-t", &before[2]]);
+    assert_eq!(columns(&server), [(0, 1999), (2000, 1999), (4000, 4000)]);
+    // Resizes are never refused: the strip now reaches 12000 columns.
+    server.success(&["resize-window", "-x", "6000"]);
+    assert_eq!(columns(&server), [(0, 2999), (3000, 2999), (6000, 6000)]);
+    server.success(&["resize-pane", "-Z", "-t", &before[2]]);
+    assert_eq!(columns(&server), [(0, 2999), (3000, 2999), (6000, 2999)]);
 }
 
 #[test]
 fn a_lone_pane_widens_to_exactly_the_maximum() {
     let server = Server::new();
     server.start(10000, 10, 1);
-    server.success(&["resize-pane", "-W"]);
+    server.success(&["resize-pane", "-Z"]);
     assert_eq!(columns(&server), [(0, 10000)]);
     let output = server.run(&["new-pane", "sleep 60"]);
     assert!(!output.status.success());
-    server.success(&["resize-pane", "-W"]);
+    server.success(&["resize-pane", "-Z"]);
     assert_eq!(columns(&server), [(0, 4999)]);
     // A half pane after it would start at 5000 and reach 15000.
     let output = server.run(&["new-pane", "sleep 60"]);
@@ -470,7 +492,7 @@ fn layout_only_commands_and_flags_are_gone() {
         &["previous-layout"],
         &["resize-pane", "-x", "10"],
         &["resize-pane", "-L"],
-        &["resize-pane", "-Z"],
+        &["resize-pane", "-W"],
         &["select-pane", "-Z", "-L"],
         &["join-pane", "-h", "-s", "{last}"],
         &["set", "-w", "main-pane-width", "50"],

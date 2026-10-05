@@ -7,8 +7,9 @@ use crate::src::server_client::Client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::colour::colour_palette;
 use crate::src::shared::command::{cmd, cmd_retval};
-use crate::src::shared::layout::PaneWidth;
-use crate::src::shared::pane::{PANE_ACTIVITY, PANE_DROP, PANE_MINIMUM};
+use crate::src::shared::pane::{
+    PANE_ACTIVITY, PANE_DROP, PANE_MINIMUM, PANE_NEWSTATUS, PANE_STATUS_BOTTOM, PANE_STATUS_TOP,
+};
 use crate::src::shared::screen::MODE_SYNC;
 use crate::src::shared::window::{WindowRef, WindowWeak};
 use std::os::fd::AsRawFd;
@@ -28,6 +29,13 @@ pub trait WindowPane {
     /// Visible geometry including the reserved scrollbar area, copied for hit testing.
     unsafe fn outer_geometry(&self) -> (i32, i32, u32, u32);
     unsafe fn pane_lines(&self) -> pane_lines;
+    type LayoutMeta<'a>: std::ops::DerefMut<Target = Option<Box<dyn std::any::Any>>>
+    where
+        Self: 'a;
+    /// This pane's layout metadata; only the Window writes it. The guard
+    /// permits metadata-only work and must end before dispatch.
+    unsafe fn borrow_layout_meta(&self) -> Self::LayoutMeta<'_>;
+    unsafe fn border_status(&self) -> i32;
     unsafe fn has_pending_change(&self) -> bool;
     unsafe fn acknowledge_change(&self);
     /// Derive an owned default Window name from this pane's command or shell.
@@ -117,12 +125,6 @@ pub trait WindowPane {
     unsafe fn mouse_location(&self, x: i32, y: i32, slider: &mut u32) -> key_code_mouse_location;
     unsafe fn update_scrollbar_hover(&self, x: i32, y: i32);
 
-    /// Columns the strip must give this pane, including a reserved scrollbar.
-    unsafe fn minimum_layout_width(&self, reserve_scrollbar: bool) -> u32;
-    /// The strip width preference; it moves with the pane.
-    unsafe fn width_preference(&self) -> PaneWidth;
-    /// Only the Window's width toggle calls this, and arranges afterward.
-    unsafe fn set_width_preference(&self, width: PaneWidth);
     /// Apply a strip rectangle, including pane border and scrollbar policy.
     /// Only the Window's arrange step calls this. Returns whether the visible
     /// geometry changed; resize callbacks run after the pane's placement
@@ -187,9 +189,21 @@ pub trait WindowPane {
     unsafe fn refresh_scrollbar_style(&self);
     unsafe fn reset_default_cursor(&self);
     unsafe fn reset_border_cache(&self);
-    /// Set `cell` to this pane's separator glyph.
-    unsafe fn border_cell(&self, cell: &mut grid_cell);
+    /// Draw a separator of `cell_type`, a `CELL_*` line kind, in this pane's
+    /// border lines.
+    unsafe fn border_cell(&self, cell_type: i32, cell: &mut grid_cell);
     unsafe fn border_style(&self, client: &ClientRef) -> grid_cell;
+    /// Build the status line for a `width`-column status row whose border
+    /// cells are `spans` from `first`; returns whether it changed.
+    unsafe fn make_status(
+        &self,
+        client: &ClientRef,
+        width: u32,
+        spans: &crate::src::shared::redraw::redraw_spans,
+        first: usize,
+    ) -> bool;
+    unsafe fn has_new_status(&self) -> bool;
+    unsafe fn set_new_status(&self, redraw: bool);
     unsafe fn default_colours(&self) -> (grid_cell, u32);
     /// Start a bounded screen write. A requested component must stay allocated
     /// until stop. For a pane screen (including a null request for its displayed
@@ -215,13 +229,15 @@ pub trait WindowPane {
     unsafe fn output_suppressed(&self) -> bool;
     unsafe fn alternate_screen_allowed(&self) -> bool;
     unsafe fn alternate_screen_changed(&self, entered: bool);
-    /// Draw with screen ownership temporarily removed from pane storage.
+    /// Draw with screen ownership temporarily removed from pane storage, from
+    /// the status line when `status`, else the displayed screen.
     unsafe fn draw_line(
         &self,
         client: &ClientRef,
         source: (u32, u32),
         width: u32,
         destination: (u32, u32),
+        status: bool,
     );
     unsafe fn draw_scrollbar(
         &self,
@@ -294,6 +310,11 @@ pub trait WindowPane {
     unsafe fn parse_input(&self);
     /// Parse caller-owned bytes without exposing pane screens or parser storage.
     unsafe fn parse_output(&self, bytes: &[u8]);
+    /// Create a pane beside the context's source pane (before it with
+    /// SPAWN_BEFORE), or as the first pane of an empty window, place it and
+    /// start its process; with SPAWN_RESPAWN restart the context's source
+    /// pane instead. The layout's refusal or the spawn's failure comes back
+    /// in `cause`; a refusal comes before any side effect.
     unsafe fn spawn_process(
         context: *mut crate::src::shared::spawn::spawn_context,
         cause: *mut Option<CString>,
@@ -343,6 +364,7 @@ pub trait WindowPane {
     where
         Self: Sized;
     unsafe fn search(&self, term: &CStr, regex: bool, ignore: bool) -> u32;
+    unsafe fn status_range(&self, x: u32, y: u32) -> Option<style_range>;
     unsafe fn prompt_key(
         &self,
         client: Option<&ClientRef>,
@@ -550,11 +572,30 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         pane.border_gc_set = 0;
         pane.active_border_gc_set = 0;
     }
-    unsafe fn border_cell(&self, cell: &mut grid_cell) {
-        super::border::cell(self, cell);
+    unsafe fn border_cell(&self, cell_type: i32, cell: &mut grid_cell) {
+        super::border::cell(self, cell_type, cell);
     }
     unsafe fn border_style(&self, client: &ClientRef) -> grid_cell {
         super::border::border_style(self, client)
+    }
+    unsafe fn make_status(
+        &self,
+        client: &ClientRef,
+        width: u32,
+        spans: &crate::src::shared::redraw::redraw_spans,
+        first: usize,
+    ) -> bool {
+        super::border::make_status(self, client, width, spans, first)
+    }
+    unsafe fn has_new_status(&self) -> bool {
+        (*self.get()).flags & PANE_NEWSTATUS != 0
+    }
+    unsafe fn set_new_status(&self, redraw: bool) {
+        if redraw {
+            (*self.get()).flags |= PANE_NEWSTATUS;
+        } else {
+            (*self.get()).flags &= !PANE_NEWSTATUS;
+        }
     }
     unsafe fn default_colours(&self) -> (grid_cell, u32) {
         super::render::default_colours(self)
@@ -612,8 +653,9 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         source: (u32, u32),
         width: u32,
         destination: (u32, u32),
+        status: bool,
     ) {
-        super::render::draw_line(self, client, source, width, destination);
+        super::render::draw_line(self, client, source, width, destination, status);
     }
     unsafe fn draw_scrollbar(
         &self,
@@ -783,28 +825,28 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     unsafe fn start_input(&self, item: &Rc<UnsafeCell<cmdq_item>>) -> Result<i32, CString> {
         window_pane_start_input(self, item)
     }
-    unsafe fn minimum_layout_width(&self, reserve_scrollbar: bool) -> u32 {
-        if reserve_scrollbar {
-            let style = &(*self.get()).scrollbar_style;
-            (PANE_MINIMUM + style.width + style.pad) as u32
-        } else {
-            PANE_MINIMUM as u32
-        }
-    }
-    unsafe fn width_preference(&self) -> PaneWidth {
-        (*self.get()).width
-    }
-    unsafe fn set_width_preference(&self, width: PaneWidth) {
-        (*self.get()).width = width;
-    }
     unsafe fn apply_layout(
         &self,
         geometry: layout_geometry,
         scrollbars: &crate::src::shared::window::WindowRef,
     ) -> bool {
         let old_geometry = self.geometry();
-        let (mut sx, sy) = (geometry.sx, geometry.sy);
-        let (mut xoff, yoff) = (geometry.xoff, geometry.yoff);
+        let (mut sx, mut sy) = (geometry.sx, geometry.sy);
+        let (mut xoff, mut yoff) = (geometry.xoff, geometry.yoff);
+        // A pane on the window's top (or bottom) edge gives up a row for its
+        // status line; any other pane draws it on the separator row there.
+        let status = self.border_status();
+        let at_edge = match status {
+            PANE_STATUS_TOP => yoff == 0,
+            PANE_STATUS_BOTTOM => (yoff as u32).saturating_add(sy) >= scrollbars.size().1,
+            _ => false,
+        };
+        if at_edge && sy > 1 {
+            if status == PANE_STATUS_TOP {
+                yoff += 1;
+            }
+            sy -= 1;
+        }
         let reserve = window_pane_scrollbar_reserve(&*self.get()) != 0;
         if reserve {
             let (width, pad) = {
@@ -856,6 +898,13 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn pane_lines(&self) -> pane_lines {
         window_pane_get_pane_lines(&*self.get())
+    }
+    type LayoutMeta<'a> = &'a mut Option<Box<dyn std::any::Any>>;
+    unsafe fn borrow_layout_meta(&self) -> Self::LayoutMeta<'_> {
+        &mut (*self.get()).layout_meta
+    }
+    unsafe fn border_status(&self) -> i32 {
+        window_pane_get_pane_status(&*self.get())
     }
     unsafe fn has_pending_change(&self) -> bool {
         (*self.get()).flags & PANE_CHANGED != 0
@@ -1393,6 +1442,9 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
     }
     unsafe fn search(&self, term: &CStr, regex: bool, ignore: bool) -> u32 {
         window_pane_search(&*self.get(), term, regex as i32, ignore as i32)
+    }
+    unsafe fn status_range(&self, x: u32, y: u32) -> Option<style_range> {
+        window_pane_status_get_range(self, x, y)
     }
     unsafe fn prompt_key(
         &self,

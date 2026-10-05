@@ -1,7 +1,7 @@
 //! Pane process creation and editor completion keep storage inside its owner.
 use super::{
-    window_pane_index, window_pane_reset_mode_all, window_pane_resize, window_pane_set_cwd,
-    window_pane_set_event, window_pane_set_shell,
+    window_pane_create, window_pane_index, window_pane_reset_mode_all, window_pane_resize,
+    window_pane_set_cwd, window_pane_set_event, window_pane_set_shell,
 };
 use crate::src::cmd::find::cmd_find_from_winlink_pane;
 use crate::src::cmd::queue::{cmdq_get_client, cmdq_get_target};
@@ -78,7 +78,7 @@ use crate::src::shared::session::session;
 use crate::src::shared::signal::{__sigset_t, sigset_t, SIGCHLD, SIGHUP, SIG_BLOCK, SIG_SETMASK};
 use crate::src::shared::spawn::{spawn_editor_state, spawn_finish_edit_cb};
 use crate::src::shared::spawn::{
-    SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_KILL, SPAWN_NONOTIFY, SPAWN_RESPAWN,
+    SPAWN_BEFORE, SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_KILL, SPAWN_NONOTIFY, SPAWN_RESPAWN,
 };
 use crate::src::shared::stdio::FILE;
 use crate::src::shared::terminal::*;
@@ -179,6 +179,43 @@ unsafe fn spawn_fire_pane_created(
     }
     events_fire(c"pane-created".as_ptr(), ep);
 }
+/// Create a pane beside the context's source pane (before it with
+/// SPAWN_BEFORE), or as the first pane of an empty window, and place it. When
+/// the layout has no room the pane is destroyed again and the layout's reason
+/// returned.
+unsafe fn place_new_pane(
+    sc: &spawn_context,
+    window: &WindowRef,
+) -> Result<std::rc::Rc<std::cell::UnsafeCell<window_pane>>, &'static CStr> {
+    let mut panes = window.pane_snapshot();
+    // A new window's first pane has no neighbour; otherwise the pane goes
+    // beside its source.
+    let position = if panes.is_empty() {
+        0
+    } else {
+        let source = sc.wp0.upgrade().expect("source pane retained by caller");
+        let position = panes
+            .iter()
+            .position(|candidate| std::rc::Rc::ptr_eq(candidate, &source))
+            .expect("source pane belongs to window");
+        position + usize::from(sc.flags & SPAWN_BEFORE == 0)
+    };
+    let hlimit =
+        sc.s.upgrade()
+            .expect("spawn context session")
+            .with_options_mut(|options| options_get_number(options, c"history-limit") as u_int);
+    let (sx, sy) = window.size();
+    let pane = window_pane_create(window, sx, sy, hlimit);
+    panes.insert(position, pane.clone());
+    if let Err(reason) = window.rearrange_panes(&panes) {
+        pane.destroy();
+        return Err(reason);
+    }
+    Ok(pane)
+}
+/// Create and place a new pane and start its process, or with SPAWN_RESPAWN
+/// restart the context's source pane. A full layout refuses before any side
+/// effect.
 pub(super) unsafe fn spawn_pane(
     mut sc: *mut spawn_context,
     cause: *mut Option<CString>,
@@ -201,6 +238,17 @@ pub(super) unsafe fn spawn_pane(
         .cloned()
         .expect("spawn window");
     let result = (|| {
+        let created_pane = if (*sc).flags & SPAWN_RESPAWN != 0 {
+            None
+        } else {
+            match place_new_pane(&*sc, &original_window) {
+                Ok(pane) => Some(pane),
+                Err(reason) => {
+                    set_spawn_cause(cause.as_mut(), &[reason.to_bytes()]);
+                    return None;
+                }
+            }
+        };
         let target_session_owner;
         let new_pane_owner;
         let mut new_wp: *mut window_pane = ::core::ptr::null_mut::<window_pane>();
@@ -225,7 +273,6 @@ pub(super) unsafe fn spawn_pane(
             c2rust_unnamed: termios_input_speed { __ispeed: 0 },
             c2rust_unnamed_0: termios_output_speed { __ospeed: 0 },
         };
-        let mut hlimit: u_int = 0;
         let mut ws: winsize = winsize {
             ws_row: 0,
             ws_col: 0,
@@ -284,8 +331,6 @@ pub(super) unsafe fn spawn_pane(
                 None => ClientRef::working_directory(None, target_session_owner.as_ref()),
             };
         }
-        hlimit = session_owner
-            .with_options_mut(|options| options_get_number(options, c"history-limit") as u_int);
         if (*sc).flags & SPAWN_RESPAWN != 0 {
             if (*source_pane).fd.is_some() && !(*sc).flags & SPAWN_KILL != 0 {
                 idx = window_pane_index(source_pane_owner.as_ref().expect("respawn pane"))
@@ -338,21 +383,7 @@ pub(super) unsafe fn spawn_pane(
             new_wp = new_pane_owner.get();
             (*new_wp).flags &= !(PANE_STATUSREADY | PANE_STATUSDRAWN);
         } else {
-            let window = std::rc::Rc::clone(
-                (((*sc).winlink_handle())
-                    .get_unchecked()
-                    .window_handle()
-                    .as_ref())
-                .expect("live window"),
-            );
-            // A new window's first pane has no neighbor; otherwise the pane
-            // goes beside its source.
-            let anchor = if window.next_pane(None).is_some() {
-                source_pane_owner.as_ref()
-            } else {
-                None
-            };
-            new_pane_owner = window.add_pane(anchor, hlimit, (*sc).flags);
+            new_pane_owner = created_pane.expect("new pane placed");
             new_wp = new_pane_owner.get();
         }
         if (*sc).argv.is_empty() {

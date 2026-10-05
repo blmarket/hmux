@@ -196,10 +196,22 @@ unsafe fn cmd_split_window_exec(
             .window_handle()
             .expect("target window")
             .clone();
-        let spawned_pane = match window_owner.new_pane(&mut sc) {
-            Ok(pane) => Some(pane),
-            Err(error) => {
-                cmdq_error(item_handle, |out| write_cstr(out, error.as_ptr()));
+        let spawned_pane = match <std::rc::Rc<
+            std::cell::UnsafeCell<crate::src::shared::pane::window_pane>,
+        > as crate::src::window_pane::WindowPane>::spawn_process(
+            &mut sc, &mut cause
+        ) {
+            Some(pane) => Some(pane),
+            None => {
+                cmdq_error(item_handle, |out| {
+                    out.write_all(b"create pane failed: ")?;
+                    write_cstr(
+                        out,
+                        cause
+                            .as_ref()
+                            .map_or(::core::ptr::null(), |value| value.as_ptr()),
+                    )
+                });
                 window_owner.release(c"cmd_split_window");
                 return CMD_RETURN_ERROR;
             }

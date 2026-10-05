@@ -1,6 +1,6 @@
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{cmdq_get_source, cmdq_get_target};
+use crate::src::cmd::queue::{cmdq_error, cmdq_get_source, cmdq_get_target};
 use crate::src::events::events_fire_window;
 use crate::src::server_client::Client as _;
 use crate::src::shared::client::ClientRef;
@@ -12,7 +12,7 @@ use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::CMD_FIND_DEFAULT_MARKED;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::window::window;
+use crate::src::shared::window::{window, WindowRef};
 use crate::src::window_pane::WindowPane as _;
 use std::rc::Rc;
 pub static cmd_swap_pane_entry: cmd_entry = {
@@ -83,11 +83,50 @@ unsafe fn cmd_swap_pane_exec(
             // Options follow the new parents before the strips arrange them.
             src_pane_owner.reparent(&dst_window_owner);
             dst_pane_owner.reparent(&src_window_owner);
-            dst_window_owner.swap_pane_order(
-                &Rc::downgrade(&dst_pane_owner),
-                &src_window_owner,
-                &Rc::downgrade(&src_pane_owner),
-            );
+            // Each pane takes the other's place, in one window or across two.
+            let swapped = |window: &WindowRef| {
+                window
+                    .pane_snapshot()
+                    .into_iter()
+                    .map(|pane| {
+                        if Rc::ptr_eq(&pane, &src_pane_owner) {
+                            dst_pane_owner.clone()
+                        } else if Rc::ptr_eq(&pane, &dst_pane_owner) {
+                            src_pane_owner.clone()
+                        } else {
+                            pane
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            };
+            if Rc::ptr_eq(&src_window_owner, &dst_window_owner) {
+                dst_window_owner
+                    .rearrange_panes(&swapped(&dst_window_owner))
+                    .expect("a reorder is never refused");
+            } else {
+                let dst_before = dst_window_owner.pane_snapshot();
+                let src_order = swapped(&src_window_owner);
+                let refused = dst_window_owner
+                    .rearrange_panes(&swapped(&dst_window_owner))
+                    .err()
+                    .or_else(|| {
+                        let refused = src_window_owner.rearrange_panes(&src_order).err();
+                        if refused.is_some() {
+                            // Put the destination back as it was.
+                            dst_pane_owner.reparent(&dst_window_owner);
+                            dst_window_owner
+                                .rearrange_panes(&dst_before)
+                                .expect("the window took this list before");
+                        }
+                        refused
+                    });
+                if let Some(reason) = refused {
+                    src_pane_owner.reparent(&src_window_owner);
+                    dst_pane_owner.reparent(&dst_window_owner);
+                    cmdq_error(item_handle, |out| out.write_all(reason.to_bytes()));
+                    return CMD_RETURN_ERROR;
+                }
+            }
             if args_has(args, 'd' as i32 as u_char) == 0 {
                 if !Rc::ptr_eq(&src_window_owner, &dst_window_owner) {
                     src_window_owner.select_pane(&dst_pane_owner, true);
@@ -137,14 +176,11 @@ unsafe fn cmd_swap_pane_exec(
                     src_idx,
                 );
             }
-            events_fire_window(
-                c"window-layout-changed".as_ptr(),
-                Rc::clone(&src_window_owner),
-            );
-            if !Rc::ptr_eq(&src_window_owner, &dst_window_owner) {
+            // Across two windows each rearrange announced its own change.
+            if Rc::ptr_eq(&src_window_owner, &dst_window_owner) {
                 events_fire_window(
                     c"window-layout-changed".as_ptr(),
-                    std::rc::Rc::clone(&(dst_window_owner)),
+                    Rc::clone(&src_window_owner),
                 );
             }
         }

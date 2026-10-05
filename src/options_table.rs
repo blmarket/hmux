@@ -13,7 +13,9 @@ use crate::src::shared::options::{
     OPTIONS_TABLE_PANE, OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_STATUS_FORMAT1,
     OPTIONS_TABLE_STATUS_FORMAT2, OPTIONS_TABLE_STATUS_FORMAT3, OPTIONS_TABLE_WINDOW,
 };
-use crate::src::shared::pane::{PANE_BORDER_COLOUR, PANE_SCROLLBARS_OFF, PANE_SCROLLBARS_RIGHT};
+use crate::src::shared::pane::{
+    PANE_BORDER_COLOUR, PANE_SCROLLBARS_OFF, PANE_SCROLLBARS_RIGHT, PANE_STATUS_OFF,
+};
 use crate::src::shared::posix_io::_PATH_BSHELL;
 use crate::src::shared::window::WINDOW_SIZE_LATEST;
 
@@ -43,6 +45,7 @@ static options_table_cursor_style_list: [&std::ffi::CStr; 7] = [
 static options_table_pane_scrollbars_list: [&std::ffi::CStr; 4] =
     [c"off", c"modal", c"on", c"auto-hide"];
 static options_table_pane_scrollbars_position_list: [&std::ffi::CStr; 2] = [c"right", c"left"];
+static options_table_pane_status_list: [&std::ffi::CStr; 3] = [c"off", c"top", c"bottom"];
 static options_table_pane_border_indicators_list: [&std::ffi::CStr; 4] =
     [c"off", c"colour", c"arrows", c"both"];
 static options_table_pane_border_lines_list: [&std::ffi::CStr; 8] = [
@@ -104,7 +107,7 @@ pub static options_other_names: [options_name_map; 8] = [
 pub const TMUX_LOCK_CMD: &std::ffi::CStr = c"lock -np";
 pub const TMUX_TERM: &std::ffi::CStr = c"tmux-256color";
 pub const TMUX_MOUSE: ::core::ffi::c_int = 1 as ::core::ffi::c_int;
-pub static options_table: [options_table_entry; 256] = [
+pub static options_table: [options_table_entry; 258] = [
         options_table_entry {
             name: Some(c"backspace"),
             alternative_name: None,
@@ -2436,6 +2439,23 @@ pub static options_table: [options_table_entry; 256] = [
             unit: None,
         },
         options_table_entry {
+            name: Some(c"pane-border-format"),
+            alternative_name: None,
+            type_0: OPTIONS_TABLE_STRING,
+            scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
+            flags: 0,
+            minimum: 0,
+            maximum: 0,
+            choices: &[],
+            default_str: Some(c"#{?pane_active,#[reverse],}#{pane_index}#[default] \"#{pane_title}\""),
+            default_num: 0,
+            default_arr: None,
+            separator: None,
+            pattern: None,
+            text: Some(c"Format of text in the pane status lines."),
+            unit: None,
+        },
+        options_table_entry {
             name: Some(c"pane-border-indicators"),
             alternative_name: None,
             type_0: OPTIONS_TABLE_CHOICE,
@@ -2468,6 +2488,23 @@ pub static options_table: [options_table_entry; 256] = [
             separator: None,
             pattern: None,
             text: Some(c"Type of characters used to draw pane border lines. Some of these are only supported on terminals with UTF-8 support."),
+            unit: None,
+        },
+        options_table_entry {
+            name: Some(c"pane-border-status"),
+            alternative_name: None,
+            type_0: OPTIONS_TABLE_CHOICE,
+            scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
+            flags: 0,
+            minimum: 0,
+            maximum: 0,
+            choices: &options_table_pane_status_list,
+            default_str: None,
+            default_num: PANE_STATUS_OFF as ::core::ffi::c_longlong,
+            default_arr: None,
+            separator: None,
+            pattern: None,
+            text: Some(c"Position of the pane status lines."),
             unit: None,
         },
         options_table_entry {

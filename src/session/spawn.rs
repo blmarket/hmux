@@ -8,7 +8,7 @@ use crate::src::shared::spawn::{
     spawn_context, SPAWN_DETACHED, SPAWN_KILL, SPAWN_NONOTIFY, SPAWN_RESPAWN,
 };
 use crate::src::spawn::{
-    initialize_spawned_window, prepare_respawn_window, set_spawn_cause, spawn_log, spawn_pane,
+    initialize_spawned_window, prepare_respawn_window, set_spawn_cause, spawn_log,
 };
 use crate::src::window::Window as _;
 use crate::src::window::Window;
@@ -87,7 +87,10 @@ pub(super) unsafe fn spawn_window(
     }
 
     sc.flags |= SPAWN_NONOTIFY;
-    let pane = spawn_pane(sc, cause);
+    let pane =
+        <Rc<std::cell::UnsafeCell<window_pane>> as crate::src::window_pane::WindowPane>::spawn_process(
+            sc, cause,
+        );
     if pane.is_none() {
         if sc.flags & SPAWN_RESPAWN == 0 {
             winlink_remove(&mut (*s).windows, sc.winlink_handle());

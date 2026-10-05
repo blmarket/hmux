@@ -12,7 +12,7 @@ use crate::src::log::{log_cstr, log_debug};
 use crate::src::monitor::monitor_parse_owned;
 use crate::src::resize::recalculate_sizes_now;
 
-use crate::src::server_client::{Client as _, PanDirection};
+use crate::src::server_client::Client as _;
 use crate::src::server_fn::{server_redraw_client, server_status_client};
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
@@ -25,6 +25,7 @@ use crate::src::shared::client::{
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_TFLAG};
+use crate::src::shared::layout::Direction;
 use crate::src::shared::limits::INT_MAX;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::tty::tty;
@@ -280,13 +281,13 @@ unsafe fn cmd_refresh_client_exec(
                 .cloned()
                 .expect("current window");
             let direction = if args_has(args, b'L') != 0 {
-                PanDirection::Left
+                Direction::Left
             } else if args_has(args, b'R') != 0 {
-                PanDirection::Right
+                Direction::Right
             } else if args_has(args, b'U') != 0 {
-                PanDirection::Up
+                Direction::Up
             } else {
-                PanDirection::Down
+                Direction::Down
             };
             client.pan_window(&window, direction, adjust);
         }

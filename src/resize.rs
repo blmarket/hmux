@@ -425,9 +425,6 @@ pub unsafe fn recalculate_size(w_owner: &WindowRef, mut now: ::core::ffi::c_int)
             "recalculate_size",
             { (w_owner).id() }
         ));
-        if w_owner.pending_resize().is_none() {
-            refit_layout(w_owner);
-        }
         tty_update_window_offset(w_owner);
         return;
     }
@@ -450,26 +447,6 @@ pub unsafe fn recalculate_size(w_owner: &WindowRef, mut now: ::core::ffi::c_int)
         w_owner.defer_resize(sx, sy, xpixel, ypixel);
         tty_update_window_offset(w_owner);
     };
-}
-/// Arrange the strip again after its panes' minimums or the options it reads
-/// changed without a size change. Silent when nothing moves.
-unsafe fn refit_layout(w_owner: &WindowRef) {
-    if !w_owner.refit() {
-        return;
-    }
-    let (sx, sy) = w_owner.size();
-    log_debug(format_args!(
-        "{}: @{} refit to {}x{}",
-        "refit_layout",
-        { w_owner.id() },
-        sx,
-        sy
-    ));
-    crate::src::server_fn::server_redraw_window(w_owner);
-    crate::src::events::events_fire_window(
-        c"window-layout-changed".as_ptr(),
-        std::rc::Rc::clone(w_owner),
-    );
 }
 pub unsafe fn recalculate_sizes() {
     recalculate_sizes_now(0 as ::core::ffi::c_int);

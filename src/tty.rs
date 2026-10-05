@@ -1147,8 +1147,10 @@ unsafe fn tty_window_offset1(owner: &ClientRef) -> tty_window_view {
     // The terminal clips only when the view leaves part of a pane out. A
     // view at the origin that shows every pane draws them where they are.
     let strip = cells
-        .last()
-        .map_or(0, |(_, cell)| (cell.xoff as u32).saturating_add(cell.sx));
+        .iter()
+        .map(|(_, cell)| (cell.xoff as u32).saturating_add(cell.sx))
+        .max()
+        .unwrap_or(0);
     view.bigger = view.ox != 0 || view.oy != 0 || strip > view.sx || sy > view.sy;
     view
 }

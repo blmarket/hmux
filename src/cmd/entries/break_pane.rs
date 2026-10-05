@@ -164,13 +164,23 @@ unsafe fn cmd_break_pane_exec(
                 return CMD_RETURN_ERROR;
             }
             ClientRef::forget_pane(&pane_owner);
-            source_window.detach_pane(&pane_owner);
+            let rest = source_window
+                .pane_snapshot()
+                .into_iter()
+                .filter(|pane| !std::rc::Rc::ptr_eq(pane, &pane_owner))
+                .collect::<Vec<_>>();
+            source_window
+                .rearrange_panes(&rest)
+                .expect("a removal is never refused");
             let (sx, sy) = source_window.size();
             let (xpixel, ypixel) = source_window.cell_size();
             let window = crate::src::shared::window::WindowRef::create(sx, sy, xpixel, ypixel);
             let destination = std::rc::Rc::downgrade(&window);
             pane_owner.reparent(&window);
-            window.initialize_pane(&pane_owner, tc.as_ref());
+            window.set_latest_client(tc.as_ref());
+            window
+                .rearrange_panes(std::slice::from_ref(&pane_owner))
+                .expect("a first pane always fits");
             if name.is_null() {
                 window.initialize_name(default_window_name_cstring(&window), false);
             } else {

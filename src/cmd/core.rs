@@ -47,6 +47,7 @@ use crate::src::cmd::entries::respawn_window::cmd_respawn_window_entry;
 use crate::src::cmd::entries::rotate_window::cmd_rotate_window_entry;
 use crate::src::cmd::entries::run_shell::cmd_run_shell_entry;
 use crate::src::cmd::entries::save_buffer::{cmd_save_buffer_entry, cmd_show_buffer_entry};
+use crate::src::cmd::entries::select_layout::cmd_select_layout_entry;
 use crate::src::cmd::entries::select_pane::{cmd_last_pane_entry, cmd_select_pane_entry};
 use crate::src::cmd::entries::select_window::{
     cmd_last_window_entry, cmd_next_window_entry, cmd_previous_window_entry,
@@ -107,7 +108,7 @@ pub const DQ: C2RustUnnamed_38 = 2;
 pub type C2RustUnnamed_38 = ::core::ffi::c_uint;
 pub const SQ: C2RustUnnamed_38 = 1;
 pub const NQ: C2RustUnnamed_38 = 0;
-pub static cmd_table: [&cmd_entry; 86] = {
+pub static cmd_table: [&cmd_entry; 87] = {
     [
         &cmd_attach_session_entry,
         &cmd_bind_key_entry,
@@ -167,6 +168,7 @@ pub static cmd_table: [&cmd_entry; 86] = {
         &cmd_rotate_window_entry,
         &cmd_run_shell_entry,
         &cmd_save_buffer_entry,
+        &cmd_select_layout_entry,
         &cmd_select_pane_entry,
         &cmd_select_window_entry,
         &cmd_send_keys_entry,

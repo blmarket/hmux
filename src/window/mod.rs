@@ -8,10 +8,11 @@ mod alerts;
 mod api;
 pub use api::{Window, WindowIndex};
 
+mod layout;
 mod model;
-mod strip;
 pub use crate::src::window_pane::*;
 pub use crate::src::winlink::*;
+pub use layout::{LayoutAction, LayoutKind};
 pub use model::window;
 use model::WindowLifecycle;
 
@@ -113,8 +114,8 @@ use crate::src::shared::pane::{
     window_pane_offset, window_pane_resize, window_pane_resizes, PANE_CHANGED, PANE_DESTROYED,
     PANE_EMPTY, PANE_EXITED, PANE_FOCUSED, PANE_INPUTOFF, PANE_MINIMUM, PANE_REDRAW,
     PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT,
-    PANE_SCROLLBARS_MODAL, PANE_STATUSREADY, PANE_STYLECHANGED, PANE_THEMECHANGED,
-    PANE_UNSEENCHANGES,
+    PANE_SCROLLBARS_MODAL, PANE_STATUSREADY, PANE_STATUS_BOTTOM, PANE_STATUS_TOP,
+    PANE_STYLECHANGED, PANE_THEMECHANGED, PANE_UNSEENCHANGES,
 };
 use crate::src::shared::posix_io::FNM_CASEFOLD;
 use crate::src::shared::posix_terminal::{winsize, TIOCSWINSZ};
@@ -125,7 +126,6 @@ use crate::src::shared::screen::{screen, MODE_BRACKETPASTE, MODE_FOCUSON, MODE_T
 use crate::src::shared::session::session;
 use crate::src::shared::signal::SIGCHLD;
 use crate::src::shared::spawn::spawn_editor_state;
-use crate::src::shared::spawn::SPAWN_BEFORE;
 use crate::src::shared::status::status_prompt_input_cb;
 use crate::src::shared::style::*;
 use crate::src::shared::tree::{RB_INF, RB_NEGINF};
@@ -602,14 +602,19 @@ unsafe fn window_get_active_at(
     let mut yoff: ::core::ffi::c_int = 0;
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
-    // A pane owns its rows and the separator column after it; there is no
-    // border row below the panes.
+    // A pane owns its rows and the separator column after it, and its status
+    // row above or below it when pane-border-status is on.
+    let status = window_get_pane_status(&*w);
     for candidate in (*w).panes.snapshot() {
         (xoff, yoff, sx, sy) = candidate.outer_geometry();
         if (x as ::core::ffi::c_int) < xoff || x > (xoff as u_int).wrapping_add(sx) {
             continue;
         }
-        if (y as ::core::ffi::c_int) < yoff || y >= (yoff as u_int).wrapping_add(sy) {
+        let top = yoff - i32::from(status == PANE_STATUS_TOP);
+        let bottom = (yoff as u_int)
+            .wrapping_add(sy)
+            .wrapping_add(u_int::from(status == PANE_STATUS_BOTTOM));
+        if (y as ::core::ffi::c_int) < top || y >= bottom {
             continue;
         }
         return Some(candidate);
@@ -622,14 +627,23 @@ unsafe fn window_find_string(
 ) -> Option<Rc<std::cell::UnsafeCell<window_pane>>> {
     let w = window_owner.get();
     // Positions are measured across the panes, not the blank extent past them.
-    let (wsx, wsy) = ((*w).strip_width, (*w).sy);
+    let (wsx, wsy) = (
+        layout::content_width(&window_arrangement(window_owner)),
+        (*w).sy,
+    );
     let s = name.as_ptr();
     let mut x: u_int = 0;
     let mut y: u_int = 0;
-    let top: u_int = 0 as u_int;
-    let bottom: u_int = wsy.wrapping_sub(1 as u_int);
+    let mut top: u_int = 0 as u_int;
+    let mut bottom: u_int = wsy.wrapping_sub(1 as u_int);
     x = wsx.wrapping_div(2 as u_int);
     y = wsy.wrapping_div(2 as u_int);
+    let status = window_get_pane_status(&*w);
+    if status == PANE_STATUS_TOP {
+        top = top.wrapping_add(1);
+    } else if status == PANE_STATUS_BOTTOM {
+        bottom = bottom.wrapping_sub(1);
+    }
     if strcasecmp(s, c"top".as_ptr()) == 0 as ::core::ffi::c_int {
         y = top;
     } else if strcasecmp(s, c"bottom".as_ptr()) == 0 as ::core::ffi::c_int {
@@ -655,66 +669,88 @@ unsafe fn window_find_string(
     }
     window_get_active_at(window_owner, x, y)
 }
-unsafe fn window_add_pane(
+/// Make `panes` the window's pane list, in this order: the one way panes are
+/// added, removed and reordered. A list that brings in a pane must be one the
+/// layout takes; otherwise the layout's reason comes back and nothing has
+/// changed. A removal or a reorder is never refused. Panes arriving must
+/// already be reparented to this window; panes leaving give up their place in
+/// the selection history, and an active pane that leaves hands over to the
+/// pane taking its place, or else to the last pane selected or its
+/// neighbour. A window without panes takes its first one as active, without
+/// selection callbacks. window-layout-changed fires when panes leave; a pane
+/// arriving is announced by its caller, once its process has started or its
+/// move has finished.
+unsafe fn window_rearrange_panes(
     window: &WindowRef,
-    other: Option<&Rc<UnsafeCell<window_pane>>>,
-    hlimit: u_int,
-    flags: i32,
-) -> Rc<UnsafeCell<window_pane>> {
+    panes: &[Rc<UnsafeCell<window_pane>>],
+) -> Result<(), &'static CStr> {
     let w = window.get();
-    let other = other.cloned().or_else(|| (*w).active_pane());
-    let pane = Rc::<UnsafeCell<window_pane>>::create(window, (*w).sx, (*w).sy, hlimit);
-    if (*w).panes.first().is_none() {
-        log_debug(format_args!("window_add_pane: @{} at start", (*w).id));
-        window_pane_list_insert_front(&mut *w, &pane);
-    } else if flags & SPAWN_BEFORE != 0 {
+    let old = (*w).panes.snapshot();
+    let present = |list: &[Rc<UnsafeCell<window_pane>>], pane: &Rc<UnsafeCell<window_pane>>| {
+        list.iter().any(|candidate| Rc::ptr_eq(candidate, pane))
+    };
+    let arrived = panes
+        .iter()
+        .filter(|pane| !present(&old, pane))
+        .collect::<Vec<_>>();
+    let left = old
+        .iter()
+        .filter(|pane| !present(panes, pane))
+        .collect::<Vec<_>>();
+    for pane in &arrived {
+        assert!(
+            pane.window_observer().ptr_eq(&Rc::downgrade(window)),
+            "an arriving pane is reparented to the window"
+        );
+    }
+    if !arrived.is_empty() {
+        (*w).layout.admits(panes, window.size())?;
+    }
+    for pane in &left {
         log_debug(format_args!(
-            "window_add_pane: @{} before %{}",
-            (*w).id,
+            "window_rearrange_panes: @{} loses %{}",
+            window.id(),
             pane.id()
         ));
-        window_pane_list_insert_before(&mut *w, other.as_ref().expect("insert pane target"), &pane);
-    } else {
-        log_debug(format_args!(
-            "window_add_pane: @{} after %{}",
-            (*w).id,
-            pane.id()
-        ));
-        window_pane_list_insert_after(&mut *w, other.as_ref().expect("insert pane target"), &pane);
-    }
-    (*w).invalidate_scene();
-    window_arrange(window);
-    pane
-}
-/// Retire `pane`'s selection state. When it was active, its replacement
-/// becomes active at once and is returned for the caller to announce.
-unsafe fn window_lost_pane(
-    window: &WindowRef,
-    pane: &Rc<UnsafeCell<window_pane>>,
-) -> Option<Rc<UnsafeCell<window_pane>>> {
-    let w = window.get();
-    let observer = Rc::downgrade(pane);
-    log_debug(format_args!(
-        "window_lost_pane: @{} pane %{}",
-        window.id(),
-        pane.id()
-    ));
-    if marked_pane
-        .pane_handle()
-        .is_some_and(|marked| Rc::ptr_eq(&marked, pane))
-    {
-        server_clear_marked();
-    }
-    pane_history_remove(&mut (*w).last_panes, &observer);
-    let mut replacement = None;
-    if (*w).active.ptr_eq(&observer) {
-        replacement = crate::src::shared::pane::pane_history_first(&(*w).last_panes);
-        if replacement.is_none() {
-            replacement = (*w)
-                .panes
-                .previous(&observer)
-                .or_else(|| (*w).panes.next(&observer));
+        if marked_pane
+            .pane_handle()
+            .is_some_and(|marked| Rc::ptr_eq(&marked, pane))
+        {
+            server_clear_marked();
         }
+        pane_history_remove(&mut (*w).last_panes, &Rc::downgrade(pane));
+    }
+    let previous_active = (*w).active_pane();
+    let replacement = match previous_active.as_ref() {
+        Some(active) if !present(panes, active) => {
+            let slot = old
+                .iter()
+                .position(|pane| Rc::ptr_eq(pane, active))
+                .expect("active pane is in the list");
+            panes
+                .get(slot)
+                .filter(|pane| present(&arrived.iter().cloned().cloned().collect::<Vec<_>>(), pane))
+                .cloned()
+                .or_else(|| crate::src::shared::pane::pane_history_first(&(*w).last_panes))
+                .or_else(|| {
+                    old[..slot]
+                        .iter()
+                        .rev()
+                        .chain(&old[slot + 1..])
+                        .find(|pane| present(panes, pane))
+                        .cloned()
+                })
+        }
+        Some(_) => None,
+        None => None,
+    };
+    (*w).panes.storage = panes.iter().map(Rc::downgrade).collect();
+    if previous_active.is_none() {
+        (*w).active = panes.first().map_or_else(Weak::new, Rc::downgrade);
+    } else if previous_active
+        .as_ref()
+        .is_some_and(|active| !present(panes, active))
+    {
         (*w).active = replacement.as_ref().map_or_else(Weak::new, Rc::downgrade);
         if let Some(replacement) = replacement.as_ref() {
             pane_history_remove(&mut (*w).last_panes, &Rc::downgrade(replacement));
@@ -722,87 +758,54 @@ unsafe fn window_lost_pane(
         }
     }
     (*w).invalidate_scene();
-    replacement
-}
-
-/// Retire selection and membership, then close the gap. The pane itself stays
-/// alive for the caller. As in tmux, the layout change is announced before the
-/// pane that replaces an active one.
-unsafe fn window_take_pane(window: &WindowRef, pane: &Rc<UnsafeCell<window_pane>>) {
-    let replacement = window_lost_pane(window, pane);
-    let w = window.get();
-    assert!(
-        (*w).panes.remove(&Rc::downgrade(pane)),
-        "pane is not in its window order"
-    );
-    (*w).invalidate_scene();
     window_arrange(window);
-    events_fire_window(c"window-layout-changed".as_ptr(), window.clone());
+    // As in tmux, the layout change is announced before the pane that
+    // replaces an active one.
+    if !left.is_empty() {
+        events_fire_window(c"window-layout-changed".as_ptr(), window.clone());
+    }
     if let Some(replacement) = replacement {
-        window_fire_pane_changed(window, &replacement, Some(pane));
+        window_fire_pane_changed(window, &replacement, previous_active.as_ref());
         window_update_focus(Some(window));
     }
+    Ok(())
 }
 
+/// Take `pane` out of its window and destroy it.
 unsafe fn window_remove_pane(window: &WindowRef, pane: &Rc<UnsafeCell<window_pane>>) {
-    window_take_pane(window, pane);
+    let rest = window
+        .pane_snapshot()
+        .into_iter()
+        .filter(|candidate| !Rc::ptr_eq(candidate, pane))
+        .collect::<Vec<_>>();
+    window_rearrange_panes(window, &rest).expect("a removal is never refused");
     pane.destroy();
 }
 
-/// Columns every pane needs: room for its reserved scrollbar when scrollbars
-/// always show. One value for the whole strip keeps the halves equal.
-unsafe fn window_horizontal_minimum(window: &WindowRef) -> u_int {
-    let reserve = window.scrollbar_mode() == PANE_SCROLLBARS_ALWAYS;
-    window
-        .pane_snapshot()
-        .iter()
-        .map(|pane| pane.minimum_layout_width(reserve))
-        .max()
-        .unwrap_or(PANE_MINIMUM as u_int)
-}
-
-/// Whether the extent of a strip whose panes have `widths` stays within
-/// WINDOW_MAXIMUM columns.
-unsafe fn window_strip_fits(window: &WindowRef, widths: &[PaneWidth]) -> bool {
+/// The layout's rectangles for the current panes, in pane order.
+unsafe fn window_arrangement(window: &WindowRef) -> Vec<layout_geometry> {
     let size = window.size();
-    let cells = strip::cells(widths, size, window_horizontal_minimum(window));
-    strip::extent(&cells, size.0) <= WINDOW_MAXIMUM as u_int
+    let w = &*window.get();
+    w.layout.arrange(&w.panes.snapshot(), size)
 }
 
-/// The current panes' width preferences, in order.
-unsafe fn window_pane_widths(window: &WindowRef) -> Vec<PaneWidth> {
-    window
-        .pane_snapshot()
-        .iter()
-        .map(|pane| pane.width_preference())
-        .collect()
-}
-
-/// The strip's rectangles for the current panes, in order.
-unsafe fn window_strip_cells(
+/// The rectangles for the current panes, in pane order.
+unsafe fn window_pane_cells(
     window: &WindowRef,
 ) -> Vec<(Rc<UnsafeCell<window_pane>>, layout_geometry)> {
     let panes = window.pane_snapshot();
-    let widths = panes
-        .iter()
-        .map(|pane| pane.width_preference())
-        .collect::<Vec<_>>();
-    let cells = strip::cells(&widths, window.size(), window_horizontal_minimum(window));
-    panes.into_iter().zip(cells).collect()
+    panes.into_iter().zip(window_arrangement(window)).collect()
 }
 
 /// The arrange step: the only writer of pane geometry. Every operation that
-/// changes the pane order, a width preference, the window size or the options
-/// the strip reads ends here, and the clients showing the window follow the
-/// result. Returns whether any pane moved.
-unsafe fn window_arrange(window: &WindowRef) -> bool {
-    let cells = window_strip_cells(window);
-    let geometry = cells.iter().map(|(_, cell)| *cell).collect::<Vec<_>>();
-    {
-        let state = &mut *window.get();
-        state.strip_width = strip::width(&geometry);
-        state.extent = strip::extent(&geometry, state.sx);
-    }
+/// changes the pane order, the layout or its record of a pane, the window size
+/// or the options the layout reads ends here, and the clients showing the
+/// window follow the result.
+unsafe fn window_arrange(window: &WindowRef) {
+    let cells = window
+        .pane_snapshot()
+        .into_iter()
+        .zip(window_arrangement(window));
     let mut moved = false;
     for (pane, cell) in cells {
         // Resize callbacks may remove a later pane; its removal arranges again.
@@ -814,7 +817,6 @@ unsafe fn window_arrange(window: &WindowRef) -> bool {
         (*window.get()).invalidate_scene();
     }
     tty_update_window_offset(window);
-    moved
 }
 
 unsafe fn window_destroy_panes(window: &WindowRef) {
@@ -823,7 +825,7 @@ unsafe fn window_destroy_panes(window: &WindowRef) {
         pane_history_remove(&mut (*w).last_panes, &Rc::downgrade(&pane));
     }
     while let Some(pane) = window_pane_first(w.as_ref()) {
-        window_pane_list_remove(&mut *w, &pane);
+        (*w).panes.remove(&Rc::downgrade(&pane));
         pane.destroy();
     }
 }
@@ -898,33 +900,11 @@ fn window_pane_stack_next(
     crate::src::shared::pane::pane_history_next(&w?.last_panes, &Rc::downgrade(wp))
 }
 
-fn window_pane_list_remove(w: &mut window, wp: &Rc<UnsafeCell<window_pane>>) {
-    assert!(
-        w.panes.remove(&Rc::downgrade(wp)),
-        "pane is not in its window order"
-    );
-}
-
-fn window_pane_list_insert_front(w: &mut window, wp: &Rc<UnsafeCell<window_pane>>) {
-    w.panes.push_front(Rc::downgrade(wp));
-}
-
-fn window_pane_list_insert_before(
-    w: &mut window,
-    before: &Rc<UnsafeCell<window_pane>>,
-    wp: &Rc<UnsafeCell<window_pane>>,
-) {
-    w.panes
-        .insert_before(&Rc::downgrade(before), Rc::downgrade(wp));
-}
-
-fn window_pane_list_insert_after(
-    w: &mut window,
-    after: &Rc<UnsafeCell<window_pane>>,
-    wp: &Rc<UnsafeCell<window_pane>>,
-) {
-    w.panes
-        .insert_after(&Rc::downgrade(after), Rc::downgrade(wp));
+unsafe fn window_get_pane_status(w: &window) -> ::core::ffi::c_int {
+    options_get_number_ref(
+        w.options.as_deref().expect("window options"),
+        c"pane-border-status",
+    ) as ::core::ffi::c_int
 }
 
 unsafe fn window_get_pane_lines(w: &window) -> pane_lines {

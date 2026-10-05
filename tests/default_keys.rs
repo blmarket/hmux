@@ -1,6 +1,7 @@
 //! C-b keeps tmux's prefix table. C-a enters the strip table, where c inserts
-//! a pane in the active pane's directory, h and l select, f toggles the width,
-//! H and L reorder, x kills and a second C-a reaches the application.
+//! a pane in the active pane's directory, h, j, k and l select, f toggles the
+//! width, H and L reorder, Space switches the layout, x kills and a second C-a
+//! reaches the application.
 
 #![cfg(unix)]
 
@@ -71,6 +72,33 @@ fn ctrl_a_keys_drive_the_strip() {
     client.send(b"\x01L");
     wait_until("L", || ids(&server) == panes);
     assert_eq!(server.display("#{pane_id}"), panes[1]);
+
+    // Space tiles the window; j and k select below and above.
+    let first_width = || {
+        server
+            .success(&["display", "-p", "-t", &panes[0], "#{pane_width}"])
+            .trim_end()
+            .to_owned()
+    };
+    client.send(b"\x01 ");
+    wait_until("Space", || first_width() == "40");
+    client.send(b"\x01c");
+    wait_until("the stacked pane", || ids(&server).len() == 3);
+    let below = ids(&server)[2].clone();
+    client.send(b"\x01k");
+    wait_until("k", || server.display("#{pane_id}") == panes[1]);
+    client.send(b"\x01j");
+    wait_until("j", || server.display("#{pane_id}") == below);
+    server.success(&["kill-pane", "-t", &below]);
+    // Space steps through every layout back to the strip.
+    for _ in 0..5 {
+        client.send(b"\x01 ");
+    }
+    wait_until("Space back to the strip", || {
+        server.display("#{window_layout_name}") == "scrolling"
+    });
+    assert_eq!(first_width(), "39");
+    server.success(&["select-pane", "-t", &panes[1]]);
 
     client.send(b"\x01x");
     wait_until("x", || ids(&server) == [panes[0].clone()]);

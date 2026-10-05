@@ -21,7 +21,7 @@ for the strip's own keys; release it before the next key.
 | --- | --- | --- |
 | `c` | Insert a pane after the active pane, in its current directory | `new-pane -c '#{pane_current_path}'` |
 | `h` / `l` | Select the pane to the left / right | `select-pane -L` / `-R` |
-| `f` | Toggle the active pane between half and full width | `resize-pane -W` |
+| `f` | Toggle the active pane between half and full width | `resize-pane -Z` |
 | `H` / `L` | Move the active pane left / right | `swap-pane -U` / `-D` |
 | `x` | Kill the active pane | `kill-pane` |
 | `C-a` | Send a literal `C-a` to the application | `send-keys C-a` |
@@ -43,8 +43,8 @@ rejected and formats expand to nothing:
 
 - Commands: `select-layout`, `next-layout`, `previous-layout`, `move-pane`,
   `display-menu`, `display-popup`.
-- Flags: `-Z` everywhere; `resize-pane -D/-L/-M/-R/-U/-x/-y` (`-T` and `-W`
-  remain); `select-pane -U/-D`; `break-pane -W`; `-f/-h/-l/-p/-v` on
+- Flags: `-Z` everywhere but `resize-pane`; `resize-pane -D/-L/-M/-R/-U/-x/-y`
+  (`-T` and `-Z` remain); `select-pane -U/-D`; `break-pane -W`; `-f/-h/-l/-p/-v` on
   `new-pane` and `join-pane`.
 - Targets: `{up-of}` and `{down-of}`.
 - Options: `main-pane-height`, `main-pane-width`, `other-pane-height`,

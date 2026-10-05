@@ -182,3 +182,33 @@ fn separators_beside_the_active_pane_take_its_style() {
     server.success(&["select-pane", "-t", &ids[1]]);
     client.wait_screen(|screen| colours(screen, 40) == split(RED, GREEN));
 }
+
+#[test]
+fn status_lines_draw_over_the_separator_rows() {
+    // The strip: every pane gives up its top row, and the separator below
+    // joins the status row in a tee.
+    let server = strip(80, 24, 2);
+    server.success(&["set", "-w", "pane-border-format", "P#{pane_index}"]);
+    server.success(&["set", "-w", "pane-border-status", "top"]);
+    let mut client = server.attach_terminal(80, 24);
+    client.wait_screen(|screen| {
+        screen.find(0, "P0") == Some(2)
+            && screen.find(0, "P1") == Some(42)
+            && screen.cells[0][39].ch == '┬'
+            && shows(screen, 1..24, 39..40, BORDER)
+    });
+    // Tiled: the pane below a horizontal separator draws its status on it,
+    // beside the junction with the vertical one.
+    server.success(&["select-layout", "main-vertical"]);
+    server.success(&["split-window", "sleep 60"]);
+    client.wait_screen(|screen| {
+        let rows = (0..24)
+            .filter(|&y| screen.row(y).contains("P2"))
+            .collect::<Vec<_>>();
+        rows.len() == 1
+            && rows[0] > 0
+            && screen.find(0, "P0").is_some()
+            && screen.find(0, "P1").is_some()
+            && screen.row(rows[0]).contains('├')
+    });
+}

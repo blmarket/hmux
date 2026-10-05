@@ -8,7 +8,7 @@ use crate::src::options::options_get_string;
 use crate::src::screen::{screen_free, screen_init};
 use crate::src::screen_write::{screen_write_start, screen_write_stop};
 use crate::src::shared::abi::*;
-use crate::src::shared::borders::{CELL_BORDERS, CELL_UD, SIMPLE_BORDERS};
+use crate::src::shared::borders::{CELL_BORDERS, SIMPLE_BORDERS};
 use crate::src::shared::format::{format_tree, FORMAT_NOJOBS, FORMAT_WINDOW};
 use crate::src::shared::grid::*;
 use crate::src::shared::layout::*;
@@ -120,9 +120,9 @@ pub unsafe fn window_get_fill_cell(
 pub unsafe fn window_get_border_cell(
     index: Option<u32>,
     mut pane_lines: pane_lines,
+    cell_type: ::core::ffi::c_int,
     gc: &mut grid_cell,
 ) {
-    let cell_type = CELL_UD;
     match pane_lines as ::core::ffi::c_uint {
         4 => {
             gc.attr = (gc.attr as ::core::ffi::c_int & !GRID_ATTR_CHARSET) as u_short;

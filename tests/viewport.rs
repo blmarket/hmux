@@ -193,7 +193,7 @@ fn clients_of_different_widths_keep_their_own_views() {
 fn a_client_narrower_than_the_active_pane_follows_its_cursor() {
     let server = strip(80, 3);
     let ids = ids(&server);
-    server.success(&["resize-pane", "-W", "-t", &ids[1]]);
+    server.success(&["resize-pane", "-Z", "-t", &ids[1]]);
     assert_eq!(
         server
             .panes()
@@ -272,16 +272,13 @@ fn left_and_right_stop_at_the_strip_ends() {
         .success());
     server.success(&["select-pane", "-t", "{right-of}"]);
     assert_eq!(active(), ids[1]);
-    // Up and down have no meaning in one row.
-    for args in [
-        &["select-pane", "-U"][..],
-        &["select-pane", "-D"],
-        &["select-pane", "-t", "{up-of}"],
-        &["select-pane", "-t", "{down-of}"],
-    ] {
+    // One row has no pane above or below.
+    server.success(&["select-pane", "-U"]);
+    server.success(&["select-pane", "-D"]);
+    for target in ["{up-of}", "{down-of}"] {
         assert!(
-            !server.run(args).status.success(),
-            "{args:?} still accepted"
+            !server.run(&["select-pane", "-t", target]).status.success(),
+            "{target} found a pane"
         );
     }
     assert_eq!(active(), ids[1]);

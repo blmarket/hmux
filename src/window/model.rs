@@ -45,13 +45,11 @@ pub struct window {
     /// Current pane identity; the pane index owns the allocation.
     pub(super) active: std::rc::Weak<std::cell::UnsafeCell<window_pane>>,
     pub(super) last_panes: window_pane_history,
-    /// The strip order; every pane's rectangle derives from it.
+    /// The pane order.
     pub(super) panes: window_panes,
-    /// Columns the arranged strip occupies; written only by the arrange step.
-    pub(super) strip_width: u_int,
-    /// Columns a view can scroll across: the last pane's first column plus the
-    /// window width. Written only by the arrange step.
-    pub(super) extent: u_int,
+    /// The arrangement of the panes and its own record of each one; every
+    /// pane's rectangle derives from it and the pane order.
+    pub(super) layout: super::layout::LayoutKind,
     pub(super) sx: u_int,
     pub(super) sy: u_int,
     pub(super) manual_sx: u_int,
@@ -90,8 +88,7 @@ impl Default for window {
             active: Default::default(),
             last_panes: Default::default(),
             panes: Default::default(),
-            strip_width: Default::default(),
-            extent: Default::default(),
+            layout: Default::default(),
             sx: Default::default(),
             sy: Default::default(),
             manual_sx: Default::default(),

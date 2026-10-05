@@ -41,6 +41,7 @@ pub mod respawn_window;
 pub mod rotate_window;
 pub mod run_shell;
 pub mod save_buffer;
+pub mod select_layout;
 pub mod select_pane;
 pub mod select_window;
 pub mod send_keys;

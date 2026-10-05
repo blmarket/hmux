@@ -14,9 +14,6 @@ pub struct window_pane {
     pub(super) sy: u_int,
     pub(super) xoff: ::core::ffi::c_int,
     pub(super) yoff: ::core::ffi::c_int,
-    /// Strip width preference; it travels with the pane between positions and
-    /// windows. Only the Window's width toggle changes it.
-    pub(super) width: crate::src::shared::layout::PaneWidth,
     pub(super) flags: ::core::ffi::c_int,
     /// Owns the bitmap for synchronized output; readers borrow its bytes.
     pub(super) sync_dirty: Option<Box<[bitstr_t]>>,
@@ -55,6 +52,7 @@ pub struct window_pane {
     pub(super) cached_active_dim: u_int,
     pub(super) palette: colour_palette,
     pub(super) last_theme: client_theme,
+    pub(super) border_status_line: style_line_entry,
     pub(super) pipe_fd: Option<std::os::fd::OwnedFd>,
     pub(super) pipe_pid: pid_t,
     /// Observes the runtime-owned pipe stream; pipe_fd controls its lifetime.
@@ -62,6 +60,10 @@ pub struct window_pane {
     pub(super) pipe_offset: window_pane_offset,
     pub(super) screen_source: PaneScreenSource,
     pub(super) base: screen,
+    /// Layout-specific metadata, opaque to everything but the layout that
+    /// wrote it. Only the Window writes it.
+    pub(super) layout_meta: Option<Box<dyn std::any::Any>>,
+    pub(super) status_screen: screen,
     /// Pane-owned non-intrusive mode stack, drained before pane free.
     pub(super) modes: window_pane_modes,
     pub(super) searchstr: Option<CString>,
@@ -93,7 +95,6 @@ impl Default for window_pane {
             sy: Default::default(),
             xoff: Default::default(),
             yoff: Default::default(),
-            width: Default::default(),
             flags: Default::default(),
             sync_dirty: Default::default(),
             sync_dirty_size: Default::default(),
@@ -130,12 +131,15 @@ impl Default for window_pane {
             cached_active_dim: Default::default(),
             palette: Default::default(),
             last_theme: Default::default(),
+            border_status_line: Default::default(),
             pipe_fd: Default::default(),
             pipe_pid: Default::default(),
             pipe_event: Default::default(),
             pipe_offset: Default::default(),
             screen_source: Default::default(),
             base: Default::default(),
+            layout_meta: Default::default(),
+            status_screen: Default::default(),
             modes: Default::default(),
             searchstr: Default::default(),
             searchregex: Default::default(),

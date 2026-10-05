@@ -13,6 +13,7 @@ use crate::src::session::sessions;
 use crate::src::session::Session;
 use crate::src::session::SessionIndex as _;
 use crate::src::shared::client::ClientRef;
+use crate::src::shared::layout::Direction;
 use crate::src::shared::rc::same;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
@@ -65,6 +66,8 @@ const cmd_find_pane_table: &[(&CStr, &CStr)] = &[
     (c"{bottom-right}", c"bottom-right"),
     (c"{left-of}", c"{left-of}"),
     (c"{right-of}", c"{right-of}"),
+    (c"{up-of}", c"{up-of}"),
+    (c"{down-of}", c"{down-of}"),
 ];
 unsafe fn cmd_find_inside_pane(
     client: Option<&ClientRef>,
@@ -681,15 +684,22 @@ unsafe fn cmd_find_get_pane_with_window(
             return -(1 as ::core::ffi::c_int);
         }
         return 0 as ::core::ffi::c_int;
-    } else if strcmp(pane, c"{left-of}".as_ptr()) == 0 as ::core::ffi::c_int
-        || strcmp(pane, c"{right-of}".as_ptr()) == 0 as ::core::ffi::c_int
+    } else if let Some(direction) = [
+        (c"{left-of}", Direction::Left),
+        (c"{right-of}", Direction::Right),
+        (c"{up-of}", Direction::Up),
+        (c"{down-of}", Direction::Down),
+    ]
+    .into_iter()
+    .find(|(token, _)| strcmp(pane, token.as_ptr()) == 0 as ::core::ffi::c_int)
+    .map(|(_, direction)| direction)
     {
-        // The previous or next pane in the strip, stopping at its ends.
-        let left = strcmp(pane, c"{left-of}".as_ptr()) == 0 as ::core::ffi::c_int;
+        // The layout's neighbour of the active pane; there is none past the
+        // edge.
         let window_owner = (*fs).w.upgrade().expect("target window");
-        let selected = window_owner.active_pane().and_then(|active| {
-            window_owner.step_pane(Some(&std::rc::Rc::downgrade(&active)), left)
-        });
+        let selected = window_owner
+            .active_pane()
+            .and_then(|active| window_owner.pane_in_direction(&active, direction));
         (*fs).wp = selected
             .as_ref()
             .map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);

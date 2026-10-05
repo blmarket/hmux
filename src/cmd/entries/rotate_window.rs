@@ -50,7 +50,16 @@ unsafe fn cmd_rotate_window_exec(
     let window_owner = (*target).w.upgrade().expect("live rotation window");
     let result = {
         let down = args_has(args, b'D') != 0;
-        window_owner.rotate_panes(down);
+        let mut order = window_owner.pane_snapshot();
+        // Down moves the last pane to the front; up the first to the end.
+        if down {
+            order.rotate_right(1);
+        } else {
+            order.rotate_left(1);
+        }
+        window_owner
+            .rearrange_panes(&order)
+            .expect("a reorder is never refused");
         // Selection follows the active pane's old position in the strip.
         let selected_pane = window_owner
             .active_pane()

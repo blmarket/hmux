@@ -18,9 +18,8 @@ use crate::src::shared::session::SessionRef;
 use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::spawn::{SPAWN_EMPTY, SPAWN_KILL, SPAWN_RESPAWN};
 use crate::src::shared::window::{window, winlink};
-use crate::src::spawn::spawn_pane;
 use crate::src::window::Window as _;
-use crate::src::window_pane::WindowPane as _;
+use crate::src::window_pane::WindowPane;
 pub static cmd_respawn_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"respawn-pane",
@@ -95,7 +94,12 @@ unsafe fn cmd_respawn_pane_exec(
     if args_has(args, 'k' as i32 as u_char) != 0 {
         sc.flags |= SPAWN_KILL;
     }
-    if spawn_pane(&raw mut sc, &raw mut cause).is_none() {
+    if <std::rc::Rc<std::cell::UnsafeCell<window_pane>> as WindowPane>::spawn_process(
+        &raw mut sc,
+        &raw mut cause,
+    )
+    .is_none()
+    {
         cmdq_error(item_handle, |out| {
             out.write_all(b"respawn pane failed: ")?;
             write_cstr(

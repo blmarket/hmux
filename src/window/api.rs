@@ -8,10 +8,8 @@
 use super::*;
 use crate::src::server_client::Client as _;
 use crate::src::shared::client::ClientRef;
-use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_RESIZE};
-use crate::src::spawn::spawn_pane;
 use crate::src::window_pane::WindowPane as _;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -75,29 +73,6 @@ pub trait Window {
     unsafe fn redraw_active_switch(&self, pane: Option<&Rc<UnsafeCell<window_pane>>>);
     unsafe fn pane_at(&self, x: u32, y: u32) -> Option<Rc<UnsafeCell<window_pane>>>;
     unsafe fn find_pane(&self, name: &CStr) -> Option<Rc<UnsafeCell<window_pane>>>;
-    /// Create a pane after `other` (before it with SPAWN_BEFORE), or as the
-    /// first pane of an empty window, and arrange the strip. The spawn
-    /// protocol notifies once the pane's process starts.
-    unsafe fn add_pane(
-        &self,
-        other: Option<&Rc<UnsafeCell<window_pane>>>,
-        hlimit: u32,
-        flags: i32,
-    ) -> Rc<UnsafeCell<window_pane>>;
-    /// Whether one more pane of `width` keeps the strip within
-    /// WINDOW_MAXIMUM columns.
-    unsafe fn has_room_for_pane(&self, width: PaneWidth) -> bool;
-    /// Insert a pane already reparented to this window after `target`, or
-    /// before it, and arrange the strip. The caller notifies.
-    unsafe fn insert_pane(
-        &self,
-        pane: &Rc<UnsafeCell<window_pane>>,
-        target: &Rc<UnsafeCell<window_pane>>,
-        before: bool,
-    );
-    /// Retire a pane that moves to another window: its selection, history and
-    /// membership. The strip closes the gap and window-layout-changed fires.
-    unsafe fn detach_pane(&self, pane: &Rc<UnsafeCell<window_pane>>);
     unsafe fn winlink_flags(link: refbox::Weak<winlink>, escape: bool) -> CString
     where
         Self: Sized;
@@ -108,30 +83,48 @@ pub trait Window {
     where
         Self: 'a;
     unsafe fn borrow_pane_history_mut(&self) -> Self::PaneHistoryMut<'_>;
-    /// Swap two panes' places in the strip, in one window or across two whose
-    /// panes the caller has already reparented, and arrange each strip.
-    /// Neither selection nor notifications change.
-    unsafe fn swap_pane_order(
+    /// The window's panes become exactly `panes`, in this order: the one way
+    /// panes are added, removed and reordered. A list that brings in a pane
+    /// must be one the layout takes, or the layout's reason comes back and
+    /// nothing has changed; a removal or a reorder is never refused. Arriving
+    /// panes are already reparented to this window. Leaving panes are not
+    /// destroyed. window-layout-changed fires when panes leave; the caller
+    /// announces panes that arrive.
+    unsafe fn rearrange_panes(
         &self,
-        first: &Weak<UnsafeCell<window_pane>>,
-        other: &WindowRef,
-        second: &Weak<UnsafeCell<window_pane>>,
-    );
-    /// Toggle a pane between half and full width, arrange the strip and
-    /// redraw; window-layout-changed fires. Widening is refused, returning
-    /// false, when it would take the strip past WINDOW_MAXIMUM columns.
-    unsafe fn toggle_pane_width(&self, pane: &Rc<UnsafeCell<window_pane>>) -> bool;
-    /// Move the last pane to the front (`down`) or the first pane to the end,
-    /// and arrange the strip. Neither selection nor notifications change.
-    unsafe fn rotate_panes(&self, down: bool);
-    /// The strip's rectangles in pane order, before pane border and scrollbar
-    /// adjustments. Retained panes and copied geometry only.
+        panes: &[Rc<UnsafeCell<window_pane>>],
+    ) -> Result<(), &'static CStr>;
+    /// Rearrange the panes without `pane`, then destroy it: the common case
+    /// of `rearrange_panes`, for closing a pane.
+    unsafe fn remove_pane(&self, pane: &Rc<UnsafeCell<window_pane>>);
+    /// Apply a layout action to one pane: the layout gives the pane's new
+    /// metadata. Refused, with nothing changed, by a layout that can't do it
+    /// or doesn't take the result; window-layout-changed fires otherwise.
+    unsafe fn layout_action(
+        &self,
+        pane: &Rc<UnsafeCell<window_pane>>,
+        action: LayoutAction,
+    ) -> Result<(), &'static CStr>;
+    unsafe fn layout(&self) -> LayoutKind;
+    /// Arrange the panes in a fresh `kind` layout, in pane order, and redraw;
+    /// window-layout-changed fires.
+    unsafe fn set_layout(&self, kind: LayoutKind);
+    /// The pane in `direction` from `pane`: the previous or next pane of the
+    /// strip, or the tile across the separator.
+    unsafe fn pane_in_direction(
+        &self,
+        pane: &Rc<UnsafeCell<window_pane>>,
+        direction: Direction,
+    ) -> Option<Rc<UnsafeCell<window_pane>>>;
+    /// The layout's rectangles in pane order, before pane border and
+    /// scrollbar adjustments. Retained panes and copied geometry only.
     unsafe fn pane_cells(&self) -> Vec<(Rc<UnsafeCell<window_pane>>, layout_geometry)>;
-    /// The area clients clip and pan across: the strip's extent, which is the
-    /// last pane's first column plus the window width, by the window height.
+    /// The area clients clip and pan across, as the layout computes it from
+    /// the panes and the window size. A strip's width is its last pane's
+    /// first column plus the window width.
     unsafe fn logical_size(&self) -> (u32, u32);
-    /// The strip as a single-row layout string. `legacy` selects the
-    /// checksummed format of older control clients.
+    /// The layout as a layout string. `legacy` selects the checksummed format
+    /// of older control clients.
     unsafe fn layout_string(&self, legacy: bool) -> Option<CString>;
 
     unsafe fn id(&self) -> u32;
@@ -157,16 +150,6 @@ pub trait Window {
     /// Clear pending flag bits without changing alert-queue membership.
     unsafe fn clear_alert_flags(&self);
 
-    /// Publish a newly created window's first pane and client, and arrange it,
-    /// before naming and creation notifications. No selection callbacks run here.
-    unsafe fn initialize_pane(
-        &self,
-        pane: &Rc<UnsafeCell<window_pane>>,
-        client: Option<&ClientRef>,
-    );
-    /// Respawn keeps only `pane`: destroy every other pane, arrange the strip,
-    /// and select the survivor even when it was already active.
-    unsafe fn reset_to_pane(&self, pane: &Rc<UnsafeCell<window_pane>>);
     /// Name a new window without a rename event; an explicit name disables
     /// automatic naming. Creation notification belongs to the caller.
     unsafe fn initialize_name(&self, name: CString, explicit: bool);
@@ -196,6 +179,8 @@ pub trait Window {
     /// Refresh cached scrollbar policy after options change. Pane resizing is
     /// performed by the caller after this borrow ends.
     unsafe fn refresh_scrollbars(&self);
+    /// The window's pane-border-status: off, top or bottom.
+    unsafe fn pane_border_status(&self) -> i32;
     unsafe fn pane_border_lines(&self) -> pane_lines;
     unsafe fn pane_at_index(&self, index: u32) -> Option<Rc<UnsafeCell<window_pane>>>;
     unsafe fn pane_index(&self, pane: &Weak<UnsafeCell<window_pane>>) -> Option<u32>;
@@ -215,16 +200,6 @@ pub trait Window {
         after: Option<&Rc<UnsafeCell<window_pane>>>,
     ) -> Option<Rc<UnsafeCell<window_pane>>>;
     unsafe fn select_pane(&self, pane: &Rc<UnsafeCell<window_pane>>, notify: bool) -> i32;
-    /// Retire and destroy a pane. The strip closes the gap and
-    /// window-layout-changed fires.
-    unsafe fn remove_pane(&self, pane: &Rc<UnsafeCell<window_pane>>);
-    /// Insert a pane beside the context's source pane and spawn into it. The
-    /// context supplies the source pane, session/link and spawn flags. A full
-    /// strip refuses before any side effect.
-    unsafe fn new_pane(
-        &self,
-        context: &mut spawn_context,
-    ) -> Result<Rc<UnsafeCell<window_pane>>, CString>;
     unsafe fn size(&self) -> (u32, u32);
     unsafe fn manual_size(&self) -> (u32, u32);
     /// Select manual sizing and record both requested dimensions together.
@@ -235,9 +210,9 @@ pub trait Window {
     /// Pixel dimensions of a terminal cell, for the pane's PTY resize protocol.
     unsafe fn cell_size(&self) -> (u32, u32);
     unsafe fn resize(&self, sx: u32, sy: u32, xpixel: i32, ypixel: i32);
-    /// Arrange the strip again after options or pane modes it reads changed.
+    /// Arrange the layout again after options or pane modes it reads changed.
     /// Silent; returns whether any pane moved.
-    unsafe fn refit(&self) -> bool;
+    unsafe fn refit(&self);
     unsafe fn update_activity(&self);
     /// Return whether the identity changed. Attachment and input dispatch have
     /// different notifications and keep that orchestration in their callers.
@@ -296,41 +271,6 @@ impl Window for WindowRef {
     unsafe fn find_pane(&self, name: &CStr) -> Option<Rc<UnsafeCell<window_pane>>> {
         window_find_string(self, name)
     }
-    unsafe fn add_pane(
-        &self,
-        other: Option<&Rc<UnsafeCell<window_pane>>>,
-        hlimit: u32,
-        flags: i32,
-    ) -> Rc<UnsafeCell<window_pane>> {
-        window_add_pane(self, other, hlimit, flags)
-    }
-    unsafe fn has_room_for_pane(&self, width: PaneWidth) -> bool {
-        let mut widths = window_pane_widths(self);
-        widths.push(width);
-        window_strip_fits(self, &widths)
-    }
-    unsafe fn insert_pane(
-        &self,
-        pane: &Rc<UnsafeCell<window_pane>>,
-        target: &Rc<UnsafeCell<window_pane>>,
-        before: bool,
-    ) {
-        let state = &mut *self.get();
-        assert!(
-            window_has_pane(state, &Rc::downgrade(target)),
-            "insertion target belongs to window"
-        );
-        if before {
-            window_pane_list_insert_before(state, target, pane);
-        } else {
-            window_pane_list_insert_after(state, target, pane);
-        }
-        state.invalidate_scene();
-        window_arrange(self);
-    }
-    unsafe fn detach_pane(&self, pane: &Rc<UnsafeCell<window_pane>>) {
-        window_take_pane(self, pane);
-    }
     unsafe fn winlink_flags(link: refbox::Weak<winlink>, escape: bool) -> CString {
         window_printable_flags(link, escape as i32)
     }
@@ -339,79 +279,79 @@ impl Window for WindowRef {
     unsafe fn borrow_pane_history_mut(&self) -> Self::PaneHistoryMut<'_> {
         &mut (*self.get()).last_panes
     }
-    unsafe fn swap_pane_order(
+    unsafe fn rearrange_panes(
         &self,
-        first: &Weak<UnsafeCell<window_pane>>,
-        other: &WindowRef,
-        second: &Weak<UnsafeCell<window_pane>>,
-    ) {
-        if Rc::ptr_eq(self, other) {
-            (*self.get()).panes.swap(first, second);
-        } else {
-            let left = &mut (*self.get()).panes;
-            let right = &mut (*other.get()).panes;
-            let left_position = left.position(first).expect("first pane is not in order");
-            let right_position = right.position(second).expect("second pane is not in order");
-            let left_pane = left.remove_at(first);
-            let right_pane = right.remove_at(second);
-            left.insert_at(left_position, right_pane);
-            right.insert_at(right_position, left_pane);
-            (*other.get()).invalidate_scene();
-            window_arrange(other);
-        }
-        (*self.get()).invalidate_scene();
-        window_arrange(self);
+        panes: &[Rc<UnsafeCell<window_pane>>],
+    ) -> Result<(), &'static CStr> {
+        window_rearrange_panes(self, panes)
     }
-    unsafe fn toggle_pane_width(&self, pane: &Rc<UnsafeCell<window_pane>>) -> bool {
-        let position = (*self.get())
-            .panes
-            .position(&Rc::downgrade(pane))
-            .expect("pane belongs to window");
-        let width = pane.width_preference().toggled();
-        // Narrowing always succeeds, even in a strip a resize took past the
-        // maximum.
-        if width == PaneWidth::Full {
-            let mut widths = window_pane_widths(self);
-            widths[position] = width;
-            if !window_strip_fits(self, &widths) {
-                return false;
+    unsafe fn remove_pane(&self, pane: &Rc<UnsafeCell<window_pane>>) {
+        window_remove_pane(self, pane);
+    }
+    unsafe fn layout_action(
+        &self,
+        pane: &Rc<UnsafeCell<window_pane>>,
+        action: LayoutAction,
+    ) -> Result<(), &'static CStr> {
+        let state = &*self.get();
+        let meta = state
+            .layout
+            .apply(action, pane.borrow_layout_meta().as_deref())?;
+        // Refused only when it takes a list the layout admits to one it
+        // doesn't; a resize may already have left the list outside it.
+        let panes = state.panes.snapshot();
+        let admitted = state.layout.admits(&panes, self.size()).is_ok();
+        let old = std::mem::replace(&mut *pane.borrow_layout_meta(), meta);
+        if let Err(reason) = state.layout.admits(&panes, self.size()) {
+            if admitted {
+                *pane.borrow_layout_meta() = old;
+                return Err(reason);
             }
         }
-        pane.set_width_preference(width);
         (*self.get()).invalidate_scene();
         window_arrange(self);
         server_redraw_window(self);
         events_fire_window(c"window-layout-changed".as_ptr(), self.clone());
-        true
+        Ok(())
     }
-    unsafe fn rotate_panes(&self, down: bool) {
+    unsafe fn layout(&self) -> LayoutKind {
+        (*self.get()).layout
+    }
+    unsafe fn set_layout(&self, kind: LayoutKind) {
         let state = &mut *self.get();
-        let moved = if down {
-            state.panes.last()
-        } else {
-            state.panes.first()
-        }
-        .expect("rotation window has panes");
-        let observer = Rc::downgrade(&moved);
-        assert!(
-            state.panes.remove(&observer),
-            "pane is not in its window order"
-        );
-        if down {
-            state.panes.push_front(observer);
-        } else {
-            state.panes.push_back(observer);
-        }
+        state.layout = kind;
         state.invalidate_scene();
         window_arrange(self);
+        server_redraw_window(self);
+        events_fire_window(c"window-layout-changed".as_ptr(), self.clone());
+    }
+    unsafe fn pane_in_direction(
+        &self,
+        pane: &Rc<UnsafeCell<window_pane>>,
+        direction: Direction,
+    ) -> Option<Rc<UnsafeCell<window_pane>>> {
+        let cells = window_pane_cells(self);
+        let from = cells
+            .iter()
+            .position(|(candidate, _)| Rc::ptr_eq(candidate, pane))
+            .expect("pane belongs to window");
+        let geometry = cells.iter().map(|&(_, cell)| cell).collect::<Vec<_>>();
+        let to = layout::adjacent(&geometry, from, direction)?;
+        Some(cells[to].0.clone())
     }
     unsafe fn pane_cells(&self) -> Vec<(Rc<UnsafeCell<window_pane>>, layout_geometry)> {
-        window_strip_cells(self)
+        window_pane_cells(self)
     }
     unsafe fn logical_size(&self) -> (u32, u32) {
         let state = &*self.get();
-        // Never narrower than the window, even before a pane is arranged.
-        (state.extent.max(state.sx), state.sy)
+        state.layout.logical_size(
+            state
+                .panes
+                .storage
+                .iter()
+                .map(|pane| pane.upgrade().expect("live pane in ordering")),
+            (state.sx, state.sy),
+        )
     }
     unsafe fn layout_string(&self, legacy: bool) -> Option<CString> {
         let active = self.active_pane_observer();
@@ -420,17 +360,21 @@ impl Window for WindowRef {
             .into_iter()
             .map(|(pane, geometry)| {
                 let observer = Rc::downgrade(&pane);
-                strip::LayoutEntry {
+                layout::LayoutEntry {
                     geometry,
                     id: pane.id(),
-                    index: self.pane_index(&observer).expect("strip pane has an index"),
+                    index: self
+                        .pane_index(&observer)
+                        .expect("laid out pane has an index"),
                     active: active.ptr_eq(&observer),
                     last: self.pane_history_index(&observer),
                 }
             })
             .collect::<Vec<_>>();
+        let size = self.size();
         let state = &*self.get();
-        strip::layout_string(&entries, (state.strip_width, state.sy), legacy)
+        let tree = state.layout.tree(&state.panes.snapshot(), size)?;
+        layout::layout_string(&tree, &entries, legacy)
     }
 
     unsafe fn refresh_fill_cells(&self) {
@@ -517,31 +461,6 @@ impl Window for WindowRef {
 
     unsafe fn id(&self) -> u32 {
         (*self.get()).id
-    }
-    unsafe fn initialize_pane(
-        &self,
-        pane: &Rc<UnsafeCell<window_pane>>,
-        client: Option<&ClientRef>,
-    ) {
-        let state = &mut *self.get();
-        let observer = Rc::downgrade(pane);
-        state.panes.push_front(observer.clone());
-        state.active = observer;
-        state.latest = client.map_or_else(Weak::new, Rc::downgrade);
-        window_arrange(self);
-    }
-    unsafe fn reset_to_pane(&self, pane: &Rc<UnsafeCell<window_pane>>) {
-        let observer = Rc::downgrade(pane);
-        assert!(
-            (*self.get()).panes.remove(&observer),
-            "pane is not in its window order"
-        );
-        window_destroy_panes(self);
-        (*self.get()).panes.push_front(observer);
-        (*self.get()).invalidate_scene();
-        window_arrange(self);
-        (*self.get()).active = Weak::new();
-        window_set_active_pane(self, pane, 0);
     }
     unsafe fn initialize_name(&self, name: CString, explicit: bool) {
         drop(window_replace_name(self, name));
@@ -644,6 +563,9 @@ impl Window for WindowRef {
         state.sb = options_get_number(options, c"pane-scrollbars") as i32;
         state.sb_pos = options_get_number(options, c"pane-scrollbars-position") as i32;
     }
+    unsafe fn pane_border_status(&self) -> i32 {
+        window_get_pane_status(&*self.get())
+    }
     unsafe fn pane_border_lines(&self) -> pane_lines {
         window_get_pane_lines(&*self.get())
     }
@@ -720,47 +642,6 @@ impl Window for WindowRef {
         );
         window_set_active_pane(self, pane, notify as i32)
     }
-    unsafe fn remove_pane(&self, pane: &Rc<UnsafeCell<window_pane>>) {
-        assert!(
-            window_has_pane(&*self.get(), &Rc::downgrade(pane)),
-            "pane belongs to window"
-        );
-        window_remove_pane(self, pane);
-    }
-    unsafe fn new_pane(
-        &self,
-        context: &mut spawn_context,
-    ) -> Result<Rc<UnsafeCell<window_pane>>, CString> {
-        let pane = context
-            .wp0
-            .upgrade()
-            .expect("source pane retained by caller");
-        assert!(
-            window_has_pane(&*self.get(), &Rc::downgrade(&pane)),
-            "source pane belongs to window"
-        );
-        assert!(
-            context
-                .wl
-                .get_unchecked()
-                .window_handle()
-                .is_some_and(|window| Rc::ptr_eq(window, self)),
-            "spawn link belongs to window"
-        );
-        if !self.has_room_for_pane(PaneWidth::Half) {
-            return Err(c"no space for a new pane".to_owned());
-        }
-        let mut cause = None;
-        spawn_pane(context, &mut cause).ok_or_else(|| {
-            let mut message = b"create pane failed: ".to_vec();
-            message.extend_from_slice(
-                cause
-                    .expect("failed pane spawn provides a diagnostic")
-                    .as_bytes(),
-            );
-            CString::new(message).expect("spawn diagnostic contains no NUL")
-        })
-    }
     unsafe fn size(&self) -> (u32, u32) {
         ((*self.get()).sx, (*self.get()).sy)
     }
@@ -807,8 +688,8 @@ impl Window for WindowRef {
     unsafe fn resize(&self, sx: u32, sy: u32, xpixel: i32, ypixel: i32) {
         resize_window(self, sx, sy, xpixel, ypixel);
     }
-    unsafe fn refit(&self) -> bool {
-        window_arrange(self)
+    unsafe fn refit(&self) {
+        window_arrange(self);
     }
     unsafe fn update_activity(&self) {
         window_update_activity(self);
@@ -908,12 +789,11 @@ unsafe fn resize_window(
     }
     window_resize(w_owner, sx, sy, xpixel, ypixel);
     log_debug(format_args!(
-        "{}: @{} resized to {}x{}; strip {} columns",
+        "{}: @{} resized to {}x{}",
         "resize_window",
         { (*w).id },
         { sx },
-        { sy },
-        { (*w).strip_width }
+        { sy }
     ));
     server_redraw_window(w_owner);
     events_fire_window(

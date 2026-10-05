@@ -30,7 +30,7 @@ use crate::src::window::Window as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
 use crate::src::shared::arguments::args_command_state;
-use crate::src::shared::borders::{CELL_BORDERS, CELL_UD};
+use crate::src::shared::borders::{CELL_BORDERS, CELL_LR, CELL_UD};
 use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::{cmd, cmd_find_state, cmdq_item, cmdq_state};
@@ -336,8 +336,9 @@ unsafe fn window_panes_map_y(mut y: u_int, mut osy: u_int, mut dsy: u_int) -> ::
     }
     y.wrapping_mul(dsy).wrapping_div(osy) as ::core::ffi::c_int
 }
-/// Draw a separator after every pane but the last, across the preview's
-/// height. Separators are the only borders; none is horizontal.
+/// Draw the separator to the right of every pane but the rightmost, and the
+/// one below every pane but the lowest. Where separators cross the preview
+/// draws plain lines.
 unsafe fn window_panes_draw_borders(
     mut ctx: *mut screen_write_ctx,
     w_owner: &WindowRef,
@@ -350,24 +351,43 @@ unsafe fn window_panes_draw_borders(
     if dsx == 0 as u_int || dsy == 0 as u_int {
         return;
     }
-    let mut border_gc = *gc;
-    border_gc.attr = (border_gc.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
+    let mut vertical = *gc;
+    vertical.attr = (vertical.attr as ::core::ffi::c_int | GRID_ATTR_CHARSET) as u_short;
+    let mut horizontal = vertical;
+    utf8_set(&mut vertical.data, CELL_BORDERS[CELL_UD as usize] as u_char);
     utf8_set(
-        &mut border_gc.data,
-        CELL_BORDERS[CELL_UD as usize] as u_char,
+        &mut horizontal.data,
+        CELL_BORDERS[CELL_LR as usize] as u_char,
     );
-    for pair in w_owner.pane_cells().windows(2) {
-        let (_, geometry) = &pair[0];
-        let x = window_panes_map_x((geometry.xoff as u_int).wrapping_add(geometry.sx), osx, dsx);
-        if x < 0 || x as u_int >= dsx {
-            continue;
-        }
+    let cells = w_owner.pane_cells();
+    let right_edge = cells
+        .iter()
+        .map(|(_, g)| (g.xoff as u_int).wrapping_add(g.sx))
+        .max()
+        .unwrap_or(0);
+    let bottom_edge = cells
+        .iter()
+        .map(|(_, g)| (g.yoff as u_int).wrapping_add(g.sy))
+        .max()
+        .unwrap_or(0);
+    for (_, geometry) in &cells {
+        let right = (geometry.xoff as u_int).wrapping_add(geometry.sx);
+        let bottom = (geometry.yoff as u_int).wrapping_add(geometry.sy);
+        let x = window_panes_map_x(geometry.xoff as u_int, osx, dsx).max(0);
+        let x2 = window_panes_map_x(right, osx, dsx);
         let y = window_panes_map_y(geometry.yoff as u_int, osy, dsy).max(0);
-        let y2 = window_panes_map_y((geometry.yoff as u_int).wrapping_add(geometry.sy), osy, dsy)
-            .min(dsy as ::core::ffi::c_int);
-        for yy in y..y2 {
-            screen_write_cursormove(&mut *ctx, x, yy, 0 as ::core::ffi::c_int);
-            screen_write_cell(&mut *ctx, &border_gc);
+        let y2 = window_panes_map_y(bottom, osy, dsy);
+        if right < right_edge && x2 >= 0 && (x2 as u_int) < dsx {
+            for yy in y..y2.min(dsy as ::core::ffi::c_int) {
+                screen_write_cursormove(&mut *ctx, x2, yy, 0 as ::core::ffi::c_int);
+                screen_write_cell(&mut *ctx, &vertical);
+            }
+        }
+        if bottom < bottom_edge && y2 >= 0 && (y2 as u_int) < dsy {
+            for xx in x..x2.min(dsx as ::core::ffi::c_int) {
+                screen_write_cursormove(&mut *ctx, xx, y2, 0 as ::core::ffi::c_int);
+                screen_write_cell(&mut *ctx, &horizontal);
+            }
         }
     }
 }
@@ -832,11 +852,13 @@ unsafe fn window_panes_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         if window.next_pane(None).is_none() {
             return;
         }
-        // Preview the panes, not the blank extent past the last one.
+        // Preview the panes, not the blank extent past the rightmost one.
         let strip = window
             .pane_cells()
-            .last()
-            .map_or(0, |(_, cell)| (cell.xoff as u_int).wrapping_add(cell.sx));
+            .iter()
+            .map(|(_, cell)| (cell.xoff as u_int).wrapping_add(cell.sx))
+            .max()
+            .unwrap_or(0);
         (osx, osy) = window.size();
         osx = osx.max(strip);
         sx = (*data).screen.grid().sx;
