@@ -191,6 +191,15 @@ fn detect(screen: &str, title: Option<&str>) -> Detection {
         return Detection::State(AgentState::Working);
     }
 
+    // 955 — background subagents still running. Once it has launched them,
+    // the main thread ends its turn and returns to the prompt box, so the
+    // prompt-box rule below would call the pane idle while the work goes on.
+    // The footer lists each running subagent with a live counter, and drops
+    // the row when it finishes.
+    if !pending_question && has_running_subagent_row(lines_after_last_horizontal_rule(&lines)) {
+        return Detection::State(AgentState::Working);
+    }
+
     // 950 — a live prompt box (`❯`) with no pending question means idle.
     if !pending_question && has_prompt_marker(&lines) {
         return Detection::State(AgentState::Idle);
@@ -277,11 +286,17 @@ fn bottom_non_empty_lines(lines: &[&str], n: usize) -> CString {
 /// The text after the last horizontal-rule line (Herdr's
 /// `after_last_horizontal_rule` region), or the whole screen if there is none.
 fn after_last_horizontal_rule(lines: &[&str]) -> CString {
-    let text = match lines.iter().rposition(|line| is_horizontal_rule(line)) {
-        Some(index) => lines[index + 1..].join("\n"),
-        None => lines.join("\n"),
-    };
-    CString::new(text).expect("screen text has no NUL")
+    CString::new(lines_after_last_horizontal_rule(lines).join("\n"))
+        .expect("screen text has no NUL")
+}
+
+/// The lines after the last horizontal-rule line, or every line if there is
+/// none.
+fn lines_after_last_horizontal_rule<'a>(lines: &'a [&'a str]) -> &'a [&'a str] {
+    match lines.iter().rposition(|line| is_horizontal_rule(line)) {
+        Some(index) => &lines[index + 1..],
+        None => lines,
+    }
 }
 
 /// A box-drawing horizontal divider (e.g. Claude's `────` separators): a
@@ -324,6 +339,37 @@ fn has_working_status_line(lines: &[&str]) -> bool {
             && counter.starts_with(|c: char| c.is_ascii_digit())
             && line.trim_end().ends_with(')')
     })
+}
+
+/// Whether the footer lists a running background subagent, e.g.
+/// `  ◯ general-purpose  Reading e2e_status rende…  3m 42s · ↓ 93.1k tokens`.
+///
+/// The row is a marker cell and a space, then the agent's name and task, and
+/// ends with the elapsed time and the token count. Claude Code removes the row
+/// when the subagent finishes, so its presence alone means work is running.
+/// The `● main` row that heads the list carries no counter and does not match.
+fn has_running_subagent_row(lines: &[&str]) -> bool {
+    lines.iter().any(|line| {
+        let mut chars = line.trim().chars();
+        let marker = chars.next().is_some_and(|c| !c.is_alphanumeric());
+        if !marker || chars.next() != Some(' ') {
+            return false;
+        }
+        let Some((task, tokens)) = chars.as_str().rsplit_once(" · ↓ ") else {
+            return false;
+        };
+        tokens.ends_with(" tokens")
+            && task
+                .split_whitespace()
+                .next_back()
+                .is_some_and(is_elapsed_unit)
+    })
+}
+
+/// Whether `word` is one unit of an elapsed time such as `3m` or `42s`.
+fn is_elapsed_unit(word: &str) -> bool {
+    word.strip_suffix(['h', 'm', 's'])
+        .is_some_and(|digits| !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()))
 }
 
 /// Whether any line is the live *input* prompt (`❯`), optionally indented.
@@ -506,6 +552,46 @@ mod tests {
         );
         let idle = format!("{quoted}\n✻ Brewed for 11m 18s · done 9:06 AM\n─────────────\n❯ ");
         assert_eq!(detect(&idle, None), Detection::State(AgentState::Idle));
+    }
+
+    #[test]
+    fn running_background_subagents_report_working_at_the_prompt() {
+        // The main thread waits at the prompt box while its subagents run; the
+        // footer rows with live counters are what say the pane is busy.
+        let screen = "\
+✻ Waiting for 6 background agents to finish
+─────────────
+❯
+─────────────
+  /home/blmarket/proj/hmux  master  Opus 5.5  ctx 86%
+  ⏵⏵ bypass permissions on · 1 shell · ← for agents
+  ● main
+  ◯ general-purpose  Reading e2e_status rende…  3m 42s · ↓ 93.1k tokens
+  ◯ general-purpose  Adding strip_cols to inp… 3m 27s · ↓ 115.5k tokens
+  ↓ 1 more";
+        assert_eq!(
+            detect(screen, Some("✳ Make test failures")),
+            Detection::State(AgentState::Working)
+        );
+    }
+
+    #[test]
+    fn a_footer_without_subagent_rows_stays_idle() {
+        // Once the last subagent finishes its row is gone, and the leftover
+        // `● main` row and the transcript's waiting line are not work.
+        let screen = "\
+✻ Waiting for 6 background agents to finish
+─────────────
+❯
+─────────────
+  /home/blmarket/proj/hmux  master  Opus 5.5  ctx 86%
+  ⏵⏵ bypass permissions on · ← for agents
+  ● main
+                               new task? /clear to save 120.6k tokens";
+        assert_eq!(
+            detect(screen, Some("✳ Make test failures")),
+            Detection::State(AgentState::Idle)
+        );
     }
 
     #[test]
