@@ -1113,9 +1113,16 @@ unsafe fn tty_window_offset1(owner: &ClientRef) -> tty_window_view {
     }
     owner.reset_pan(None);
     // Rest on a pane's first column, or the top row, that shows the active
-    // pane completely.
+    // pane completely, and never so far right that the view passes the last
+    // pane's right border while panes are left out on the left.
     let previous = tty_window_offset(owner.borrow_terminal());
     let cells = window.pane_cells();
+    let strip = cells
+        .iter()
+        .map(|(_, cell)| (cell.xoff as u32).saturating_add(cell.sx))
+        .max()
+        .unwrap_or(0);
+    let content = strip.saturating_add(1).min(sx).max(view.sx);
     let active = window.active_pane().and_then(|active| {
         cells
             .iter()
@@ -1131,7 +1138,7 @@ unsafe fn tty_window_offset1(owner: &ClientRef) -> tty_window_view {
             &stops,
             (cell.xoff as u32, cell.sx),
             view.sx,
-            sx,
+            content,
             previous.ox,
             cursor.map(|(x, _)| x),
         );
@@ -1146,11 +1153,6 @@ unsafe fn tty_window_offset1(owner: &ClientRef) -> tty_window_view {
     }
     // The terminal clips only when the view leaves part of a pane out. A
     // view at the origin that shows every pane draws them where they are.
-    let strip = cells
-        .iter()
-        .map(|(_, cell)| (cell.xoff as u32).saturating_add(cell.sx))
-        .max()
-        .unwrap_or(0);
     view.bigger = view.ox != 0 || view.oy != 0 || strip > view.sx || sy > view.sy;
     view
 }

@@ -126,6 +126,31 @@ fn the_extent_ends_a_window_width_past_the_last_pane_start() {
 }
 
 #[test]
+fn a_shrinking_strip_brings_the_view_back_over_its_panes() {
+    // Unzooming the right half: both halves fit again, so the view leaves the
+    // blank extent past the right pane's border.
+    let pair = strip(80, 2);
+    let halves = ids(&pair);
+    let client = pair.attach_terminal(80, 24);
+    assert_eq!(client.offset(&pair), 0);
+    pair.success(&["resize-pane", "-Z", "-t", &halves[1]]);
+    client.wait_offset(&pair, 40);
+    pair.success(&["resize-pane", "-Z", "-t", &halves[1]]);
+    client.wait_offset(&pair, 0);
+    assert_eq!(client.display(&pair, "#{window_bigger}"), "0");
+    // Killing the last pane shown leaves its neighbour as the last one.
+    let server = strip(80, 4);
+    let panes = ids(&server);
+    let client = server.attach_terminal(80, 24);
+    client.wait_offset(&server, 80);
+    server.success(&["kill-pane", "-t", &panes[3]]);
+    client.wait_offset(&server, 40);
+    // Panning by hand still reaches the blank extent.
+    server.success(&["refresh-client", "-t", &client.tty, "-R", "999"]);
+    assert_eq!(client.offset(&server), 80);
+}
+
+#[test]
 fn cursor_movement_inside_a_visible_pane_does_not_move_the_view() {
     let server = strip(80, 3);
     let ids = ids(&server);
