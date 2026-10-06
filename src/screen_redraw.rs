@@ -37,7 +37,7 @@ use crate::src::shared::pane::{
 use crate::src::shared::prompt::prompt_draw_data;
 use crate::src::shared::redraw::{
     redraw_line, redraw_scene, redraw_span, redraw_span_data, redraw_span_type, redraw_spans,
-    RedrawStatusSpan,
+    RedrawBorderSpan, RedrawStatusSpan,
 };
 use crate::src::shared::screen::{screen, CURSOR_MODES, MODE_SYNC};
 use crate::src::shared::screen_write::screen_write_ctx;
@@ -626,6 +626,49 @@ unsafe fn redraw_mark_split_colours(mut bctx: *mut redraw_build_ctx) {
         y = y.wrapping_add(1);
     }
 }
+/// Frame a window smaller than the scene, as tmux does: the column after it
+/// and the row below it are separator cells, `│` down the right edge, `─`
+/// along the bottom and `┘` where they meet. A frame cell beside a pane is
+/// that pane's border; the separators inside the window do not join it.
+unsafe fn redraw_mark_window_frame(bctx: *mut redraw_build_ctx) {
+    let (sx, sy) = (*bctx).w.size();
+    let right = sx < (*bctx).sx;
+    let bottom = sy < (*bctx).sy;
+    if right {
+        for y in 0..sy.min((*bctx).sy) {
+            redraw_mark_frame_cell(bctx, (sx, y), Some((sx - 1, y)), CELL_UD);
+        }
+    }
+    if bottom {
+        for x in 0..sx.min((*bctx).sx) {
+            redraw_mark_frame_cell(bctx, (x, sy), Some((x, sy - 1)), CELL_LR);
+        }
+    }
+    if right && bottom {
+        redraw_mark_frame_cell(bctx, (sx, sy), None, CELL_LU);
+    }
+}
+/// Make scene cell `at` a frame cell drawing `cell_type`, the border of the
+/// pane at scene cell `inside` if there is one.
+unsafe fn redraw_mark_frame_cell(
+    bctx: *mut redraw_build_ctx,
+    (x, y): (u_int, u_int),
+    inside: Option<(u_int, u_int)>,
+    cell_type: ::core::ffi::c_int,
+) {
+    let owner = inside
+        .map(|(ix, iy)| &(*redraw_get_build_cell(bctx, ix, iy)).data)
+        .and_then(|data| match data {
+            redraw_span_data::Pane(pane) => Some(pane.wp.clone()),
+            _ => None,
+        })
+        .unwrap_or_default();
+    (*redraw_get_build_cell(bctx, x, y)).data = redraw_span_data::Border(RedrawBorderSpan {
+        left_wp: owner,
+        cell_type,
+        ..Default::default()
+    });
+}
 fn redraw_compare_data(a: &redraw_build_cell, b: &redraw_build_cell) -> bool {
     use redraw_span_data::*;
     match (&a.data, &b.data) {
@@ -680,6 +723,7 @@ unsafe fn redraw_build_cells<'a>(
     }
     redraw_set_border_types(bctx);
     redraw_mark_split_colours(bctx);
+    redraw_mark_window_frame(bctx);
     for pane_owner in (*bctx).w.pane_snapshot() {
         redraw_mark_border_status(bctx, &pane_owner);
     }

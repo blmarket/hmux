@@ -1,7 +1,9 @@
-//! The strip draws only vertical separators, as tall as the panes. Whatever no
-//! pane or separator covers shows `fill-character`: the inside fill within the
-//! window's extent, such as the blank extent beside the last pane, and the
-//! outside fill beyond it, such as the rows below a shorter window.
+//! The strip draws only vertical separators, as tall as the panes. A window
+//! smaller than its client is framed as tmux frames it: a `│` down the column
+//! after it, a `─` along the row below it and a `┘` where they meet, which the
+//! separators do not join. Whatever no pane, separator or frame covers shows
+//! `fill-character`: the inside fill within the window's extent, such as the
+//! blank extent beside the last pane, and the outside fill beyond it.
 
 #![cfg(unix)]
 
@@ -10,6 +12,11 @@ mod common;
 use common::{Screen, Server};
 
 const BORDER: char = '│';
+/// The frame along the bottom of a window shorter than its client.
+const FRAME_BOTTOM: char = '─';
+/// The frame's corner, below and after a window smaller than its client both
+/// ways.
+const FRAME_CORNER: char = '┘';
 /// The default `fill-character` outside the extent, an ACS bullet.
 const FILL: char = '·';
 /// The default `fill-character` inside the extent, a space on a dark grey
@@ -64,7 +71,9 @@ fn fill_character_tells_inside_from_outside() {
     server.success(&["set", "-gw", "fill-character", "#{?is_inside,I,O}"]);
     let mut client = server.attach_terminal(80, 24);
     client.wait_screen(|screen| {
-        shows(screen, 0..10, 40..80, 'I') && shows(screen, 10..24, 0..80, 'O')
+        shows(screen, 0..10, 40..80, 'I')
+            && shows(screen, 10..11, 0..80, FRAME_BOTTOM)
+            && shows(screen, 11..24, 0..80, 'O')
     });
 }
 
@@ -90,16 +99,15 @@ fn two_halves_end_in_the_last_border_on_an_even_width() {
 }
 
 #[test]
-fn borders_are_never_horizontal() {
-    // A window shorter than its client: the separators stop with the panes
-    // and the rows below show the outside fill.
+fn separators_are_never_horizontal() {
     let server = strip(80, 10, 3);
     let mut client = server.attach_terminal(80, 24);
     client.wait_offset(&server, 40);
     client.wait_screen(|screen| {
         shows(screen, 0..10, 39..40, BORDER)
             && shows(screen, 0..10, 79..80, BORDER)
-            && shows(screen, 10..24, 0..80, FILL)
+            && shows(screen, 10..11, 0..80, FRAME_BOTTOM)
+            && shows(screen, 11..24, 0..80, FILL)
     });
     // Panned to the end, the last pane's border sits beside the blank extent,
     // which shows the inside fill.
@@ -108,9 +116,10 @@ fn borders_are_never_horizontal() {
     client.wait_screen(|screen| {
         shows(screen, 0..10, 39..40, BORDER)
             && shows(screen, 0..10, 40..80, INSIDE)
-            && shows(screen, 10..24, 0..80, FILL)
+            && shows(screen, 10..11, 0..80, FRAME_BOTTOM)
+            && shows(screen, 11..24, 0..80, FILL)
     });
-    assert!(nowhere(&client.screen, '─'));
+    assert!((0..10).all(|y| !client.screen.row(y).contains(FRAME_BOTTOM)));
 }
 
 #[test]
@@ -119,15 +128,15 @@ fn a_window_narrower_than_its_client_shows_only_its_width() {
     // separators at 19, 39 and 59.
     let server = strip(40, 10, 3);
     let mut client = server.attach_terminal(80, 24);
-    // The view shows the window's 40 columns of the strip, not the client's
-    // 80; the client's other columns and the rows below show the outside
-    // fill.
     client.wait_offset(&server, 20);
     client.wait_screen(|screen| {
         shows(screen, 0..10, 19..20, BORDER)
             && shows(screen, 0..10, 39..40, BORDER)
-            && shows(screen, 0..10, 40..80, FILL)
-            && shows(screen, 10..24, 0..80, FILL)
+            && shows(screen, 0..10, 40..41, BORDER)
+            && shows(screen, 10..11, 0..40, FRAME_BOTTOM)
+            && shows(screen, 10..11, 40..41, FRAME_CORNER)
+            && shows(screen, 0..11, 41..80, FILL)
+            && shows(screen, 11..24, 0..80, FILL)
     });
     // Panned to the end, the blank extent beside the last pane stays within
     // the window and shows the inside fill.
@@ -136,8 +145,11 @@ fn a_window_narrower_than_its_client_shows_only_its_width() {
     client.wait_screen(|screen| {
         shows(screen, 0..10, 19..20, BORDER)
             && shows(screen, 0..10, 20..40, INSIDE)
-            && shows(screen, 0..10, 40..80, FILL)
-            && shows(screen, 10..24, 0..80, FILL)
+            && shows(screen, 0..10, 40..41, BORDER)
+            && shows(screen, 10..11, 0..40, FRAME_BOTTOM)
+            && shows(screen, 10..11, 40..41, FRAME_CORNER)
+            && shows(screen, 0..11, 41..80, FILL)
+            && shows(screen, 11..24, 0..80, FILL)
     });
 }
 
