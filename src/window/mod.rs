@@ -747,6 +747,9 @@ unsafe fn window_rearrange_panes(
     (*w).panes.storage = panes.iter().map(Rc::downgrade).collect();
     if previous_active.is_none() {
         (*w).active = panes.first().map_or_else(Weak::new, Rc::downgrade);
+        if let Some(first) = panes.first() {
+            first.on_selected(true);
+        }
     } else if previous_active
         .as_ref()
         .is_some_and(|active| !present(panes, active))
