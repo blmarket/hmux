@@ -1,7 +1,8 @@
 //! C-b keeps tmux's prefix table. C-a enters the strip table, where c inserts
 //! a pane in the active pane's directory, h, j, k and l select, f toggles the
 //! width, H and L reorder, Space switches the layout, x kills and a second C-a
-//! reaches the application.
+//! reaches the application. The arrows, 0 to 9, d, PgUp and PgDn work as after
+//! C-b.
 
 #![cfg(unix)]
 
@@ -111,6 +112,41 @@ fn ctrl_a_keys_drive_the_strip() {
     });
 
     let _ = fs::remove_dir(&directory);
+}
+
+#[test]
+fn ctrl_a_keys_mirror_the_prefix_table() {
+    let (server, mut client) = attached();
+    server.success(&["new-window", "-d"]);
+    client.send(b"\x011");
+    wait_until("1", || server.display("#{window_index}") == "1");
+    client.send(b"\x010");
+    wait_until("0", || server.display("#{window_index}") == "0");
+
+    client.send(b"\x01c");
+    wait_until("the insertion", || ids(&server).len() == 2);
+    let panes = ids(&server);
+    client.send(b"\x01\x1b[D");
+    wait_until("Left", || server.display("#{pane_id}") == panes[0]);
+    client.send(b"\x01\x1b[C");
+    wait_until("Right", || server.display("#{pane_id}") == panes[1]);
+
+    client.send(b"seq 100\n");
+    wait_until("the output", || {
+        server.success(&["capture-pane", "-p"]).contains("100")
+    });
+    client.send(b"\x01\x1b[5~");
+    wait_until("PgUp", || {
+        server.display("#{pane_mode}") == "copy-mode" && server.display("#{scroll_position}") != "0"
+    });
+    let position = server.display("#{scroll_position}");
+    client.send(b"\x01\x1b[6~");
+    wait_until("PgDn", || server.display("#{scroll_position}") != position);
+
+    client.send(b"\x01d");
+    wait_until("the detach", || {
+        server.success(&["list-clients"]).is_empty()
+    });
 }
 
 #[test]

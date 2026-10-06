@@ -198,7 +198,7 @@ unsafe fn key_bindings_init_done() -> cmd_retval {
 }
 
 pub unsafe fn key_bindings_init() {
-    static defaults: [&CStr; 264] = [
+    static defaults: [&CStr; 281] = [
         c"bind -N 'Send the prefix key' C-b { send-prefix }",
         c"bind -N 'Rotate through the panes' C-o { rotate-window }",
         c"bind -N 'Suspend the current client' C-z { suspend-client }",
@@ -281,6 +281,23 @@ pub unsafe fn key_bindings_init() {
         c"bind -N 'Swap the active pane with the pane to the left' -Tstrip H { swap-pane -U }",
         c"bind -N 'Swap the active pane with the pane to the right' -Tstrip L { swap-pane -D }",
         c"bind -N 'Kill the active pane' -Tstrip x { kill-pane }",
+        c"bind -N 'Select window 0' -Tstrip 0 { select-window -t:=0 }",
+        c"bind -N 'Select window 1' -Tstrip 1 { select-window -t:=1 }",
+        c"bind -N 'Select window 2' -Tstrip 2 { select-window -t:=2 }",
+        c"bind -N 'Select window 3' -Tstrip 3 { select-window -t:=3 }",
+        c"bind -N 'Select window 4' -Tstrip 4 { select-window -t:=4 }",
+        c"bind -N 'Select window 5' -Tstrip 5 { select-window -t:=5 }",
+        c"bind -N 'Select window 6' -Tstrip 6 { select-window -t:=6 }",
+        c"bind -N 'Select window 7' -Tstrip 7 { select-window -t:=7 }",
+        c"bind -N 'Select window 8' -Tstrip 8 { select-window -t:=8 }",
+        c"bind -N 'Select window 9' -Tstrip 9 { select-window -t:=9 }",
+        c"bind -N 'Detach the current client' -Tstrip d { detach-client }",
+        c"bind -N 'Enter copy mode and scroll up' -Tstrip PPage { copy-mode -u }",
+        c"bind -N 'Enter copy mode and scroll down' -Tstrip NPage { copy-mode -d }",
+        c"bind -N 'Select the pane to the left of the active pane' -Tstrip -r Left { select-pane -L }",
+        c"bind -N 'Select the pane to the right of the active pane' -Tstrip -r Right { select-pane -R }",
+        c"bind -N 'Select the pane above the active pane' -Tstrip -r Up { select-pane -U }",
+        c"bind -N 'Select the pane below the active pane' -Tstrip -r Down { select-pane -D }",
         c"bind -N 'Send C-a' -Tstrip C-a { send-keys C-a }",
         c"bind -n MouseDown1Pane { select-pane -t=; send -M }",
         c"bind -n MouseDrag1Pane { if -F '#{||:#{pane_in_mode},#{mouse_any_flag}}' { send -M } { copy-mode -M } }",
