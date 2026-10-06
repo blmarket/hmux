@@ -46,7 +46,10 @@ fn split_from(first: usize, count: usize, g: layout_geometry, across: bool) -> L
         across,
         children: vec![
             (1, LayoutNode::Pane(first)),
-            (1, split_from(first + 1, count, second_half(g, across), !across)),
+            (
+                1,
+                split_from(first + 1, count, second_half(g, across), !across),
+            ),
         ],
     }
 }
