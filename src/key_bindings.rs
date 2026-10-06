@@ -198,7 +198,7 @@ unsafe fn key_bindings_init_done() -> cmd_retval {
 }
 
 pub unsafe fn key_bindings_init() {
-    static defaults: [&CStr; 281] = [
+    static defaults: [&CStr; 282] = [
         c"bind -N 'Send the prefix key' C-b { send-prefix }",
         c"bind -N 'Rotate through the panes' C-o { rotate-window }",
         c"bind -N 'Suspend the current client' C-z { suspend-client }",
@@ -272,6 +272,7 @@ pub unsafe fn key_bindings_init() {
         c"bind -N 'Reset so the visible part of the window follows the cursor' -r DC { refresh-client -c }",
         c"bind -N 'Enter the strip key table' -n C-a { switch-client -Tstrip }",
         c"bind -N 'Insert a pane after the active pane in its directory' -Tstrip c { new-pane -c '#{pane_current_path}' }",
+        c"bind -N 'Create a new window' -Tstrip C { new-window }",
         c"bind -N 'Select the pane to the left of the active pane' -Tstrip h { select-pane -L }",
         c"bind -N 'Select the pane to the right of the active pane' -Tstrip l { select-pane -R }",
         c"bind -N 'Select the pane above the active pane' -Tstrip k { select-pane -U }",

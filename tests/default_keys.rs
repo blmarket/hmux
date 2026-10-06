@@ -1,8 +1,8 @@
 //! C-b keeps tmux's prefix table. C-a enters the strip table, where c inserts
 //! a pane in the active pane's directory, h, j, k and l select, f toggles the
 //! width, H and L reorder, Space switches the layout, x kills and a second C-a
-//! reaches the application. The arrows, 0 to 9, d, PgUp and PgDn work as after
-//! C-b.
+//! reaches the application. C creates a window as c does after C-b, and the
+//! arrows, 0 to 9, d, PgUp and PgDn work as after C-b.
 
 #![cfg(unix)]
 
@@ -117,11 +117,16 @@ fn ctrl_a_keys_drive_the_strip() {
 #[test]
 fn ctrl_a_keys_mirror_the_prefix_table() {
     let (server, mut client) = attached();
-    server.success(&["new-window", "-d"]);
-    client.send(b"\x011");
-    wait_until("1", || server.display("#{window_index}") == "1");
+    client.send(b"\x01C");
+    wait_until("the new window", || {
+        server.display("#{session_windows}") == "2"
+    });
+    assert_eq!(server.display("#{window_index}"), "1");
+    assert_eq!(server.display("#{window_panes}"), "1");
     client.send(b"\x010");
     wait_until("0", || server.display("#{window_index}") == "0");
+    client.send(b"\x011");
+    wait_until("1", || server.display("#{window_index}") == "1");
 
     client.send(b"\x01c");
     wait_until("the insertion", || ids(&server).len() == 2);
