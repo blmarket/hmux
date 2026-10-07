@@ -107,7 +107,8 @@ pub trait Window {
     ) -> Result<(), &'static CStr>;
     unsafe fn layout(&self) -> LayoutKind;
     /// Arrange the panes in a fresh `kind` layout, in pane order, and redraw;
-    /// window-layout-changed fires.
+    /// window-layout-changed fires. A different layout forgets every pane's
+    /// layout metadata; the current one keeps it.
     unsafe fn set_layout(&self, kind: LayoutKind);
     /// The pane in `direction` from `pane`: the previous or next pane of the
     /// strip, or the tile across the separator.
@@ -319,6 +320,11 @@ impl Window for WindowRef {
     }
     unsafe fn set_layout(&self, kind: LayoutKind) {
         let state = &mut *self.get();
+        if state.layout != kind {
+            for pane in state.panes.snapshot() {
+                *pane.borrow_layout_meta() = None;
+            }
+        }
         state.layout = kind;
         state.invalidate_scene();
         window_arrange(self);

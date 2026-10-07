@@ -139,7 +139,7 @@ fn directions_cross_the_separators() {
 #[test]
 fn next_steps_through_every_layout() {
     let server = laid_out("scrolling", 81, 25, 2);
-    // The first pane at full width; its width travels in the pane list.
+    // The first pane at full width.
     server.success(&["resize-pane", "-Z", "-t", &ids(&server)[0]]);
     let mut seen = Vec::new();
     for _ in 0..6 {
@@ -157,8 +157,8 @@ fn next_steps_through_every_layout() {
             "scrolling"
         ]
     );
-    // The strip is back with the widths it had.
-    assert_eq!(rects(&server), [(0, 81, 0, 25), (82, 40, 0, 25)]);
+    // The strip is back afresh: switching layouts forgot the widths.
+    assert_eq!(rects(&server), [(0, 40, 0, 25), (41, 40, 0, 25)]);
 }
 
 #[test]
