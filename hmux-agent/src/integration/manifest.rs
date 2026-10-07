@@ -39,11 +39,11 @@ const MAX_TOTAL_MATCHERS: usize = 1024;
 const MAX_MATCHER_CHARS: usize = 512;
 
 /// One agent's bundled rules: herdr's manifest and hmux's overlay on it.
-pub(crate) struct Bundle {
+pub(crate) struct Bundle<'a> {
     /// The manifest `id`, which is also the user overlay's file stem.
-    pub(crate) agent: &'static str,
-    pub(crate) herdr: &'static str,
-    pub(crate) hmux: &'static str,
+    pub(crate) agent: &'a str,
+    pub(crate) herdr: &'a str,
+    pub(crate) hmux: &'a str,
 }
 
 /// What a rule set reads: the screen sample and the terminal title. hmux does

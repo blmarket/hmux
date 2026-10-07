@@ -6,7 +6,7 @@ fn input(screen: &str) -> Input<'_> {
 }
 
 /// Rules for a test agent: `base` under `overlay`.
-fn rules(base: &'static str, overlay: &'static str) -> Result<Rules, String> {
+fn rules(base: &str, overlay: &str) -> Result<Rules, String> {
     Rules::load(
         &Bundle {
             agent: "test",
@@ -226,7 +226,6 @@ fn validation_rejects_malformed_manifests() {
         "id = \"test\"\nmin_engine_version = 2\n[[rules]]\nid = \"a\"\nstate = \"idle\"\nregion = \"top_non_empty_lines(1)\"\ncontains = [\"x\"]\n",
     ];
     for manifest in invalid {
-        let manifest: &'static str = Box::leak(manifest.to_string().into_boxed_str());
         assert!(
             rules(manifest, EMPTY_OVERLAY).is_err(),
             "accepted:\n{manifest}"
@@ -242,7 +241,7 @@ fn validation_bounds_gate_depth_and_matcher_count() {
     }
     let manifest =
         format!("id = \"test\"\n[[rules]]\nid = \"a\"\nstate = \"idle\"\nall = [{deep}]\n");
-    assert!(rules(Box::leak(manifest.into_boxed_str()), EMPTY_OVERLAY).is_err());
+    assert!(rules(&manifest, EMPTY_OVERLAY).is_err());
 
     let needles = (0..33)
         .map(|n| format!("\"{n}\""))
@@ -250,7 +249,7 @@ fn validation_bounds_gate_depth_and_matcher_count() {
         .join(", ");
     let manifest =
         format!("id = \"test\"\n[[rules]]\nid = \"a\"\nstate = \"idle\"\ncontains = [{needles}]\n");
-    assert!(rules(Box::leak(manifest.into_boxed_str()), EMPTY_OVERLAY).is_err());
+    assert!(rules(&manifest, EMPTY_OVERLAY).is_err());
 }
 
 #[test]
