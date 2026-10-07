@@ -137,8 +137,12 @@ fn ctrl_a_keys_mirror_the_prefix_table() {
     wait_until("Right", || server.display("#{pane_id}") == panes[1]);
 
     client.send(b"seq 100\n");
+    // Match the last output line, not the echoed "seq 100" command.
     wait_until("the output", || {
-        server.success(&["capture-pane", "-p"]).contains("100")
+        server
+            .success(&["capture-pane", "-p"])
+            .lines()
+            .any(|line| line.trim_end() == "100")
     });
     client.send(b"\x01\x1b[5~");
     wait_until("PgUp", || {

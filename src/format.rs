@@ -14,7 +14,7 @@ use crate::src::ffi::libc::{
 use crate::src::ffi::libm::{fabs, fmod};
 use crate::src::ffi::regex::RegexStorage;
 use crate::src::format::bytes::format_message_with;
-use crate::src::format::bytes::{write_cstr, write_cstr_n};
+use crate::src::format::bytes::write_cstr;
 use crate::src::format_draw::{format_trim_left_bytes, format_trim_right_bytes, format_width};
 use crate::src::fuzzy::fuzzy_match_owned;
 use crate::src::grid::{grid_get_cell, grid_line_length, grid_peek_line};
@@ -301,7 +301,7 @@ unsafe fn format_log1(
     {
         cmdq_print(&item, |out| {
             out.write_all(b"#")?;
-            write_cstr_n(out, c"          ".as_ptr(), ((*es).loop_0) as i32)?;
+            out.write_all(&b"          "[..((*es).loop_0 as usize).min(10)])?;
             write_cstr(out, s.as_ptr())
         });
     }

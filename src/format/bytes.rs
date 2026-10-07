@@ -83,31 +83,11 @@ pub fn format_message_with(write: impl FnOnce(&mut dyn Write) -> io::Result<()>)
 /// # Safety
 /// A non-null pointer must reference a readable NUL-terminated string.
 pub unsafe fn write_cstr(out: &mut dyn Write, value: *const c_char) -> io::Result<()> {
-    write_cstr_n(out, value, -1)
-}
-
-/// Write at most `precision` bytes, stopping at NUL; negative means unlimited.
-///
-/// # Safety
-/// A non-null pointer must be readable through its NUL or the precision limit.
-pub unsafe fn write_cstr_n(
-    out: &mut dyn Write,
-    value: *const c_char,
-    precision: c_int,
-) -> io::Result<()> {
-    let bytes = if value.is_null() {
-        if (0..6).contains(&precision) {
-            b"".as_slice()
-        } else {
-            b"(null)".as_slice()
-        }
-    } else if precision < 0 {
-        CStr::from_ptr(value).to_bytes()
+    if value.is_null() {
+        out.write_all(b"(null)")
     } else {
-        let len = libc::strnlen(value, precision as usize);
-        std::slice::from_raw_parts(value.cast(), len)
-    };
-    out.write_all(bytes)
+        out.write_all(CStr::from_ptr(value).to_bytes())
+    }
 }
 
 /// Format into an existing C-character buffer without allocating.
@@ -343,30 +323,13 @@ mod tests {
     }
 
     #[test]
-    fn raw_c_strings_match_libc_for_nulls_and_byte_precision() {
+    fn raw_c_strings_stop_at_nul_and_keep_legacy_null_text() {
         unsafe {
-            let raw = [0xffu8, b'x', b'y', 0];
-            for value in [raw.as_ptr().cast::<c_char>(), std::ptr::null()] {
-                for precision in [-1, 0, 1, 2, 3, 5, 6, 8] {
-                    let actual =
-                        format_bytes_with(|out| write_cstr_n(out, value, precision)).unwrap();
-                    let mut expected = [0 as c_char; 32];
-                    let count = crate::src::ffi::libc::snprintf(
-                        expected.as_mut_ptr(),
-                        expected.len(),
-                        c"%.*s".as_ptr(),
-                        precision,
-                        value,
-                    );
-                    assert!(count >= 0);
-                    assert_eq!(actual, CStr::from_ptr(expected.as_ptr()).to_bytes());
-                }
-            }
-            // This buffer has no NUL: the precision must bound the read.
-            let raw = [0xffu8, b'x'];
-            let actual =
-                format_bytes_with(|out| write_cstr_n(out, raw.as_ptr().cast(), 2)).unwrap();
-            assert_eq!(actual, raw);
+            let raw = [0xffu8, b'x', 0, b'y', 0];
+            let actual = format_bytes_with(|out| write_cstr(out, raw.as_ptr().cast())).unwrap();
+            assert_eq!(actual, b"\xffx");
+            let actual = format_bytes_with(|out| write_cstr(out, std::ptr::null())).unwrap();
+            assert_eq!(actual, b"(null)");
         }
     }
 }

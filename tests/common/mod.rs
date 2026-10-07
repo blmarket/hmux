@@ -35,7 +35,10 @@ impl Server {
             .arg(&self.socket)
             .env("TERM", "xterm-256color")
             .env("SHELL", "/bin/sh")
-            .env("TMUX", "");
+            .env("TMUX", "")
+            // An inherited pane id would make the server resolve the current
+            // target from it instead of the attached client.
+            .env_remove("TMUX_PANE");
         command
     }
 

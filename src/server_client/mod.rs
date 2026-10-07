@@ -43,7 +43,7 @@ use crate::src::file::{
     file_print, file_read_data, file_read_done, file_write_done, file_write_ready,
 };
 use crate::src::format::bytes::xformat;
-use crate::src::format::bytes::{write_cstr, write_cstr_n};
+use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_create, format_defaults, format_expand_cstring, format_expand_time_cstring, format_free,
     format_lost_client,
@@ -4050,7 +4050,6 @@ unsafe fn server_client_print(
         as *mut ::core::ffi::c_void;
     let mut size: size_t = evbuffer_get_length(&*(evb));
     let mut msg: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut line: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut empty: ::core::ffi::c_char = '\0' as i32 as ::core::ffi::c_char;
     let mut escaped = Vec::new();
     if parse == 0 {
@@ -4126,11 +4125,9 @@ unsafe fn server_client_print(
                 }
                 size = evbuffer_get_length(&*(evb));
                 if size != 0 as size_t {
-                    line = evbuffer_pullup(evb, -1)
-                        .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
-                        as *mut ::core::ffi::c_char;
+                    let rest = evbuffer_pullup(evb, -1).expect("nonempty buffer");
                     window_copy_add(&pane_owner, 1 as ::core::ffi::c_int, |out| {
-                        write_cstr_n(out, line, (size as ::core::ffi::c_int) as i32)
+                        out.write_all(rest)
                     });
                 }
             } else {

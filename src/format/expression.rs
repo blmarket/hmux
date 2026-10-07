@@ -8,7 +8,7 @@ use crate::src::shared::session::SessionRef;
 use super::bytes::format_cstring;
 use super::*;
 use crate::src::format::bytes::xformat;
-use crate::src::format::bytes::{write_cstr, write_cstr_n};
+use crate::src::format::bytes::write_cstr;
 use crate::src::server_client::Client;
 use crate::src::session::Session;
 use crate::src::window::{Window, WindowPane};
@@ -2991,7 +2991,7 @@ pub(super) unsafe fn format_expand1_cstring(
                     n = ptr.offset_from(fmt) as ::core::ffi::c_long as size_t;
                     format_log1(es, c"format_expand1".as_ptr(), |out| {
                         out.write_all(b"found #{}: ")?;
-                        write_cstr_n(out, fmt, (n as ::core::ffi::c_int) as i32)
+                        out.write_all(std::slice::from_raw_parts(fmt.cast::<u8>(), n))
                     });
                     if format_replace(es, fmt, n, &mut output) != 0 as ::core::ffi::c_int {
                         break;

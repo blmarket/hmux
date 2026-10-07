@@ -3,7 +3,7 @@ use crate::src::cmd::queue::{cmdq_error, cmdq_get_client};
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::control::control_write;
 use crate::src::file::{file_can_print, file_print, file_print_buffer};
-use crate::src::format::bytes::{write_cstr, write_cstr_n};
+use crate::src::format::bytes::write_cstr;
 use crate::src::paste::paste_set_owned;
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::server_redraw_window;
@@ -107,16 +107,9 @@ unsafe fn cmd_capture_pane_exec(
         } else {
             buf.len()
         };
-        // Give both C printing paths a valid pointer for empty output. The
-        // terminator also preserves control_write's first-NUL behavior.
-        buf.push(0);
         if c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0 {
             control_write(&c.clone().expect("live client"), |out| {
-                write_cstr_n(
-                    out,
-                    buf.as_ptr().cast::<::core::ffi::c_char>(),
-                    len as ::core::ffi::c_int,
-                )
+                out.write_all(&buf[..len])
             });
         } else {
             if file_can_print(c.as_ref()) == 0 {
