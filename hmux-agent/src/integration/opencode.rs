@@ -1,18 +1,24 @@
 //! OpenCode agent detector.
 //!
-//! OpenCode keeps its lifecycle state in the TUI rather than its window title.
-//! A visible interrupt hint or progress bar means that a turn is running, and
-//! its permission/question controls mean that the turn is waiting for input.
-//! The footer identifies a settled TUI prompt as idle.
+//! State comes from herdr's `opencode.toml` rules under hmux's overlay (see
+//! [`manifest`](super::manifest)); this module identifies the process and its
+//! headless invocations.
 
 use std::ffi::{OsStr, OsString};
 
+use super::manifest::{Bundle, Input, Rules};
 use super::{AgentDetector, AgentState, Detection, SessionIdSource};
 
-const LIVE_ROWS: usize = 24;
+pub(crate) const RULES: Bundle = Bundle {
+    agent: "opencode",
+    herdr: include_str!("../../manifests/herdr/opencode.toml"),
+    hmux: include_str!("../../manifests/hmux/opencode.toml"),
+};
 
 /// Recognizes OpenCode panes.
-pub(crate) struct OpencodeDetector;
+pub(crate) struct OpencodeDetector {
+    pub(crate) rules: Rules,
+}
 
 impl AgentDetector for OpencodeDetector {
     fn label(&self) -> &'static str {
@@ -31,69 +37,12 @@ impl AgentDetector for OpencodeDetector {
         None
     }
 
-    fn detect(&self, screen: &str, _title: Option<&str>) -> Detection {
-        detect(screen)
+    fn detect(&self, screen: &str, title: Option<&str>) -> Detection {
+        self.rules.detect(Input {
+            screen,
+            title: title.unwrap_or_default(),
+        })
     }
-}
-
-fn detect(screen: &str) -> Detection {
-    let lower = screen.to_ascii_lowercase();
-
-    if is_permission_prompt(&lower) {
-        return Detection::State(AgentState::Blocked);
-    }
-
-    if has_interrupt_hint(&lower) || has_progress_bar(screen) {
-        return Detection::State(AgentState::Working);
-    }
-
-    if has_idle_signature(&lower) {
-        return Detection::State(AgentState::Idle);
-    }
-
-    Detection::State(AgentState::Unknown)
-}
-
-fn is_permission_prompt(text: &str) -> bool {
-    if text.contains("△ permission required") {
-        return true;
-    }
-
-    text.contains("esc dismiss")
-        && (text.contains("enter confirm")
-            || text.contains("enter submit")
-            || text.contains("enter toggle"))
-        && (text.contains("↑↓ select") || text.contains("⇆ tab"))
-}
-
-fn has_interrupt_hint(text: &str) -> bool {
-    text.lines().rev().take(LIVE_ROWS).any(|line| {
-        line.contains("esc to interrupt")
-            || line.contains("ctrl+c to interrupt")
-            || line.contains("esc interrupt")
-            || line.contains("esc again to interrupt")
-            || (line.contains("opencode") && line.contains("esc") && line.contains("interrupt"))
-    })
-}
-
-fn has_progress_bar(text: &str) -> bool {
-    let mut run = 0;
-    for character in text.chars() {
-        if matches!(character, '■' | '⬝') {
-            run += 1;
-            if run >= 4 {
-                return true;
-            }
-        } else {
-            run = 0;
-        }
-    }
-    false
-}
-
-fn has_idle_signature(text: &str) -> bool {
-    text.lines()
-        .any(|line| line.contains("opencode ") && (line.contains('•') || line.contains('·')))
 }
 
 fn opencode_program_name(program: &OsStr) -> bool {
@@ -162,10 +111,20 @@ fn opencode_headless_invocation(arguments: &[OsString]) -> bool {
 mod tests {
     use std::ffi::{OsStr, OsString};
 
+    use super::super::detect_attributed;
+    use super::super::manifest::Rules;
     use super::{
-        AgentState, Detection, detect, has_idle_signature, opencode_headless_invocation,
+        AgentState, Detection, OpencodeDetector, RULES, opencode_headless_invocation,
         opencode_program_name,
     };
+
+    /// Classify `screen` as a pane attributed to this agent.
+    fn detect(screen: &str) -> Detection {
+        let detector = OpencodeDetector {
+            rules: Rules::bundled(&RULES),
+        };
+        detect_attributed(&detector, screen, None)
+    }
 
     #[test]
     fn recognizes_direct_and_wrapped_opencode_programs() {
@@ -210,9 +169,10 @@ mod tests {
             detect("↑↓ select   enter submit   esc dismiss"),
             Detection::State(AgentState::Blocked)
         );
+        // Transcript text quoting the prompt is not the prompt.
         assert_eq!(
             detect("old output: permission required"),
-            Detection::State(AgentState::Unknown)
+            Detection::State(AgentState::Idle)
         );
     }
 
@@ -243,15 +203,14 @@ mod tests {
     #[test]
     fn footer_reports_idle() {
         let screen = "done\nctrl+p commands  • OpenCode 1.18.23";
-        assert!(has_idle_signature(&screen.to_ascii_lowercase()));
         assert_eq!(detect(screen), Detection::State(AgentState::Idle));
     }
 
     #[test]
-    fn unrelated_screen_is_unknown() {
+    fn a_screen_no_rule_explains_is_the_idle_fallback() {
         assert_eq!(
             detect("OpenCode is ready"),
-            Detection::State(AgentState::Unknown)
+            Detection::State(AgentState::Idle)
         );
     }
 }

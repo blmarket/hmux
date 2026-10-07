@@ -1,37 +1,26 @@
 //! Claude Code agent detector.
 //!
-//! A compact port of Herdr's Claude detector (`claude.toml`), using the same
-//! rule priorities. Where Herdr parses structured regions (the bordered prompt
-//! box, the last horizontal rule), this prototype approximates them from the
-//! plain-text screen tail plus the window title. Signals, high priority first:
-//!
-//! - a working spinner in the title (OSC 0/2) → working;
-//! - the detailed-transcript viewer → keep previous;
-//! - a live selection form / dynamic-workflow prompt → blocked;
-//! - a live turn status line → working;
-//! - a live prompt box (`❯`) with no pending question → idle;
-//! - the model picker → keep previous;
-//! - bash / generic permission prompts → blocked;
-//! - legacy permission phrasings → blocked;
-//! - a resting `✳ ` title → idle.
-//!
-//! Herdr's `osc_progress` idle rule has no analogue here: the detector reads
-//! only the screen tail and the window title, not OSC 9;4 progress reports.
+//! State comes from herdr's `claude.toml` rules under hmux's overlay (see
+//! [`manifest`](super::manifest)); this module identifies the process and its
+//! session.
 
 use std::ffi::{CString, OsStr};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
-use super::{
-    AgentDetector, AgentState, Detection, SessionEnvStamp, SessionIdSource, is_uuid,
-    title_working_spinner,
+use super::manifest::{Bundle, Input, Rules};
+use super::{AgentDetector, Detection, SessionEnvStamp, SessionIdSource, is_uuid};
+
+pub(crate) const RULES: Bundle = Bundle {
+    agent: "claude",
+    herdr: include_str!("../../manifests/herdr/claude.toml"),
+    hmux: include_str!("../../manifests/hmux/claude.toml"),
 };
 
-/// A resting-title marker: Claude sets `✳ …` (U+2733) at its idle prompt.
-const IDLE_TITLE_MARK: char = '\u{2733}';
-
 /// Recognizes Anthropic Claude Code panes.
-pub(crate) struct ClaudeDetector;
+pub(crate) struct ClaudeDetector {
+    pub(crate) rules: Rules,
+}
 
 impl AgentDetector for ClaudeDetector {
     fn label(&self) -> &'static str {
@@ -68,7 +57,10 @@ impl AgentDetector for ClaudeDetector {
     }
 
     fn detect(&self, screen: &str, title: Option<&str>) -> Detection {
-        detect(screen, title)
+        self.rules.detect(Input {
+            screen,
+            title: title.unwrap_or_default(),
+        })
     }
 }
 
@@ -113,318 +105,6 @@ fn session_id_from_transcript_name(name: &OsStr) -> Option<CString> {
     is_uuid(stem).then(|| CString::new(stem.to_ascii_lowercase()).expect("a UUID has no NUL"))
 }
 
-fn detect(screen: &str, title: Option<&str>) -> Detection {
-    // 1100 — a spinner in the title means a turn is in progress. Claude Code
-    // animates it with half-circles (`◐ …`) as of 2.1.229 and with braille
-    // (`⠹ …`) before that; both spell "working".
-    if let Some(title) = title
-        && title_working_spinner(title)
-    {
-        return Detection::State(AgentState::Working);
-    }
-
-    let lines = screen.lines().collect::<Vec<_>>();
-    let lower = screen.to_lowercase();
-
-    // 1000 — the detailed-transcript viewer is transient UI; keep prior state.
-    let bottom = bottom_non_empty_lines(&lines, 3)
-        .to_string_lossy()
-        .to_lowercase();
-    if bottom.contains("showing detailed transcript")
-        && (contains_all(&bottom, &["ctrl+o", "to toggle"])
-            || contains_all(&bottom, &["ctrl+e", "show all"])
-            || contains_all(&bottom, &["ctrl+e", "collapse"])
-            || bottom.contains("↑↓ scroll")
-            || bottom.contains("? for shortcuts"))
-    {
-        return Detection::KeepPrevious;
-    }
-
-    let after_rule = after_last_horizontal_rule(&lines)
-        .to_string_lossy()
-        .to_lowercase();
-
-    // 980 — a live selection form (arrow-key navigable, enter/esc) is blocking.
-    if after_rule.contains("enter to select")
-        && after_rule.contains("esc to cancel")
-        && [
-            "tab/arrow keys to navigate",
-            "arrow keys to navigate",
-            "arrows to navigate",
-            "↑/↓ to navigate",
-            "↑↓ to navigate",
-        ]
-        .iter()
-        .any(|hint| after_rule.contains(hint))
-    {
-        return Detection::State(AgentState::Blocked);
-    }
-
-    // 980 — the dynamic-workflow confirmation prompt.
-    if lower.contains("run a dynamic workflow?") && lower.contains("esc to cancel") {
-        return Detection::State(AgentState::Blocked);
-    }
-
-    // The permission and model rules below rank under the next two, so both
-    // have to stand aside for a screen that is asking the user something.
-    //
-    // Read from the prompt region rather than the whole screen, the way the
-    // blocked rules this defers to already do. A question is live only where
-    // the prompt is drawn, while the scrollback above it is transcript text
-    // that can quote any of these phrases — a diff, a review, this file — and
-    // a pane must not stop reporting its state for talking about one.
-    let pending_question = [
-        "enter to select",
-        "esc to cancel",
-        "tab/arrow keys",
-        "arrow keys to navigate",
-        "↑/↓ to navigate",
-    ]
-    .iter()
-    .any(|hint| after_rule.contains(hint));
-
-    // 960 — a live status line means the turn is still running. Claude Code
-    // keeps its composer box on screen while it works, so the prompt-box rule
-    // below would otherwise call a working pane idle whenever the title carries
-    // no spinner — which is every release that titles itself `✳ <task>`.
-    if !pending_question && has_working_status_line(&lines) {
-        return Detection::State(AgentState::Working);
-    }
-
-    // 955 — background subagents still running. Once it has launched them,
-    // the main thread ends its turn and returns to the prompt box, so the
-    // prompt-box rule below would call the pane idle while the work goes on.
-    // The footer lists each running subagent with a live counter, and drops
-    // the row when it finishes.
-    if !pending_question && has_running_subagent_row(lines_after_last_horizontal_rule(&lines)) {
-        return Detection::State(AgentState::Working);
-    }
-
-    // 950 — a live prompt box (`❯`) with no pending question means idle.
-    if !pending_question && has_prompt_marker(&lines) {
-        return Detection::State(AgentState::Idle);
-    }
-
-    // 900 — the model picker is a transient menu, not a lifecycle state.
-    if lower.contains("select model")
-        && lower.contains("enter to set as default")
-        && lower.contains("esc to cancel")
-        && !lower.contains("do you want to proceed?")
-        && !lower.contains("enter to select")
-    {
-        return Detection::KeepPrevious;
-    }
-
-    // 850 — a bash-command permission prompt.
-    if lower.contains("do you want to proceed?")
-        && [
-            "bash command",
-            "bash(",
-            "contains expansion",
-            "tab to amend",
-            "ctrl+e to explain",
-        ]
-        .iter()
-        .any(|hint| lower.contains(hint))
-        && (has_choice_line(&lines, "yes") || has_choice_line(&lines, "no"))
-    {
-        return Detection::State(AgentState::Blocked);
-    }
-
-    // 840 — a generic permission prompt with numbered yes/no options.
-    if after_rule.contains("do you want to proceed?")
-        && after_rule.contains("esc to cancel")
-        && (has_choice_line(&lines, "yes") || has_choice_line(&lines, "no"))
-    {
-        return Detection::State(AgentState::Blocked);
-    }
-
-    // 300 — legacy permission phrasings, unless the pane is at a bare `❯`.
-    if !has_lone_prompt_line(&lines) && has_legacy_blocker(&lower, screen) {
-        return Detection::State(AgentState::Blocked);
-    }
-
-    // 250 — a resting `✳ ` title is the last-resort idle signal.
-    if let Some(title) = title {
-        let mut chars = title.chars();
-        if chars.next() == Some(IDLE_TITLE_MARK) && chars.next() == Some(' ') {
-            return Detection::State(AgentState::Idle);
-        }
-    }
-
-    Detection::State(AgentState::Unknown)
-}
-
-fn has_legacy_blocker(lower: &str, screen: &str) -> bool {
-    let wants_confirmation =
-        |verb: &str| lower.contains(verb) && (lower.contains("yes") || screen.contains('❯'));
-    wants_confirmation("do you want to")
-        || wants_confirmation("would you like to")
-        || lower.contains("waiting for permission")
-        || lower.contains("do you want to allow this connection?")
-        || lower.contains("tab to amend")
-        || lower.contains("ctrl+e to explain")
-        || (lower.contains("do you want to proceed?") && lower.contains("esc to cancel"))
-        || lower.contains("review your answers")
-        || lower.contains("skip interview and plan immediately")
-}
-
-/// The last `n` non-empty screen lines joined with newlines (Herdr's
-/// `bottom_non_empty_lines(n)` region).
-fn bottom_non_empty_lines(lines: &[&str], n: usize) -> CString {
-    let mut tail = lines
-        .iter()
-        .rev()
-        .filter(|line| !line.trim().is_empty())
-        .take(n)
-        .copied()
-        .collect::<Vec<_>>();
-    tail.reverse();
-    CString::new(tail.join("\n")).expect("screen text has no NUL")
-}
-
-/// The text after the last horizontal-rule line (Herdr's
-/// `after_last_horizontal_rule` region), or the whole screen if there is none.
-fn after_last_horizontal_rule(lines: &[&str]) -> CString {
-    CString::new(lines_after_last_horizontal_rule(lines).join("\n"))
-        .expect("screen text has no NUL")
-}
-
-/// The lines after the last horizontal-rule line, or every line if there is
-/// none.
-fn lines_after_last_horizontal_rule<'a>(lines: &'a [&'a str]) -> &'a [&'a str] {
-    match lines.iter().rposition(|line| is_horizontal_rule(line)) {
-        Some(index) => &lines[index + 1..],
-        None => lines,
-    }
-}
-
-/// A box-drawing horizontal divider (e.g. Claude's `────` separators): a
-/// non-empty line made entirely of horizontal rule glyphs, at least 3 wide.
-fn is_horizontal_rule(line: &str) -> bool {
-    let trimmed = line.trim();
-    trimmed.chars().count() >= 3
-        && trimmed
-            .chars()
-            .all(|c| matches!(c, '\u{2500}' | '\u{2501}' | '\u{2550}' | '-' | '—'))
-}
-
-/// Whether the screen carries Claude Code's live turn status line, e.g.
-/// `✢ Slithering… (2m 12s · ↓ 8.6k tokens)`.
-///
-/// Matched on shape rather than on the animation's glyph set, because the set
-/// is what the title signal was pinned to and it is what drifted: the marker
-/// only has to be a non-word cell followed by a space. What identifies the line
-/// is the rest — a verb ending in `…` and then the parenthesized counter Claude
-/// redraws as the turn runs, which starts with the elapsed time.
-///
-/// The counter is what separates this from the finished line the same marker
-/// introduces (`✻ Brewed for 11m 18s · done 9:06 AM`), and requiring column
-/// zero separates it from transcript content, which is indented — including
-/// tool lines that end `…)` and progress lines that read `… (ctrl+o to expand)`.
-fn has_working_status_line(lines: &[&str]) -> bool {
-    lines.iter().any(|line| {
-        let mut chars = line.chars();
-        let marker = chars
-            .next()
-            .is_some_and(|c| !c.is_whitespace() && !c.is_alphanumeric());
-        if !marker || chars.next() != Some(' ') {
-            return false;
-        }
-        let Some((verb, counter)) = chars.as_str().split_once("… (") else {
-            return false;
-        };
-        !verb.is_empty()
-            && !verb.contains(['(', ')'])
-            && counter.starts_with(|c: char| c.is_ascii_digit())
-            && line.trim_end().ends_with(')')
-    })
-}
-
-/// Whether the footer lists a running background subagent, e.g.
-/// `  ◯ general-purpose  Reading e2e_status rende…  3m 42s · ↓ 93.1k tokens`.
-///
-/// The row is a marker cell and a space, then the agent's name and task, and
-/// ends with the elapsed time and the token count. Claude Code removes the row
-/// when the subagent finishes, so its presence alone means work is running.
-/// The `● main` row that heads the list carries no counter and does not match.
-fn has_running_subagent_row(lines: &[&str]) -> bool {
-    lines.iter().any(|line| {
-        let mut chars = line.trim().chars();
-        let marker = chars.next().is_some_and(|c| !c.is_alphanumeric());
-        if !marker || chars.next() != Some(' ') {
-            return false;
-        }
-        let Some((task, tokens)) = chars.as_str().rsplit_once(" · ↓ ") else {
-            return false;
-        };
-        tokens.ends_with(" tokens")
-            && task
-                .split_whitespace()
-                .next_back()
-                .is_some_and(is_elapsed_unit)
-    })
-}
-
-/// Whether `word` is one unit of an elapsed time such as `3m` or `42s`.
-fn is_elapsed_unit(word: &str) -> bool {
-    word.strip_suffix(['h', 'm', 's'])
-        .is_some_and(|digits| !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()))
-}
-
-/// Whether any line is the live *input* prompt (`❯`), optionally indented.
-///
-/// A selected menu option such as `❯ 1. Yes` also begins with `❯`; Herdr
-/// distinguishes these by region (the input box vs. an option list). Lacking
-/// regions here, we exclude lines whose `❯` is followed by a yes/no or numbered
-/// choice, so a permission prompt is not mistaken for a resting input box.
-fn has_prompt_marker(lines: &[&str]) -> bool {
-    lines.iter().any(|line| {
-        let rest = line.trim_start();
-        rest.starts_with('❯') && !looks_like_choice(rest.trim_start_matches('❯').trim_start())
-    })
-}
-
-/// Whether `text` looks like a menu choice: a `yes`/`no` option or a `N.` item.
-fn looks_like_choice(text: &str) -> bool {
-    let lower = text.trim_start().to_lowercase();
-    lower.starts_with("yes") || lower.starts_with("no") || {
-        let after_digits = lower.trim_start_matches(|c: char| c.is_ascii_digit());
-        after_digits.len() < lower.len() && after_digits.trim_start().starts_with('.')
-    }
-}
-
-/// Whether any line is a bare `❯` prompt (Herdr's lone-prompt `not` guard).
-fn has_lone_prompt_line(lines: &[&str]) -> bool {
-    lines.iter().any(|line| line.trim() == "❯")
-}
-
-/// Whether any line is a numbered/`❯`-prefixed choice for `keyword`
-/// (e.g. `❯ 1. Yes`, `2. No`) — an approximation of Herdr's option `line_regex`.
-fn has_choice_line(lines: &[&str], keyword: &str) -> bool {
-    lines.iter().any(|line| {
-        let rest = line.trim_start().to_lowercase();
-        let rest = rest.trim_start_matches('❯').trim_start();
-        let rest = strip_leading_number(rest);
-        rest.trim_start().starts_with(keyword)
-    })
-}
-
-/// Strip a leading `N.` list marker (e.g. `"1. yes"` → `" yes"`).
-fn strip_leading_number(text: &str) -> &str {
-    let digits = text.trim_start();
-    let after_digits = digits.trim_start_matches(|c: char| c.is_ascii_digit());
-    if after_digits.len() < digits.len() {
-        after_digits.strip_prefix('.').unwrap_or(after_digits)
-    } else {
-        text
-    }
-}
-
-fn contains_all(haystack: &str, needles: &[&str]) -> bool {
-    needles.iter().all(|needle| haystack.contains(needle))
-}
-
 fn claude_program_name(program: &OsStr) -> bool {
     let name = Path::new(program)
         .file_name()
@@ -443,10 +123,28 @@ mod tests {
     use std::ffi::OsStr;
     use std::path::Path;
 
+    use super::super::manifest::Rules;
+    use super::super::{AgentDetector, AgentState, detect_attributed};
     use super::{
-        AgentState, Detection, claude_program_name, detect, project_slug,
+        ClaudeDetector, Detection, RULES, claude_program_name, project_slug,
         session_id_from_transcript_name, transcript_dir,
     };
+
+    /// The state the rules alone assign, before the idle fallback.
+    fn rules_state(screen: &str, title: Option<&str>) -> Detection {
+        let detector = ClaudeDetector {
+            rules: Rules::bundled(&RULES),
+        };
+        detector.detect(screen, title)
+    }
+
+    /// Classify `screen` as a pane attributed to this agent.
+    fn detect(screen: &str, title: Option<&str>) -> Detection {
+        let detector = ClaudeDetector {
+            rules: Rules::bundled(&RULES),
+        };
+        detect_attributed(&detector, screen, title)
+    }
 
     #[test]
     fn title_spinner_reports_working() {
@@ -609,6 +307,105 @@ Do you want to proceed? · Esc to cancel";
     }
 
     #[test]
+    fn running_mcp_tasks_report_working_at_the_prompt() {
+        // The turn has ended and the prompt box is back, but the summary says
+        // MCP tasks are still running, so the pane is still working.
+        let screen = "\
+✻ Crunched for 2m 5s · 1 MCP task still running
+──────────────────────
+❯
+──────────────────────
+  ? for shortcuts";
+        assert_eq!(
+            detect(screen, Some("✳ Sync issues")),
+            Detection::State(AgentState::Working)
+        );
+    }
+
+    #[test]
+    fn a_wrapped_mcp_task_summary_reports_working() {
+        let screen = "\
+✻ Crunched for 12m 30s · 2 MCP
+  tasks still running
+──────────────────────
+❯ ";
+        assert_eq!(detect(screen, None), Detection::State(AgentState::Working));
+    }
+
+    #[test]
+    fn quoted_or_finished_mcp_task_summaries_stay_idle() {
+        // Indented transcript text, a summary with no tasks left, and the
+        // marker standing in for the separator are not the live signal.
+        for summary in [
+            "  ✻ Crunched for 2m 5s · 1 MCP task still running",
+            "✻ Crunched for 2m 5s · 0 MCP tasks still running",
+            "· 1 MCP task still running",
+        ] {
+            let screen = format!("{summary}\n──────────────────────\n❯ ");
+            assert_eq!(
+                detect(&screen, None),
+                Detection::State(AgentState::Idle),
+                "{summary}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_permission_prompt_outranks_running_mcp_tasks() {
+        let screen = "\
+✻ Crunched for 2m 5s · 1 MCP task still running
+Edit file src/main.rs?
+──────────────────────
+❯ 1. Yes
+  2. No
+Do you want to proceed? · Esc to cancel";
+        assert_eq!(detect(screen, None), Detection::State(AgentState::Blocked));
+    }
+
+    #[test]
+    fn mcp_elicitation_reports_blocked() {
+        for header in [
+            "MCP server \"github\" requests your input",
+            "MCP server “github” requests your input",
+        ] {
+            let screen = format!(
+                "\
+{header}
+Repository to search
+❯ Accept
+  Decline
+Esc to cancel"
+            );
+            assert_eq!(
+                detect(&screen, None),
+                Detection::State(AgentState::Blocked),
+                "{header}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_quoted_mcp_elicitation_header_stays_idle() {
+        // Without the Accept/Decline controls and the cancel footer, the header
+        // is only transcript text.
+        let screen = "\
+MCP server \"github\" requests your input
+──────────────────────
+❯ ";
+        assert_eq!(detect(screen, None), Detection::State(AgentState::Idle));
+    }
+
+    #[test]
+    fn confirmation_form_reports_blocked() {
+        let screen = "\
+Name the new branch
+──────────────────────
+❯ feature/rules
+Enter to confirm · Esc to cancel";
+        assert_eq!(detect(screen, None), Detection::State(AgentState::Blocked));
+    }
+
+    #[test]
     fn selection_form_reports_blocked() {
         let screen = "\
 Do you want to make this edit?
@@ -656,10 +453,10 @@ Do you want to proceed? · Esc to cancel";
     #[test]
     fn resting_title_is_last_resort_idle() {
         assert_eq!(
-            detect("", Some("✳ my-project")),
+            rules_state("", Some("✳ my-project")),
             Detection::State(AgentState::Idle)
         );
-        assert_eq!(detect("", None), Detection::State(AgentState::Unknown));
+        assert_eq!(rules_state("", None), Detection::State(AgentState::Unknown));
     }
 
     #[test]

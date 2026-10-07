@@ -18,12 +18,15 @@ use std::time::{Duration, Instant, SystemTime};
 
 use tracing::{info, warn};
 
-use crate::observability::v1::{PaneId, PaneObservability, ServerObservability};
+use crate::observability::v1::{PaneId, PaneObservability, ScreenSource, ServerObservability};
 use crate::platform::{CurrentPlatform, Platform};
+
+use manifest::{Bundle, Rules};
 
 pub mod agy;
 pub mod claude;
 pub mod codex;
+mod manifest;
 pub mod opencode;
 pub mod pi;
 mod session_model;
@@ -36,7 +39,10 @@ use status::{AgentStatus, StatusHub};
 mod tests;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(200);
-const SCREEN_LINES: usize = 64;
+/// Rows read from the bottom of the visible screen. Herdr's rules describe the
+/// visible screen, so scrollback is never read; the cap only bounds the cost of
+/// a very tall pane.
+const SCREEN_LINES: usize = 256;
 // Filter transient idle frames during TUI redraws before consumers act on them.
 const IDLE_DELAY: Duration = Duration::from_secs(2);
 
@@ -100,15 +106,6 @@ pub(crate) enum Detection {
     /// Transient UI (e.g. a scrollback/transcript viewer) that carries no
     /// lifecycle signal; the previously published state should be preserved.
     KeepPrevious,
-}
-
-/// Terminal cursor evidence captured with the same screen snapshot used by an
-/// agent detector. Cursor state is only meaningful after process attribution;
-/// an ordinary shell may expose the same shapes.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct CursorEvidence {
-    pub(crate) visible: bool,
-    pub(crate) shape: u8,
 }
 
 /// Stable source used to attribute an agent process to its session.
@@ -212,56 +209,48 @@ pub(crate) trait AgentDetector {
 
     /// Classify a plain-text screen tail plus the optional window title.
     fn detect(&self, screen: &str, title: Option<&str>) -> Detection;
-
-    /// Classify with cursor evidence when the process tree has already
-    /// attributed the pane to this detector. Most agents do not use cursor
-    /// state, so their default remains screen/title-only.
-    fn detect_with_cursor(
-        &self,
-        screen: &str,
-        title: Option<&str>,
-        _cursor: CursorEvidence,
-    ) -> Detection {
-        self.detect(screen, title)
-    }
 }
 
-/// The built-in agent detectors, in dispatch priority order.
-pub(crate) fn default_detectors() -> Vec<Box<dyn AgentDetector>> {
+/// The built-in agent detectors, in dispatch priority order, each reading
+/// `rules` for its own bundle.
+fn detectors_with(rules: fn(&Bundle) -> Rules) -> Vec<Box<dyn AgentDetector>> {
     vec![
-        Box::new(codex::CodexDetector),
-        Box::new(claude::ClaudeDetector),
-        Box::new(pi::PiDetector),
-        Box::new(agy::AgyDetector),
-        Box::new(opencode::OpencodeDetector),
+        Box::new(codex::CodexDetector {
+            rules: rules(&codex::RULES),
+        }),
+        Box::new(claude::ClaudeDetector {
+            rules: rules(&claude::RULES),
+        }),
+        Box::new(pi::PiDetector {
+            rules: rules(&pi::RULES),
+        }),
+        Box::new(agy::AgyDetector {
+            rules: rules(&agy::RULES),
+        }),
+        Box::new(opencode::OpencodeDetector {
+            rules: rules(&opencode::RULES),
+        }),
     ]
 }
 
-/// A single braille cell (U+2800–U+28FF). Codex, pi, and agy animate their
-/// "working" spinner with these, as older Claude Code releases did.
-pub(crate) fn is_braille(c: char) -> bool {
-    ('\u{2800}'..='\u{28FF}').contains(&c)
+/// The built-in detectors with their bundled rules only.
+#[cfg(test)]
+pub(crate) fn default_detectors() -> Vec<Box<dyn AgentDetector>> {
+    detectors_with(Rules::bundled)
 }
 
-/// A half-filled circle (U+25D0–U+25D3). Claude Code 2.1.229 animates its title
-/// spinner with `◐`/`◑` instead of braille; the other two cells of the family
-/// are accepted so a longer frame cycle does not read as "not working".
-pub(crate) fn is_half_circle(c: char) -> bool {
-    ('\u{25D0}'..='\u{25D3}').contains(&c)
-}
-
-/// A window-title spinner cell of either family agents animate. Both are
-/// recognized everywhere: agents change their spinner glyphs between releases,
-/// and a pane may be running an older build than the one last observed.
-pub(crate) fn is_title_spinner(c: char) -> bool {
-    is_braille(c) || is_half_circle(c)
-}
-
-/// Whether a window title begins with a spinner cell followed by a space
-/// (`^[⠀-⣿◐-◓] `) — the shared "working" title signal.
-pub(crate) fn title_working_spinner(title: &str) -> bool {
-    let mut chars = title.chars();
-    matches!(chars.next(), Some(first) if is_title_spinner(first)) && chars.next() == Some(' ')
+/// Classify a pane the process tree has attributed to `detector`'s agent. The
+/// agent is known to be there, so a screen no rule explains is that agent at
+/// rest: Herdr's known-agent idle fallback.
+pub(crate) fn detect_attributed(
+    detector: &dyn AgentDetector,
+    screen: &str,
+    title: Option<&str>,
+) -> Detection {
+    match detector.detect(screen, title) {
+        Detection::State(AgentState::Unknown) => Detection::State(AgentState::Idle),
+        detection => detection,
+    }
 }
 
 /// Observer which logs agent state transitions for native panes.
@@ -288,7 +277,11 @@ impl AgentObserver {
     /// via the real OS process table. Idle is published only after two seconds
     /// of consistent evidence; other states reach `hub` immediately.
     pub fn new(hub: StatusHub) -> Self {
-        Self::with(default_detectors(), Rc::new(SystemProcesses), Some(hub))
+        Self::with(
+            detectors_with(Rules::configured),
+            Rc::new(SystemProcesses),
+            Some(hub),
+        )
     }
 
     /// Observe with an explicit detector registry, process source, and optional
@@ -734,7 +727,7 @@ fn inspect(
         }
     };
 
-    let screen = match tracked.pane.last_lines(SCREEN_LINES) {
+    let screen = match tracked.pane.screen(ScreenSource::Visible, SCREEN_LINES) {
         Ok(screen) => screen,
         Err(error) => {
             warn!(
@@ -753,14 +746,7 @@ fn inspect(
     let title_text = title_text.as_deref();
     let (detection, label, agent_pid) = match scan {
         TreeScan::Found { detector, pid, .. } => (
-            detectors[detector].detect_with_cursor(
-                &screen_text,
-                title_text,
-                CursorEvidence {
-                    visible: screen.cursor_visible,
-                    shape: screen.cursor_shape,
-                },
-            ),
+            detect_attributed(detectors[detector].as_ref(), &screen_text, title_text),
             Some(detectors[detector].label()),
             Some(pid),
         ),

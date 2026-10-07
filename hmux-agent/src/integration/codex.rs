@@ -1,21 +1,25 @@
 //! Codex agent detector.
 //!
-//! The rules are a compact port of Herdr's Codex detector. The window title
-//! (OSC 0/2) is the primary channel — Codex reports "Action Required", a braille
-//! working spinner, or a resting title there — and it outranks the screen
-//! heuristics: live approval prompts, current status markers identifying work,
-//! and a current `›` prompt identifying idle Codex.
+//! State comes from herdr's `codex.toml` rules under hmux's overlay (see
+//! [`manifest`](super::manifest)); this module identifies the process, its
+//! headless invocations, and its session.
 
 use std::ffi::{CString, OsStr, OsString};
 use std::path::Path;
 
-use super::{
-    AgentDetector, AgentState, CursorEvidence, Detection, SessionIdSource, is_title_spinner,
-    is_uuid, title_working_spinner,
+use super::manifest::{Bundle, Input, Rules};
+use super::{AgentDetector, AgentState, Detection, SessionIdSource, is_uuid};
+
+pub(crate) const RULES: Bundle = Bundle {
+    agent: "codex",
+    herdr: include_str!("../../manifests/herdr/codex.toml"),
+    hmux: include_str!("../../manifests/hmux/codex.toml"),
 };
 
 /// Recognizes OpenAI Codex panes.
-pub(crate) struct CodexDetector;
+pub(crate) struct CodexDetector {
+    pub(crate) rules: Rules,
+}
 
 impl AgentDetector for CodexDetector {
     fn label(&self) -> &'static str {
@@ -39,16 +43,10 @@ impl AgentDetector for CodexDetector {
     }
 
     fn detect(&self, screen: &str, title: Option<&str>) -> Detection {
-        detect(screen, title, None)
-    }
-
-    fn detect_with_cursor(
-        &self,
-        screen: &str,
-        title: Option<&str>,
-        cursor: CursorEvidence,
-    ) -> Detection {
-        detect(screen, title, Some(cursor))
+        self.rules.detect(Input {
+            screen,
+            title: title.unwrap_or_default(),
+        })
     }
 }
 
@@ -60,156 +58,6 @@ fn session_id_from_rollout_path(path: &Path) -> Option<CString> {
     let session_id = stem.get(stem.len().checked_sub(36)?..)?;
     is_uuid(session_id)
         .then(|| CString::new(session_id.to_ascii_lowercase()).expect("a UUID has no NUL"))
-}
-
-fn detect(screen: &str, title: Option<&str>, cursor: Option<CursorEvidence>) -> Detection {
-    // Highest-priority signals come from the window title (OSC 0/2), which Codex
-    // sets to its live status. These mirror Herdr's `osc_title` manifest rules,
-    // which outrank every screen heuristic below: an approval request in the
-    // title, then a leading braille spinner meaning work in progress.
-    if let Some(title) = title {
-        if title_indicates_blocked(title) {
-            return Detection::State(AgentState::Blocked);
-        }
-        if title_working_spinner(title) {
-            return Detection::State(AgentState::Working);
-        }
-    }
-
-    let lower = screen.to_lowercase();
-    let lines = screen.lines().map(str::trim_start).collect::<Vec<_>>();
-    let prompt = current_prompt_index(&lines);
-    let after_prompt = lines
-        .iter()
-        .rposition(|line| is_prompt(line))
-        .map(|index| lines[index + 1..].join("\n"))
-        .unwrap_or_else(|| screen.to_string())
-        .to_lowercase();
-
-    if is_transcript_viewer(&after_prompt) {
-        return Detection::KeepPrevious;
-    }
-    if has_strong_blocker(&after_prompt) || has_weak_blocker(&lower) {
-        return Detection::State(AgentState::Blocked);
-    }
-
-    if let Some(prompt) = prompt {
-        if let Some(marker) = lines[..prompt]
-            .iter()
-            .rposition(|line| is_block_marker(line))
-        {
-            let current_block = lines[marker..].join("\n").to_lowercase();
-            if has_working_status(&current_block) {
-                return Detection::State(AgentState::Working);
-            }
-        }
-        return Detection::State(AgentState::Idle);
-    }
-
-    if has_working_status(&lower) {
-        return Detection::State(AgentState::Working);
-    }
-    // Lowest-priority title signal (Herdr `osc_title_idle`): a non-empty title
-    // that is neither a spinner nor an approval request means Codex is sitting
-    // at its prompt, even when the screen tail carries no other evidence.
-    if let Some(title) = title
-        && title_indicates_idle(title)
-    {
-        return Detection::State(AgentState::Idle);
-    }
-    if has_codex_signature(&lower) {
-        return Detection::State(AgentState::Idle);
-    }
-    // Codex shows the terminal cursor only while its composer accepts input.
-    // Normal editing requests the terminal's default shape (DECSCUSR 0); Vim
-    // insert mode requests a steady bar (6). This is deliberately last-resort
-    // evidence and is supplied only after the process tree identified Codex, so
-    // an ordinary shell cursor cannot claim an agent pane.
-    if cursor.is_some_and(|cursor| cursor.visible && matches!(cursor.shape, 0 | 6)) {
-        return Detection::State(AgentState::Idle);
-    }
-    Detection::State(AgentState::Unknown)
-}
-
-fn current_prompt_index(lines: &[&str]) -> Option<usize> {
-    let prompt = lines.iter().rposition(|line| is_prompt(line))?;
-    if lines[prompt + 1..].iter().any(|line| is_block_marker(line)) {
-        None
-    } else {
-        Some(prompt)
-    }
-}
-
-fn is_prompt(line: &str) -> bool {
-    line == "›" || line.starts_with("› ")
-}
-
-fn is_block_marker(line: &str) -> bool {
-    line.starts_with(['•', '■', '✗', '✓'])
-}
-
-fn is_transcript_viewer(text: &str) -> bool {
-    text.contains("↑/↓ to scroll")
-        && text.contains("pgup/pgdn to")
-        && text.contains("home/end to jump")
-        && text.contains("q to quit")
-        && (text.contains("esc to edit prev") || text.contains("esc/← to edit prev"))
-}
-
-fn has_strong_blocker(text: &str) -> bool {
-    [
-        "action required",
-        "press enter to confirm or esc to cancel",
-        "enter to submit answer",
-        "enter to submit all",
-        "allow command?",
-    ]
-    .iter()
-    .any(|pattern| text.contains(pattern))
-}
-
-fn has_weak_blocker(text: &str) -> bool {
-    text.contains("[y/n]")
-        || text.contains("yes (y)")
-        || ((text.contains("do you want to") || text.contains("would you like to"))
-            && (text.contains("yes") || text.contains('❯')))
-}
-
-fn has_working_status(text: &str) -> bool {
-    [
-        "queued follow-up inputs",
-        "messages to be submitted after next tool call",
-        "waiting for background terminal",
-        "background terminal running",
-        "/ps to view",
-        "/stop to close",
-        "working (",
-        "booting mcp server:",
-        "reviewing approval request (",
-        "approval requests (",
-        "esc to interrupt",
-        "ctrl+c to interrupt",
-        "press esc to interrupt",
-    ]
-    .iter()
-    .any(|pattern| text.contains(pattern))
-}
-
-fn has_codex_signature(text: &str) -> bool {
-    text.contains("openai codex") || text.contains("codex cli")
-}
-
-/// Herdr `osc_title_blocked`: the title advertises a pending approval.
-fn title_indicates_blocked(title: &str) -> bool {
-    title.to_lowercase().contains("action required")
-}
-
-/// Herdr `osc_title_idle`: the title has visible text but is neither a spinner
-/// (a leading spinner cell) nor an approval request.
-fn title_indicates_idle(title: &str) -> bool {
-    title.chars().any(|c| !c.is_whitespace())
-        && !title.starts_with(is_title_spinner)
-        && !title.to_lowercase().contains("action required")
 }
 
 fn codex_program_name(program: &OsStr) -> bool {
@@ -241,46 +89,85 @@ mod tests {
     use std::ffi::{OsStr, OsString};
     use std::path::Path;
 
+    use super::super::manifest::Rules;
+    use super::super::{AgentDetector, detect_attributed};
     use super::{
-        AgentState, CursorEvidence, Detection, codex_headless_invocation, codex_program_name,
-        detect, session_id_from_rollout_path,
+        AgentState, CodexDetector, Detection, RULES, codex_headless_invocation, codex_program_name,
+        session_id_from_rollout_path,
     };
 
-    fn detect_without_cursor(screen: &str, title: Option<&str>) -> Detection {
-        detect(screen, title, None)
+    /// The state the rules alone assign, before the idle fallback.
+    fn rules_state(screen: &str, title: Option<&str>) -> Detection {
+        let detector = CodexDetector {
+            rules: Rules::bundled(&RULES),
+        };
+        detector.detect(screen, title)
+    }
+
+    /// Classify `screen` as a pane attributed to this agent.
+    fn detect(screen: &str, title: Option<&str>) -> Detection {
+        let detector = CodexDetector {
+            rules: Rules::bundled(&RULES),
+        };
+        detect_attributed(&detector, screen, title)
     }
 
     #[test]
     fn current_prompt_overrides_stale_working_text() {
         let screen = "OpenAI Codex\nold output: esc to interrupt\n› ";
-        assert_eq!(
-            detect_without_cursor(screen, None),
-            Detection::State(AgentState::Idle)
-        );
+        assert_eq!(detect(screen, None), Detection::State(AgentState::Idle));
     }
 
     #[test]
     fn current_status_marker_reports_working() {
-        let screen = "OpenAI Codex\n• Working (2s) • esc to interrupt\n› queued follow-up";
-        assert_eq!(
-            detect_without_cursor(screen, None),
-            Detection::State(AgentState::Working)
-        );
+        let screen = "OpenAI Codex\n• Working (2s • esc to interrupt)\n› queued follow-up";
+        assert_eq!(detect(screen, None), Detection::State(AgentState::Working));
     }
 
     #[test]
     fn live_confirmation_reports_blocked() {
         let screen = "OpenAI Codex\n› change files\nAllow command?";
-        assert_eq!(
-            detect_without_cursor(screen, None),
-            Detection::State(AgentState::Blocked)
-        );
+        assert_eq!(detect(screen, None), Detection::State(AgentState::Blocked));
+    }
+
+    #[test]
+    fn trust_directory_screen_reports_blocked() {
+        let screen = "\
+> You are in /home/me/project
+
+  Do you trust the contents of this directory? Working with untrusted
+  contents comes with higher risk of prompt injection.
+
+› 1. Yes, continue
+  2. No, quit
+
+  Press enter to continue";
+        assert_eq!(detect(screen, None), Detection::State(AgentState::Blocked));
+    }
+
+    #[test]
+    fn startup_update_screen_reports_blocked() {
+        let screen = "\
+✨ Update available! 0.40.0 -> 0.41.0
+
+› 1. Update now (runs `npm install -g @openai/codex`)
+  2. Skip
+  3. Skip until next version
+
+  Press enter to continue";
+        assert_eq!(detect(screen, None), Detection::State(AgentState::Blocked));
+    }
+
+    #[test]
+    fn an_answered_question_above_the_current_prompt_is_not_blocking() {
+        let screen = "OpenAI Codex\nApply the patch? [y/n] y\n• Applied.\n› ";
+        assert_eq!(detect(screen, None), Detection::State(AgentState::Idle));
     }
 
     #[test]
     fn transcript_viewer_preserves_previous_state() {
         let screen = "›\n↑/↓ to scroll · pgup/pgdn to move · home/end to jump · q to quit · esc to edit prev";
-        assert_eq!(detect_without_cursor(screen, None), Detection::KeepPrevious);
+        assert_eq!(detect(screen, None), Detection::KeepPrevious);
     }
 
     #[test]
@@ -289,7 +176,7 @@ mod tests {
         // tail still shows the resting prompt. The title outranks the screen.
         let screen = "OpenAI Codex\n› ";
         assert_eq!(
-            detect_without_cursor(screen, Some("⠹ Working")),
+            detect(screen, Some("⠹ Working")),
             Detection::State(AgentState::Working)
         );
     }
@@ -298,7 +185,7 @@ mod tests {
     fn title_action_required_reports_blocked_over_prompt() {
         let screen = "OpenAI Codex\n› ";
         assert_eq!(
-            detect_without_cursor(screen, Some("Action Required")),
+            detect(screen, Some("Action Required")),
             Detection::State(AgentState::Blocked)
         );
     }
@@ -309,7 +196,7 @@ mod tests {
         // open (which would otherwise preserve the previous state).
         let screen = "›\n↑/↓ to scroll · pgup/pgdn to move · home/end to jump · q to quit · esc to edit prev";
         assert_eq!(
-            detect_without_cursor(screen, Some("⠿ Working (12s)")),
+            detect(screen, Some("⠹ Working (12s)")),
             Detection::State(AgentState::Working)
         );
     }
@@ -319,69 +206,13 @@ mod tests {
         // No screen evidence at all, but a non-spinner, non-approval title means
         // Codex is idle at its prompt.
         assert_eq!(
-            detect_without_cursor("", Some("codex — my-project")),
+            rules_state("", Some("codex — my-project")),
             Detection::State(AgentState::Idle)
         );
         // An empty/whitespace title provides nothing.
         assert_eq!(
-            detect_without_cursor("", Some("   ")),
+            rules_state("", Some("   ")),
             Detection::State(AgentState::Unknown)
-        );
-    }
-
-    #[test]
-    fn visible_composer_cursor_is_last_resort_idle_evidence() {
-        for shape in [0, 6] {
-            assert_eq!(
-                detect(
-                    "",
-                    None,
-                    Some(CursorEvidence {
-                        visible: true,
-                        shape,
-                    }),
-                ),
-                Detection::State(AgentState::Idle)
-            );
-        }
-
-        assert_eq!(
-            detect(
-                "",
-                None,
-                Some(CursorEvidence {
-                    visible: false,
-                    shape: 0,
-                }),
-            ),
-            Detection::State(AgentState::Unknown)
-        );
-        assert_eq!(
-            detect(
-                "",
-                None,
-                Some(CursorEvidence {
-                    visible: true,
-                    shape: 2,
-                }),
-            ),
-            Detection::State(AgentState::Unknown)
-        );
-    }
-
-    #[test]
-    fn stronger_codex_signals_override_visible_cursor() {
-        let cursor = Some(CursorEvidence {
-            visible: true,
-            shape: 0,
-        });
-        assert_eq!(
-            detect("Allow command?", None, cursor),
-            Detection::State(AgentState::Blocked)
-        );
-        assert_eq!(
-            detect("", Some("⠹ Working"), cursor),
-            Detection::State(AgentState::Working)
         );
     }
 

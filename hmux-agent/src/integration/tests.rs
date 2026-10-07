@@ -1643,9 +1643,9 @@ fn idle_requires_two_seconds_and_active_states_cancel_pending_idle() {
     let pane = ScriptedPane::new(
         100,
         vec![
-            frame(None, "• Working (2s) • esc to interrupt\n› "),
+            frame(None, "• Working (2s • esc to interrupt)\n› "),
             frame(None, "› "),
-            frame(None, "• Working (3s) • esc to interrupt\n› "),
+            frame(None, "• Working (3s • esc to interrupt)\n› "),
             frame(None, "› "),
             frame(None, "› \nAllow command?"),
             frame(None, "› "),
@@ -1666,11 +1666,12 @@ fn idle_requires_two_seconds_and_active_states_cancel_pending_idle() {
         (3, 2400, AgentState::Working),
         (4, 4300, AgentState::Blocked),
         (5, 4400, AgentState::Blocked),
-        (6, 6200, AgentState::Unknown),
-        (7, 6400, AgentState::Unknown),
-        (7, 8399, AgentState::Unknown),
-        (7, 8400, AgentState::Idle),
-        (0, 8600, AgentState::Working),
+        // A screen no rule explains is the attributed agent at rest, so it
+        // continues the pending idle rather than resetting it.
+        (6, 6200, AgentState::Blocked),
+        (7, 6399, AgentState::Blocked),
+        (7, 6400, AgentState::Idle),
+        (0, 6600, AgentState::Working),
     ] {
         pane.cursor.set(frame_index);
         super::poll(

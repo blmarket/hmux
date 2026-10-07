@@ -1,16 +1,8 @@
 //! Antigravity CLI (`agy`) agent detector.
 //!
-//! `agy` never sets a terminal title, so detection is screen-only — not even the
-//! resting-title fallback other agents offer. Its main TUI renders inline: a
-//! bordered `>` composer above a footer carrying `? for shortcuts` on the left
-//! and `<Model> · <effort>` on the right. That footer is present in every state
-//! and doubles as the "this really is agy" signature.
-//!
-//! What makes the classification more than a status-line match: while a tool
-//! runs, agy hands the composer and the resting footer straight back and tracks
-//! the tool in a task panel below. The turn is still in progress there, so the
-//! panel's running entry is read as working — otherwise a pane would read idle
-//! mid-turn and a loop runner would end the run on top of a live tool.
+//! State comes from herdr's `antigravity.toml` rules under hmux's overlay (see
+//! [`manifest`](super::manifest)); this module identifies the process, its
+//! headless invocations, and its session.
 //!
 //! Observable difference from the other agents: `agy` keeps its conversation in
 //! a sqlite database (`~/.gemini/antigravity-cli/conversations/<uuid>.db`)
@@ -22,21 +14,19 @@
 use std::ffi::{CString, OsStr, OsString};
 use std::path::Path;
 
-use super::{AgentDetector, AgentState, Detection, SessionIdSource, is_braille, is_uuid};
+use super::manifest::{Bundle, Input, Rules};
+use super::{AgentDetector, AgentState, Detection, SessionIdSource, is_uuid};
 
-/// Rows from the bottom of the screen tail that carry live UI. The composer,
-/// the status line and every dialog sit here; bounding the scan keeps an
-/// answered permission dialog still resting in scrollback from being read as a
-/// live one.
-const LIVE_ROWS: usize = 16;
-
-/// Status verbs accepted without the leading spinner cell. A model-written
-/// progress title is not among them on purpose: it is indistinguishable from
-/// transcript prose once the spinner cell that introduced it is gone.
-const SPINNER_STATUSES: [&str; 4] = ["generating...", "loading...", "running...", "working..."];
+pub(crate) const RULES: Bundle = Bundle {
+    agent: "agy",
+    herdr: include_str!("../../manifests/herdr/antigravity.toml"),
+    hmux: include_str!("../../manifests/hmux/agy.toml"),
+};
 
 /// Recognizes Antigravity CLI panes.
-pub(crate) struct AgyDetector;
+pub(crate) struct AgyDetector {
+    pub(crate) rules: Rules,
+}
 
 impl AgentDetector for AgyDetector {
     fn label(&self) -> &'static str {
@@ -59,8 +49,11 @@ impl AgentDetector for AgyDetector {
         session_id_from_conversation_path(path)
     }
 
-    fn detect(&self, screen: &str, _title: Option<&str>) -> Detection {
-        detect(screen)
+    fn detect(&self, screen: &str, title: Option<&str>) -> Detection {
+        self.rules.detect(Input {
+            screen,
+            title: title.unwrap_or_default(),
+        })
     }
 }
 
@@ -80,127 +73,6 @@ fn session_id_from_conversation_path(path: &Path) -> Option<CString> {
         return None;
     }
     is_uuid(stem).then(|| CString::new(stem.to_ascii_lowercase()).expect("a UUID has no NUL"))
-}
-
-fn detect(screen: &str) -> Detection {
-    let all = screen.lines().collect::<Vec<_>>();
-    let live = &all[all.len().saturating_sub(LIVE_ROWS)..];
-    let text = live.join("\n").to_lowercase();
-
-    // A dialog owns the keyboard until it is answered, so it outranks the
-    // status line still visible above it.
-    if is_permission_dialog(&text) || is_trust_dialog(&text) {
-        return Detection::State(AgentState::Blocked);
-    }
-
-    // User-invoked overlays carry no lifecycle signal of their own. The
-    // slash-command menu additionally flips the left footer to `esc to cancel`,
-    // which is why that footer alone is never read as work in progress.
-    if is_shortcuts_overlay(&text) || is_slash_menu(&text) {
-        return Detection::KeepPrevious;
-    }
-
-    // A running background task is work in progress even though agy hands the
-    // composer back while it waits: the turn is not over, and the idle footer
-    // it shows meanwhile must not end a run.
-    if has_spinner_status(live) || has_running_task(live) {
-        return Detection::State(AgentState::Working);
-    }
-
-    if has_idle_composer(live) || has_agy_signature(live) {
-        return Detection::State(AgentState::Idle);
-    }
-
-    Detection::State(AgentState::Unknown)
-}
-
-fn is_permission_dialog(text: &str) -> bool {
-    text.contains("requesting permission for:") && text.contains("do you want to proceed?")
-}
-
-fn is_trust_dialog(text: &str) -> bool {
-    text.contains("do you trust the contents of this project?")
-}
-
-fn is_shortcuts_overlay(text: &str) -> bool {
-    text.contains("navigate") && text.contains("esc close")
-}
-
-fn is_slash_menu(text: &str) -> bool {
-    text.contains("enter select") && text.contains("tab complete")
-}
-
-/// agy's status line is a label followed by an ellipsis behind a braille
-/// spinner cell — a fixed verb such as `Generating...` while the model streams
-/// or `Loading...` while it takes a tool result back, and a model-written
-/// progress title such as `Analyzing Pane Mappings...` in between. The first
-/// frame of a fixed verb can be drawn without the spinner cell.
-fn has_spinner_status(lines: &[&str]) -> bool {
-    lines.iter().any(|line| {
-        let trimmed = line.trim_start();
-        match trimmed.chars().next() {
-            // Behind the spinner, take any ellipsis status: the label is
-            // whatever the model is narrating, so neither its wording nor its
-            // word count says whether the turn is still running.
-            Some(first) if is_braille(first) => {
-                let status = trimmed[first.len_utf8()..].trim();
-                status.ends_with("...") && !status.trim_end_matches('.').is_empty()
-            }
-            // Without it, only the known verbs: transcript prose ending in an
-            // ellipsis would otherwise pin the pane to working forever.
-            _ => {
-                let lower = trimmed.to_lowercase();
-                SPINNER_STATUSES
-                    .iter()
-                    .any(|status| lower.starts_with(status))
-            }
-        }
-    })
-}
-
-/// A background task agy is still running, listed under the composer as
-/// `● [HH:MM:SS] <command> running`. agy returns the composer and the resting
-/// footer while such a task runs, so without this the pane would read idle in
-/// the middle of a turn.
-fn has_running_task(lines: &[&str]) -> bool {
-    lines.iter().any(|line| {
-        let trimmed = line.trim();
-        trimmed.starts_with('●') && trimmed.to_lowercase().ends_with(" running")
-    })
-}
-
-/// The resting composer: a `>` prompt line together with the idle left footer.
-/// The prompt is not required to be inside the *last* bordered region — a
-/// background-task panel draws its own box below the composer.
-fn has_idle_composer(lines: &[&str]) -> bool {
-    let prompt = lines.iter().any(|line| {
-        let trimmed = line.trim_start();
-        trimmed == ">" || trimmed.starts_with("> ")
-    });
-    prompt
-        && lines
-            .iter()
-            .any(|line| line.to_lowercase().contains("? for shortcuts"))
-}
-
-/// Evidence the pane is running agy at all: the startup banner, or the
-/// `<Model> · <effort>` right footer that every state carries.
-fn has_agy_signature(lines: &[&str]) -> bool {
-    lines.iter().any(|line| {
-        let lower = line.trim_end().to_lowercase();
-        lower.contains("antigravity cli") || is_model_effort_footer(&lower)
-    })
-}
-
-/// agy's right footer is `<Model> · <effort>`, with further `·`-separated
-/// fields appended while background tasks exist (`· 1 task(s) · /tasks`).
-/// Looking for an effort level in its own field tolerates both, and the left
-/// footer sharing the row, while keeping ordinary `·`-separated hint rows out.
-fn is_model_effort_footer(lower: &str) -> bool {
-    let mut fields = lower.split(" · ");
-    let leading = fields.next().unwrap_or_default();
-    !leading.trim().is_empty()
-        && fields.any(|field| matches!(field.trim(), "low" | "medium" | "high"))
 }
 
 fn agy_program_name(program: &OsStr) -> bool {
@@ -229,10 +101,20 @@ mod tests {
     use std::ffi::{OsStr, OsString};
     use std::path::Path;
 
+    use super::super::detect_attributed;
+    use super::super::manifest::Rules;
     use super::{
-        AgentState, Detection, agy_headless_invocation, agy_program_name, detect,
+        AgentState, AgyDetector, Detection, RULES, agy_headless_invocation, agy_program_name,
         session_id_from_conversation_path,
     };
+
+    /// Classify `screen` as a pane attributed to this agent.
+    fn detect(screen: &str) -> Detection {
+        let detector = AgyDetector {
+            rules: Rules::bundled(&RULES),
+        };
+        detect_attributed(&detector, screen, None)
+    }
 
     const RULE: &str = "────────────────────────────────────────";
 
@@ -331,6 +213,13 @@ mod tests {
     }
 
     #[test]
+    fn a_footer_only_permission_dialog_reports_blocked() {
+        // Some dialogs leave only their key-hint row and footer on screen.
+        let text = screen("↑/↓ Navigate · tab Amend · f full diff\nesc to cancel");
+        assert_eq!(detect(&text), Detection::State(AgentState::Blocked));
+    }
+
+    #[test]
     fn shortcuts_overlay_preserves_previous_state() {
         let text = screen(
             "Shortcuts\n  ctrl+o  expand tool output\n\
@@ -352,16 +241,16 @@ mod tests {
     }
 
     #[test]
-    fn model_effort_footer_is_the_idle_fallback() {
-        // No banner and no composer left on screen, but the right footer is
-        // still agy's own.
+    fn a_screen_no_rule_explains_is_the_idle_fallback() {
+        // No banner and no composer left on screen: the process tree has
+        // already identified agy, so the pane is agy at rest.
         assert_eq!(
             detect("some scrolled output\n                     Gemini 3.6 Flash · high"),
             Detection::State(AgentState::Idle)
         );
         assert_eq!(
             detect("some scrolled output\n↑/↓ Navigate · enter Confirm"),
-            Detection::State(AgentState::Unknown)
+            Detection::State(AgentState::Idle)
         );
     }
 
