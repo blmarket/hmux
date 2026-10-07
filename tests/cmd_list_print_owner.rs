@@ -3,7 +3,7 @@ use hmux::src::arguments::{
     args_set_owned_string, args_to_vector, ARGS_ENTRY_OPTIONAL_VALUE,
 };
 use hmux::src::cmd::{
-    cmd, cmd_list_append, cmd_list_append_all, cmd_list_copy, cmd_list_move, cmd_list_new,
+    cmd, cmd_list_append, cmd_list_new,
     cmd_list_print, cmd_parse, cmd_print, CMD_LIST_PRINT_ESCAPED, CMD_LIST_PRINT_NO_GROUPS,
 };
 use hmux::src::shared::arguments::ArgumentValue;

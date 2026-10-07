@@ -1,12 +1,12 @@
 use crate::src::cmd::find::cmd_find_copy_state;
 use crate::src::cmd::parse::cmd_parse_from_string;
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_target, cmdq_get_target_client};
+use crate::src::cmd::queue::{cmdq_error, cmdq_get_target_client};
 use crate::src::cmd::{
     cmd_get_args_mut, cmd_get_source, cmd_list_copy, cmd_list_first, cmd_list_print_cstring,
     cmd_log_argv, cmd_template_replace_cstring,
 };
 use crate::src::compat::strtonum::strtonum;
-use crate::src::ffi::libc::{__ctype_b_loc, free};
+use crate::src::ffi::libc::__ctype_b_loc;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::log::{fatalx, log_byte, log_bytes, log_cstr, log_debug};
@@ -18,14 +18,11 @@ use crate::src::shared::arguments::*;
 pub use crate::src::shared::arguments::{
     args, args_entry, args_parse, args_parse_cb, args_tree, args_value, args_values,
 };
-use crate::src::shared::client::client;
 use crate::src::shared::command::{cmd, cmd_find_state, cmd_list, cmdq_item};
 use crate::src::shared::ctype::{_ISalnum, _ISalpha};
-use crate::src::shared::rc;
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_DQ, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::text::utf8::utf8_strvis;
 use std::borrow::Cow;
-use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
 

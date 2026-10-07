@@ -1,7 +1,6 @@
 //! Authoritative terminal capability-code values.
 
 use super::abi::{size_t, time_t, u_int};
-use super::client::client;
 use super::colour::colour_palette;
 use super::display::{screen_cursor_style, visible_ranges};
 use super::event::Timer;
@@ -11,7 +10,6 @@ use super::mouse::mouse_event;
 use super::pane::window_pane;
 use super::terminal::termios;
 use crate::src::shared::client::{ClientRef, ClientWeak};
-use crate::src::window_pane::WindowPane as _;
 use hmux_buffer::SegmentedBuf;
 pub type tty_code_code = ::core::ffi::c_uint;
 pub const TTYC_XT: tty_code_code = 233;

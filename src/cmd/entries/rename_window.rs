@@ -1,6 +1,6 @@
 use crate::src::arguments::args_string;
 use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_target};
+use crate::src::cmd::queue::cmdq_error;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::options::options_set_number;

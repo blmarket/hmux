@@ -8,9 +8,8 @@ use crate::src::ffi::libc::{
 };
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::log_bytes;
-use crate::src::log::{fatal, fatalx, log_cstr, log_debug};
+use crate::src::log::{fatalx, log_cstr, log_debug};
 use crate::src::options::options_get_string;
-use crate::src::options::options_owner_ptr;
 use crate::src::proc::proc_clear_signals;
 use crate::src::reactor::BufferEvent;
 use crate::src::reactor::{
@@ -33,8 +32,7 @@ use crate::src::shared::options::options;
 use crate::src::shared::posix_io::{
     _PATH_BSHELL, _PATH_DEVNULL, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO,
 };
-use crate::src::shared::posix_terminal::{winsize, TIOCSWINSZ};
-use crate::src::shared::session::session;
+use crate::src::shared::posix_terminal::winsize;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::signal::{
     __sigset_t, sigset_t, SIGCONT, SIGTERM, SIGTTIN, SIGTTOU, SIG_BLOCK, SIG_SETMASK,
@@ -46,7 +44,6 @@ use crate::src::tmux::{
 use refbox::{RefBox, Weak};
 use std::ffi::{CStr, CString};
 use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
-use std::os::unix::net::UnixStream;
 
 pub type C2RustUnnamed = ::core::ffi::c_uint;
 pub const SHUT_WR: C2RustUnnamed = 1;
@@ -609,6 +606,7 @@ pub unsafe fn job_print_summary(
 #[cfg(test)]
 mod job_stream_tests {
     use super::*;
+    use std::os::unix::net::UnixStream;
     use crate::src::shared::job::job_update_callback;
     use std::cell::Cell;
     use std::rc::Rc;

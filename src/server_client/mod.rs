@@ -15,7 +15,6 @@ mod model;
 pub use api::Client;
 pub use model::client;
 
-use crate::src::alerts::alerts_check_session;
 use crate::src::cfg::{cfg_client, cfg_finished, start_cfg};
 use crate::src::cmd::find::{cmd_find_from_client, cmd_find_from_mouse};
 use crate::src::cmd::parse::cmd_parse_from_argv;
@@ -38,7 +37,7 @@ use crate::src::events_payload::{
     event_payload_set_window,
 };
 use crate::src::ffi::libc::{
-    access, free, memcpy, sscanf, strchr, strcmp, strlcat, strlen, strsep,
+    access, memcpy, sscanf, strchr, strcmp, strlcat, strlen, strsep,
 };
 use crate::src::file::{
     file_print, file_read_data, file_read_done, file_write_done, file_write_ready,
@@ -53,27 +52,25 @@ use crate::src::key_bindings::{key_bindings_dispatch, key_bindings_get, key_bind
 use crate::src::key_string::key_string_format;
 use crate::src::log::{fatal, log_cstr, log_debug, log_get_level, log_hex, log_pointer};
 use crate::src::names::check_window_name;
-use crate::src::options::options_owner_ptr;
 use crate::src::options::{
-    options_get_command, options_get_number, options_get_string, options_set_number,
+    options_get_command, options_get_number, options_get_string,
 };
 use crate::src::proc::{proc_add_peer, proc_kill_peer, proc_remove_peer, proc_send};
 use crate::src::prompt::prompt_free;
 use crate::src::reactor::{
-    bufferevent_disable, bufferevent_enable, bufferevent_get_input, evbuffer_add, evbuffer_drain,
+    bufferevent_enable, evbuffer_add,
     evbuffer_get_length, evbuffer_pullup, evbuffer_readln,
 };
-use crate::src::resize::{recalculate_size, recalculate_sizes, resize_window};
+use crate::src::resize::{recalculate_size, recalculate_sizes};
 use crate::src::screen::screen_mode_display;
 use crate::src::screen_redraw::{redraw_pane, redraw_pane_scrollbar, redraw_screen};
 use crate::src::server::{current_time, server_add_accept, server_proc, server_update_socket};
 use crate::src::server_fn::{
-    server_check_unattached, server_destroy_pane, server_redraw_client,
-    server_redraw_window_borders, server_status_client, server_status_window,
+    server_check_unattached,
+    server_redraw_window_borders, server_status_window,
 };
 
 use crate::src::shared::command::unpack_argv;
-use crate::src::shared::events::event_payload;
 use crate::src::status::{
     status_at_line, status_free, status_get_range, status_init, status_line_size,
     status_message_clear, status_prompt_clear, status_prompt_cursor, status_prompt_key,
@@ -101,8 +98,7 @@ use hmux_buffer::SegmentedBuf;
 use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::*;
-use crate::src::shared::abi::{ssize_t, uint32_t};
-use crate::src::shared::arguments::args;
+use crate::src::shared::abi::ssize_t;
 pub use crate::src::shared::client::client_file;
 use crate::src::shared::client::*;
 
@@ -252,7 +248,7 @@ mod client_message_owner_tests {
         server_client_set_name, server_client_set_term_name, server_client_set_term_type,
         server_client_set_ttyname, server_client_set_user,
     };
-    use std::ffi::{CStr, CString};
+    use std::ffi::CString;
 
     #[test]
     fn ttyname_replacement_and_clear_keep_a_borrowed_client_view() {
@@ -632,7 +628,6 @@ mod client_message_owner_tests {
     }
 }
 use crate::src::compat::imsg::imsg;
-use crate::src::compat::imsg::IMSG_HEADER_SIZE;
 use crate::src::compat::imsg::*;
 use crate::src::shared::client::{
     CLIENT_ALLREDRAWFLAGS, CLIENT_ASSUMEPASTING, CLIENT_ATTACHED, CLIENT_BRACKETPASTING,
@@ -646,53 +641,40 @@ use crate::src::shared::client::{
 };
 use crate::src::shared::colour::*;
 use crate::src::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_COUNT};
-use crate::src::shared::command::cmd_parse_input;
-use crate::src::shared::command::CMD_READONLY;
 use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_state};
-use crate::src::shared::display::visible_ranges;
-use crate::src::shared::display::*;
+use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::environment::environ_entry;
 use crate::src::shared::errno::EINTR;
-use crate::src::shared::event::EV_READ;
 use crate::src::shared::event::*;
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
 use crate::src::shared::key::KEY_BINDING_REPEAT;
 use crate::src::shared::key::*;
 use crate::src::shared::key::{key_event, key_table, KeyBindingCommand};
-use crate::src::shared::layout::*;
-use crate::src::shared::limits::{SIZE_MAX, UINT_MAX};
 use crate::src::shared::mouse::{
     mouse_event, MOUSE_BUTTON_1, MOUSE_BUTTON_10, MOUSE_BUTTON_11, MOUSE_BUTTON_2, MOUSE_BUTTON_3,
     MOUSE_BUTTON_6, MOUSE_BUTTON_7, MOUSE_BUTTON_8, MOUSE_BUTTON_9, MOUSE_MASK_BUTTONS,
     MOUSE_MASK_CTRL, MOUSE_MASK_DRAG, MOUSE_MASK_META, MOUSE_MASK_SHIFT, MOUSE_WHEEL_DOWN,
     MOUSE_WHEEL_UP,
 };
-use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{
-    window_pane_offset, window_pane_resize, PANE_ACTIVITY, PANE_EXITED, PANE_REDRAW,
-    PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT, PANE_SCROLLBARS_MODAL,
-    PANE_SCROLLBARS_RIGHT, PANE_STYLECHANGED,
+    window_pane_offset, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT, PANE_SCROLLBARS_MODAL,
 };
 use crate::src::shared::posix_io::{
     _PATH_BSHELL, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, X_OK,
 };
 use crate::src::shared::process::tmuxpeer;
 use crate::src::shared::screen::{
-    screen, ScreenMode, ALL_MOUSE_MODES, CURSOR_MODES, MODE_BRACKETPASTE, MODE_CURSOR,
+    ScreenMode, ALL_MOUSE_MODES, CURSOR_MODES, MODE_BRACKETPASTE, MODE_CURSOR,
     MODE_MOUSE_ALL, MODE_MOUSE_BUTTON, MODE_SYNC,
 };
-use crate::src::shared::session::session;
-use crate::src::shared::style::*;
-use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::tty::tty;
 use crate::src::shared::tty::*;
 use crate::src::shared::tty::{TTY_BLOCK, TTY_FREEZE, TTY_NOCURSOR, TTY_OPENED};
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NOSLASH, VIS_OCTAL};
-use crate::src::shared::window::{window, window_mode_entry, winlink};
-use crate::src::shared::window::{WINDOW_RESIZE, WINDOW_SIZE_LATEST, WINLINK_ALERTFLAGS};
+use crate::src::shared::window::{window_mode_entry, winlink};
+use crate::src::shared::window::WINDOW_SIZE_LATEST;
 
 pub const _PATH_TTY: &std::ffi::CStr = c"/dev/tty";
 unsafe fn server_client_how_many() -> u_int {

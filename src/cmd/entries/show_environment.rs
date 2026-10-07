@@ -1,6 +1,6 @@
 use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_target, cmdq_print};
+use crate::src::cmd::queue::{cmdq_error, cmdq_print};
 use crate::src::environ::{environ_find, environ_iter};
 use crate::src::format::bytes::write_cstr;
 use crate::src::session::Session;

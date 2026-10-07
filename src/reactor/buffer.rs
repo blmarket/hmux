@@ -1,9 +1,8 @@
 //! Legacy buffer helpers over plain segmented byte storage.
 //! Stream scheduling belongs to bufferevent, not these storage operations.
-use crate::src::format::bytes::write_cstr;
 use crate::src::shared::abi::{size_t, ssize_t};
 use hmux_buffer::{Buf, BufMut, Buffer, LineEnding, SegmentedBuf};
-use std::ffi::{c_char, c_int, c_void, CStr};
+use std::ffi::{c_int, c_void};
 
 pub fn evbuffer_new() -> Box<SegmentedBuf> {
     Box::new(SegmentedBuf::default())
@@ -94,6 +93,7 @@ fn format_buffer(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::src::format::bytes::write_cstr;
     use std::ffi::CString;
 
     #[test]

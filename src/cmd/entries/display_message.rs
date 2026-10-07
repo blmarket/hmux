@@ -2,7 +2,7 @@ use crate::src::arguments::{args_count, args_get, args_has, args_string, args_st
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::cmd_find_best_client;
 use crate::src::cmd::queue::{
-    cmdq_error, cmdq_get_client, cmdq_get_target, cmdq_get_target_client, cmdq_print,
+    cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_print,
 };
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
@@ -15,7 +15,6 @@ use crate::src::reactor::{evbuffer_add_formatted, evbuffer_new};
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_CONTROL;
 use crate::src::shared::command::*;
@@ -23,12 +22,9 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state
 use crate::src::shared::command::{
     CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_CFLAG, CMD_FIND_CANFAIL,
 };
-use crate::src::shared::event::*;
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_NONE, FORMAT_VERBOSE};
 use crate::src::shared::limits::UINT_MAX;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::session;
 use crate::src::shared::window::winlink;
 use crate::src::status::status_message_set;
 use crate::src::window_pane::WindowPane as _;

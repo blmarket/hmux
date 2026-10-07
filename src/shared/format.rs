@@ -3,17 +3,14 @@ use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::session::SessionWeak;
 use crate::src::shared::window::WindowWeak;
 use std::cell::UnsafeCell;
-use std::rc::Rc;
 
 use super::abi::{time_t, u_int};
-use super::client::client;
 use super::command::cmdq_item;
 use super::job::job;
 use super::mouse::mouse_event;
 use super::pane::window_pane;
 use super::paste::PasteBufferRef;
-use super::session::session;
-use super::window::{window, winlink};
+use super::window::winlink;
 use std::collections::BTreeMap;
 pub const FORMAT_VERBOSE: ::core::ffi::c_int = 0x8 as ::core::ffi::c_int;
 

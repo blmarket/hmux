@@ -4,8 +4,6 @@ use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::paste::{
     paste_buffer_data, paste_free, paste_get_name, paste_get_top, paste_rename, paste_set_owned,
 };
-use crate::src::server_client::Client as _;
-use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_parse;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::*;

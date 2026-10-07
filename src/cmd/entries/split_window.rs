@@ -3,10 +3,10 @@ use crate::src::arguments::{
 };
 use crate::src::cmd::find::{cmd_find_from_pane, cmd_find_from_winlink_pane};
 use crate::src::cmd::queue::{
-    cmdq_error, cmdq_get_state_owned, cmdq_get_target, cmdq_get_target_client, cmdq_insert_hook,
+    cmdq_error, cmdq_get_state_owned, cmdq_get_target_client, cmdq_insert_hook,
     cmdq_print,
 };
-use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::src::cmd::cmd_get_args_mut;
 use crate::src::environ::{environ_create, environ_put};
 use crate::src::events::events_fire;
 use crate::src::events_payload::{
@@ -19,16 +19,11 @@ use crate::src::options::{options_set_number, options_set_string};
 
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::{server_redraw_session, server_redraw_window};
-use crate::src::session::Session;
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::{args, args_parse, args_value};
-use crate::src::shared::client::client;
+use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::environment::environ;
-use crate::src::shared::events::event_payload;
-use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::spawn::{SPAWN_BEFORE, SPAWN_DETACHED, SPAWN_EMPTY};

@@ -1,23 +1,14 @@
-use crate::src::options::options_owner_ptr;
-use crate::src::server_client::Client as _;
-use crate::src::session::SessionIndex as _;
 use crate::src::shared::client::client_handle;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
-use crate::src::tty_term::tty_term_owner_ptr;
-use crate::src::window::Window as _;
-use crate::src::window_pane::WindowPane as _;
 // Built-in callbacks return owned bytes or copied timestamps. The sorted
 // immutable table is shared by lookup and enumeration; external user callbacks
 // retain their separate C ABI.
 use super::*;
-use crate::src::format::bytes::xformat;
 use crate::src::session::Session;
 use crate::src::shared::rc::same;
-use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
-use std::fmt::Write as _;
 use std::rc::Rc;
 
 unsafe fn format_cb_host(_ft: *mut format_tree) -> Option<CString> {

@@ -1,5 +1,5 @@
 use crate::src::cmd::cmd_get_entry;
-use crate::src::cmd::queue::{cmdq_get_target, cmdq_get_target_client};
+use crate::src::cmd::queue::cmdq_get_target_client;
 use crate::src::resize::recalculate_sizes;
 use crate::src::server_fn::{server_lock, server_lock_client, server_lock_session};
 use crate::src::shared::arguments::args_parse;

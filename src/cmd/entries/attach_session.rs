@@ -4,16 +4,11 @@ use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::{cmd_find_from_winlink, cmd_find_from_winlink_pane, cmd_find_target};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned};
 use crate::src::compat::imsg::*;
-use crate::src::environ::environ_update;
 use crate::src::events::events_fire_client;
 use crate::src::ffi::libc::{getuid, strcspn};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
-use crate::src::options::options_owner_ptr;
-use crate::src::proc::{proc_get_peer_uid, proc_send};
 use crate::src::server::clients;
-use crate::src::server_client::Client as _;
-use crate::src::session::Session as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::window::Window as _;
 
@@ -21,7 +16,6 @@ use crate::src::session::sessions;
 use crate::src::shared::abi::uid_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::{
     CLIENT_ATTACHED, CLIENT_CONTROL, CLIENT_IGNORESIZE, CLIENT_READONLY,
@@ -31,10 +25,8 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state
 use crate::src::shared::command::{
     CMDQ_STATE_REPEAT, CMD_FIND_PREFER_UNATTACHED, CMD_READONLY, CMD_STARTSERVER,
 };
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::{window, winlink};
+use crate::src::shared::window::winlink;
 
 use crate::src::window_pane::WindowPane as _;
 use crate::src::{server_client::Client, session::Session};

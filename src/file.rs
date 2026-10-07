@@ -24,7 +24,6 @@ use crate::src::reactor::{
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::{CLIENT_ATTACHED, CLIENT_CONTROL, CLIENT_DEAD, CLIENT_WRITE_ACK};
 use crate::src::shared::command::cmdq_item;
@@ -32,19 +31,15 @@ use crate::src::shared::errno::{E2BIG, EINVAL, ENOMEM};
 use crate::src::shared::event::*;
 use crate::src::shared::event::{EV_READ, EV_WRITE};
 use crate::src::shared::posix_io::{
-    O_APPEND, O_CREAT, O_NONBLOCK, O_WRONLY, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO,
+    O_APPEND, O_NONBLOCK, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO,
 };
 use crate::src::shared::process::tmuxpeer;
 use crate::src::shared::stdio::FILE;
-use crate::src::shared::tree::RB_NEGINF;
 use crate::src::tmux::find_home_cstr;
 use std::cell::UnsafeCell;
-use std::ffi::{CStr, CString, OsStr};
-use std::fs::OpenOptions;
+use std::ffi::{CStr, CString};
 use std::io;
 use std::os::fd::{AsFd, AsRawFd, IntoRawFd, OwnedFd};
-use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::OpenOptionsExt;
 use std::rc::{Rc, Weak};
 
 #[derive(Copy, Clone)]

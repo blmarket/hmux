@@ -23,18 +23,14 @@ pub use input::TerminalInput;
 mod output;
 pub use output::*;
 
-use crate::src::ffi::libc::__useconds_t;
 use crate::src::ffi::libc::{
-    __errno_location, abs, getpid, memcpy, memset, strcmp, strerror, strlen, strncmp, time, usleep,
+    abs, getpid, strcmp, strncmp, time,
 };
 use crate::src::ffi::resolv::__b64_ntop;
-use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::{format_cstring, xformat};
-use crate::src::format::{format_create, format_defaults, format_free};
 use crate::src::grid::{grid_cells_equal, grid_default_cell};
 use crate::src::hyperlinks::hyperlinks_get;
-use crate::src::log::{fatal, fatalx, log_cstr, log_cstr_n, log_debug, log_get_level};
-use crate::src::options::options_owner_ptr;
+use crate::src::log::{fatalx, log_cstr, log_cstr_n, log_debug, log_get_level};
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::reactor;
 use crate::src::reactor::{evbuffer_add, evbuffer_drain, evbuffer_get_length, evbuffer_new};
@@ -43,9 +39,7 @@ use crate::src::server::clients;
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::server_redraw_client;
 use crate::src::session::Session;
-use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
-use crate::src::shared::client::client;
 use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::client::{
     CLIENT_ALLREDRAWFLAGS, CLIENT_REDRAWSTATUS, CLIENT_REDRAWWINDOW, CLIENT_SUSPENDED,
@@ -53,20 +47,12 @@ use crate::src::shared::client::{
 };
 use crate::src::shared::colour::*;
 use crate::src::shared::colour::{
-    COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME, COLOUR_THEME_COUNT,
+    COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME,
 };
-use crate::src::shared::command::cmdq_item;
 use crate::src::shared::display::*;
-use crate::src::shared::display::{visible_range, visible_ranges};
-use crate::src::shared::errno::EAGAIN;
-use crate::src::shared::format::format_tree;
-use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_PANE};
 use crate::src::shared::grid::*;
 use crate::src::shared::limits::UINT_MAX;
-use crate::src::shared::mouse::mouse_event;
-use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::PANE_STYLECHANGED;
 use crate::src::shared::posix_io::{O_CREAT, O_TRUNC, O_WRONLY};
 use crate::src::shared::posix_terminal::{winsize, ICRNL, ONLCR, OPOST, TCSANOW, VMIN, VTIME};
 use crate::src::shared::screen::{
@@ -74,8 +60,6 @@ use crate::src::shared::screen::{
     MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET, MODE_CURSOR_VERY_VISIBLE, MODE_MOUSE_ALL,
     MODE_MOUSE_BUTTON, MODE_MOUSE_STANDARD,
 };
-use crate::src::shared::session::session;
-use crate::src::shared::style::*;
 use crate::src::shared::terminal::*;
 use crate::src::shared::tty::*;
 pub use crate::src::shared::tty::{tty, tty_ctx, tty_ctx_set_client_cb, tty_style_ctx, tty_term};
@@ -89,13 +73,11 @@ use crate::src::shared::tty::{
 };
 use crate::src::shared::utf8::UTF8_SIZE;
 use crate::src::shared::window::WindowRef;
-use crate::src::shared::window::{window, winlink};
 use crate::src::status::status_line_size;
 use crate::src::style::colour::{
     colour_256to16, colour_dim, colour_find_rgb, colour_force_rgb, colour_palette_get,
     colour_split_rgb,
 };
-use crate::src::style::style_add;
 use crate::src::text::utf8::utf8_set;
 use crate::src::tmux::{global_options, setblocking};
 use crate::src::tty_acs::{tty_acs_get, tty_acs_needed, tty_acs_reverse_get};
@@ -108,7 +90,6 @@ use crate::src::tty_term::{
     tty_term_number, tty_term_string, tty_term_string_i, tty_term_string_ii, tty_term_string_iii,
     tty_term_string_s, tty_term_string_ss,
 };
-use crate::src::window::Window as _;
 use crate::src::window::{Window, WindowPane};
 use std::time::Duration;
 

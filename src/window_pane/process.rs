@@ -3,7 +3,7 @@ use super::{window_pane_destroy_ready, window_pane_exited};
 use crate::src::arguments::{args_count, args_has, args_string};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{
-    cmdq_error, cmdq_get_client, cmdq_get_target, cmdq_get_target_client,
+    cmdq_error, cmdq_get_client, cmdq_get_target_client,
 };
 use crate::src::ffi::libc::{
     __errno_location, _exit, execl, fork, memcpy, setpgid, sigfillset, sigprocmask, strerror,
@@ -20,17 +20,12 @@ use crate::src::reactor::{
     evbuffer_get_length, evbuffer_pullup,
 };
 use crate::src::server::server_proc;
-use crate::src::server_client::Client as _;
 use crate::src::server_fn::server_destroy_pane;
-use crate::src::session::Session;
-use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::{args, args_parse};
-use crate::src::shared::client::client;
+use crate::src::shared::arguments::args;
 use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::CMD_AFTERHOOK;
 use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::src::shared::command::{cmd, cmd_find_state, cmdq_item};
 use crate::src::shared::event::*;
 use crate::src::shared::event::{EV_READ, EV_WRITE};
 use crate::src::shared::format::format_tree;
@@ -40,13 +35,11 @@ use crate::src::shared::pane::window_pane_offset;
 use crate::src::shared::posix_io::{
     _PATH_BSHELL, _PATH_DEVNULL, O_WRONLY, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO,
 };
-use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::signal::{__sigset_t, sigset_t, SIG_BLOCK, SIG_SETMASK};
 use crate::src::shared::window::winlink;
 use crate::src::tmux::setblocking;
 use std::os::fd::{AsRawFd, IntoRawFd};
-use std::os::unix::net::UnixStream;
 pub(super) unsafe fn pipe_pane(
     pane_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
     mut self_0: refbox::Weak<cmd>,
@@ -313,7 +306,7 @@ unsafe fn cmd_pipe_pane_error_callback(
 #[cfg(test)]
 mod pipe_stream_tests {
     use super::*;
-    use crate::src::reactor::{bufferevent_free, evbuffer_add, shutdown_runtime};
+    use crate::src::reactor::{evbuffer_add, shutdown_runtime};
 
     #[test]
     fn pipe_error_closes_descriptor_while_pane_remains_alive() {

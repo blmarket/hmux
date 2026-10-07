@@ -12,9 +12,9 @@
 //! so expanding a status format never touches the filesystem.
 
 use std::collections::{HashMap, HashSet};
-use std::ffi::{CStr, CString, OsStr, OsString};
+use std::ffi::{CString, OsStr};
 use std::fs;
-use std::os::unix::ffi::{OsStrExt, OsStringExt};
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
@@ -472,6 +472,8 @@ fn normalize(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
 
     use std::os::unix::fs::PermissionsExt;
 

@@ -10,7 +10,6 @@ use crate::src::shared::spawn::{
 use crate::src::spawn::{
     initialize_spawned_window, prepare_respawn_window, set_spawn_cause, spawn_log,
 };
-use crate::src::window::Window as _;
 use crate::src::window::Window;
 
 pub(super) unsafe fn spawn_window(

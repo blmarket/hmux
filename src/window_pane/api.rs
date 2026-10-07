@@ -1608,6 +1608,7 @@ unsafe fn finish_buffer(owner: &Rc<UnsafeCell<window_pane>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::src::tmux::global_options;
 
     use crate::src::grid::grid_create;
     use crate::src::reactor::{evbuffer_add, StreamHandle};

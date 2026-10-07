@@ -6,19 +6,15 @@ pub type WindowRef = std::rc::Rc<std::cell::UnsafeCell<window>>;
 /// Nonowning Window identity, including callback and parent links.
 pub type WindowWeak = std::rc::Weak<std::cell::UnsafeCell<window>>;
 
-use super::abi::{u_int, uint64_t};
+use super::abi::u_int;
 use super::arguments::args;
-use super::client::client;
 use super::command::{cmd_find_state, cmdq_item};
 use super::format::format_tree;
-use super::grid::grid_cell;
 use super::key::key_code;
 use super::mouse::mouse_event;
-use super::options::options;
-use super::pane::{window_pane, window_pane_history, window_panes, PANE_MINIMUM};
+use super::pane::{window_pane, PANE_MINIMUM};
 use super::screen::screen;
-use super::session::session;
-use crate::src::shared::client::{ClientRef, ClientWeak};
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::{SessionRef, SessionWeak};
 
 pub const WINDOW_BELL: ::core::ffi::c_int = 0x1 as ::core::ffi::c_int;

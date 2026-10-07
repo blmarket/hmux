@@ -1,11 +1,9 @@
 use crate::src::arguments::{args_create, args_has, args_set_owned_string, args_string};
 use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::cmdq_get_target;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::pane::window_pane;
 use crate::src::window_pane::WindowPane as _;
 use crate::src::window_tree::window_tree_mode;
 use std::ffi::{CStr, CString};

@@ -30,11 +30,9 @@ use crate::src::shared::client::{
     CLIENT_CONTROL, CLIENT_CONTROLCONTROL, CLIENT_CONTROL_WAITEXIT, CLIENT_LOGIN,
     CLIENT_NOSTARTSERVER, CLIENT_STARTSERVER, CLIENT_WRITE_ACK,
 };
-use crate::src::shared::command::CMD_STARTSERVER;
 use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
-use crate::src::shared::errno::{EAGAIN, ECHILD, EINTR, ENAMETOOLONG, ENOENT};
-use crate::src::shared::event::*;
+use crate::src::shared::command::cmd_parse_result;
+use crate::src::shared::errno::{EAGAIN, ECHILD, ENAMETOOLONG, ENOENT};
 use crate::src::shared::posix_io::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, WAIT_ANY, WNOHANG};
 use crate::src::shared::posix_terminal::{ICRNL, ONLCR, OPOST, TCSANOW, VMIN, VTIME};
 use crate::src::shared::process::{tmuxpeer, tmuxproc};
@@ -50,12 +48,9 @@ use crate::src::tmux::{
 use crate::src::tty_term::tty_term_read_list;
 use hmux_rt::Runtime as _;
 use std::ffi::{CStr, CString, OsStr};
-use std::fs::OpenOptions;
 use std::io;
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::OpenOptionsExt;
-use std::os::unix::net::UnixStream;
 
 pub const ECONNREFUSED: ::core::ffi::c_int = 111 as ::core::ffi::c_int;
 

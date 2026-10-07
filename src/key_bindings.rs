@@ -4,25 +4,21 @@ use crate::src::cmd::queue::{
     cmdq_new_state,
 };
 use crate::src::cmd::{cmd_list_all_have, cmd_list_print_cstring};
-use crate::src::ffi::libc::strcmp;
-use crate::src::format::bytes::write_cstr;
 use crate::src::key_string::key_string_format;
 use crate::src::log::{fatalx, log_cstr, log_debug, log_hex};
 use crate::src::server::clients;
 
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_READONLY;
 use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item, cmdq_state};
+use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item};
 use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
-use crate::src::shared::command::{CMDQ_STATE_REPEAT, CMD_READONLY};
+use crate::src::shared::command::CMDQ_STATE_REPEAT;
 use crate::src::shared::key::KEY_BINDING_REPEAT;
 use crate::src::shared::key::*;
-use crate::src::shared::key::{key_binding, key_bindings, key_event, key_table};
-use crate::src::shared::tree::RB_NEGINF;
+use crate::src::shared::key::{key_binding, key_event, key_table};
 use std::ffi::CStr;
 
 #[repr(C)]
@@ -635,7 +631,7 @@ pub fn key_tables_next(elm: &key_table) -> Option<std::rc::Rc<std::cell::RefCell
 mod ownership_tests {
     use super::*;
     use crate::src::cmd::cmd_list_new;
-    use crate::src::shared::rc;
+    
     use std::rc::Rc;
 
     unsafe fn binding(key: key_code) -> Box<key_binding> {

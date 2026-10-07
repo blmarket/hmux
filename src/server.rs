@@ -13,7 +13,7 @@ use crate::src::hooks::hooks_build_events;
 use crate::src::input_keys::input_key_build;
 use crate::src::job::{job_check_died, job_kill_all, job_still_running};
 use crate::src::key_bindings::key_bindings_init;
-use crate::src::log::{fatal, fatalx, log_cstr, log_debug, log_get_level};
+use crate::src::log::{fatal, log_cstr, log_debug, log_get_level};
 use crate::src::options::{options_get_number, options_set_number};
 use crate::src::proc::{
     proc_fork_and_daemon, proc_loop, proc_set_signals, proc_start, proc_toggle_log,
@@ -25,23 +25,21 @@ use crate::src::server_client::Client as _;
 use crate::src::session::SessionIndex as _;
 use crate::src::window::Window as _;
 use crate::src::window::WindowIndex as _;
-use std::os::fd::{AsFd, AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
+use std::os::fd::{FromRawFd, IntoRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::net::UnixListener;
 
-use crate::src::server_fn::server_destroy_pane;
 use crate::src::session::sessions;
 use crate::src::session::Session;
 
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::status::message_list;
-use crate::src::spawn::spawn_editor_finish;
 use crate::src::text::utf8::utf8_update_width_cache;
-use crate::src::tmux::{get_timer, global_options, setblocking, socket_path, start_time};
+use crate::src::tmux::{get_timer, global_options, socket_path, start_time};
 use crate::src::tty::tty_create_log;
 
-use crate::src::window::{windows, Window as _};
+use crate::src::window::windows;
 use crate::src::window_pane::WindowPane as _;
 use hmux_rt::{AsyncAccept as _, Runtime as _};
 use std::time::{Duration, SystemTime};
@@ -56,27 +54,21 @@ unsafe fn server_clear_messages() {
 pub use crate::src::server_client::clients;
 use crate::src::shared::abi::__mode_t;
 use crate::src::shared::abi::*;
-use crate::src::shared::client::client;
-use crate::src::shared::client::*;
 use crate::src::shared::client::{
-    CLIENT_DEFAULTSOCKET, CLIENT_EXIT, CLIENT_IDENTIFIED, CLIENT_NOFORK, CLIENT_SUSPENDED,
+    CLIENT_DEFAULTSOCKET, CLIENT_IDENTIFIED, CLIENT_NOFORK,
 };
 use crate::src::shared::command::cmd_find_state;
 use crate::src::shared::errno::{EAGAIN, ECHILD, EINTR, ENAMETOOLONG};
 use crate::src::shared::event::*;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::{PANE_EXITED, PANE_STATUSREADY};
 use crate::src::shared::posix_io::stat;
 use crate::src::shared::posix_io::{__S_IEXEC, __S_IREAD, S_IRWXU, WAIT_ANY, WNOHANG};
 use crate::src::shared::process::tmuxproc;
-use crate::src::shared::session::session;
 use crate::src::shared::signal::{
-    __sigset_t, sigset_t, ProcessSignal, SIGCHLD, SIGCONT, SIGINT, SIGTERM, SIGTTIN, SIGTTOU,
-    SIGUSR1, SIGUSR2, SIG_BLOCK, SIG_SETMASK,
+    __sigset_t, sigset_t, ProcessSignal, SIGCONT, SIGTTIN, SIGTTOU, SIG_BLOCK, SIG_SETMASK,
 };
 use crate::src::shared::socket::sa_family_t;
 use crate::src::shared::time::timespec;
-use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::winlink;
 
 pub type mode_t = __mode_t;

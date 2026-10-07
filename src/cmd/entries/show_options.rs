@@ -27,7 +27,6 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::monitor::{
     MONITOR_ALL_PANES, MONITOR_ALL_WINDOWS, MONITOR_PANE, MONITOR_SESSION, MONITOR_WINDOW,
 };
-use crate::src::shared::options::*;
 use crate::src::shared::options::{OPTIONS_TABLE_IS_HOOK, OPTIONS_TABLE_NONE};
 use std::ffi::{CStr, CString};
 use std::time::{Duration, UNIX_EPOCH};

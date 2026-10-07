@@ -3,30 +3,26 @@ use crate::src::bracketed_paste::{
 };
 use crate::src::events::events_fire_client;
 use crate::src::ffi::libc::{
-    __ctype_b_loc, memcpy, sscanf, strcspn, strlcpy, strlen, strncmp, strsep, strtol, strtoul,
+    __ctype_b_loc, memcpy, sscanf, strcspn, strlcpy, strncmp, strsep, strtol, strtoul,
 };
 use crate::src::ffi::resolv::__b64_pton;
 use crate::src::input::{input_request_reply, InputRequestReply};
 use crate::src::key_string::key_string_format;
 use crate::src::log::{log_cstr, log_cstr_n, log_debug, log_get_level, log_hex};
-use crate::src::options::{options_array_get_index, options_get_number};
+use crate::src::options::options_get_number;
 use crate::src::paste::paste_add_owned;
 use crate::src::reactor::Timer;
-use crate::src::reactor::{evbuffer_drain, evbuffer_get_length, evbuffer_pullup};
 use crate::src::server_client::Client as _;
 use crate::src::window::Window as _;
 
 use crate::src::session::Session;
-use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_FOCUSED;
 use crate::src::shared::control_character::{C0_CR, C0_ESC, C0_HT, C0_NUL};
 use crate::src::shared::ctype::_ISdigit;
 use crate::src::shared::grid::*;
 use crate::src::shared::input::{input_request_clipboard_data, input_request_palette_data};
-use crate::src::shared::input::{INPUT_REQUEST_CLIPBOARD, INPUT_REQUEST_PALETTE};
 use crate::src::shared::key::key_event;
 use crate::src::shared::key::*;
 use crate::src::shared::mouse::{
@@ -46,7 +42,7 @@ use crate::src::shared::utf8::*;
 use crate::src::style::colour::{colour_format, colour_parse_x11_logged};
 use crate::src::text::utf8::{utf8_append, utf8_from_data, utf8_fromwc, utf8_open};
 use crate::src::tmux::global_options;
-use crate::src::tty::{tty_invalidate, tty_set_size, tty_update_features};
+use crate::src::tty::{tty_invalidate, tty_update_features};
 use crate::src::tty_features::{tty_default_features, tty_parse_client_features};
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::tty_term::tty_term_string;

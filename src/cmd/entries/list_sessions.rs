@@ -6,20 +6,16 @@ use crate::src::format::{
     format_add, format_create_with_client, format_defaults, format_expand_cstring, format_free,
     format_true,
 };
-use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_AFTERHOOK;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::FORMAT_NONE;
-use crate::src::shared::pane::window_pane;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
-use crate::src::shared::window::winlink;
 use crate::src::sort::{sort_get_sessions, sort_order_from_string};
 
 pub const LIST_SESSIONS_TEMPLATE: &std::ffi::CStr = c"#{session_name}: #{session_windows} windows (created #{t:session_created})#{?session_grouped, (group ,}#{session_group}#{?session_grouped,),}#{?session_attached, (attached),}";

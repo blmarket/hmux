@@ -2,7 +2,6 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
 use crate::src::options::OptionsScope;
 use crate::src::session::Session;
-use crate::src::session::SessionIndex as _;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::mode_tree::ModeTreeItemSnapshot;
 use crate::src::shared::session::{SessionRef, SessionWeak};
@@ -21,8 +20,7 @@ use crate::src::cmd::find::{cmd_find_copy_state, cmd_find_from_pane, cmd_find_va
 use crate::src::cmd::parse::{cmd_parse_error_uppercase_first, cmd_parse_from_string};
 use crate::src::environ::{environ_clear, environ_find, environ_iter, environ_set, environ_unset};
 use crate::src::ffi::libc::{
-    __ctype_tolower_loc, __ctype_toupper_loc, memcpy, strchr, strcmp, strcspn, strlcat, strlen,
-    strncmp,
+    __ctype_tolower_loc, memcpy, strchr, strcmp, strcspn, strlcat, strlen,
 };
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::{
@@ -35,7 +33,7 @@ use crate::src::hooks::{
     hooks_monitor_to_cstring,
 };
 use crate::src::key_bindings::{
-    key_bindings_add, key_bindings_get, key_bindings_get_default, key_bindings_get_table,
+    key_bindings_add, key_bindings_get, key_bindings_get_default,
     key_bindings_remove, key_bindings_reset, key_bindings_set_note, key_bindings_tables,
 };
 use crate::src::key_string::{key_string_format, key_string_parse_cstr};
@@ -58,7 +56,6 @@ use crate::src::screen_write::{
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__int32_t, ssize_t};
 use crate::src::shared::arguments::args;
-use crate::src::shared::client::client;
 use crate::src::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_LIGHT_GREY};
 use crate::src::shared::command::cmd_parse_input;
 use crate::src::shared::command::*;
@@ -83,21 +80,17 @@ use crate::src::shared::options::{
     OPTIONS_TABLE_PANE, OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW,
 };
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::PANE_REDRAW;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{
     prompt_free_cb, prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_NOFORMAT, PROMPT_SINGLE,
 };
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::session;
-use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::spawn::{spawn_editor_state, EditorHandle};
-use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink};
+use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::src::spawn::{spawn_editor, spawn_editor_write};
 use crate::src::status::status_message_set;
-use crate::src::style::style_apply;
-use crate::src::tmux::{global_environ, global_options, global_s_options, global_w_options};
+use crate::src::tmux::global_environ;
 
 fn window_customize_uppercase_cause(cause: &mut Option<CString>) {
     if let Some(message) = cause.take() {
@@ -4740,8 +4733,8 @@ mod tag_tests {
 mod item_owner_tests {
     use super::*;
     use crate::src::spawn::spawn_cancel_editor;
-    use std::cell::Cell;
-    use std::cell::RefCell;
+    
+    
 
     #[test]
     fn detached_copy_owns_byte_preserving_strings() {

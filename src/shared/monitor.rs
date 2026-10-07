@@ -2,12 +2,11 @@
 
 use super::abi::{time_t, u_int};
 use super::pane::window_pane;
-use super::session::session;
 use super::window::winlink;
 use crate::src::shared::client::ClientWeak;
 use crate::src::shared::session::SessionWeak;
 use std::cell::UnsafeCell;
-use std::rc::{Rc, Weak};
+use std::rc::Weak;
 pub type monitor_type = ::core::ffi::c_uint;
 pub const MONITOR_ALL_WINDOWS: monitor_type = 4;
 pub const MONITOR_WINDOW: monitor_type = 3;

@@ -1,6 +1,6 @@
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_source, cmdq_get_target};
+use crate::src::cmd::queue::cmdq_error;
 use crate::src::events::events_fire_window;
 use crate::src::server_client::Client as _;
 use crate::src::shared::client::ClientRef;
@@ -12,7 +12,7 @@ use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::CMD_FIND_DEFAULT_MARKED;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::window::{window, WindowRef};
+use crate::src::shared::window::WindowRef;
 use crate::src::window_pane::WindowPane as _;
 use std::rc::Rc;
 pub static cmd_swap_pane_entry: cmd_entry = {

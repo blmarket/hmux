@@ -1,7 +1,7 @@
 use crate::src::compat::getpeereid::getpeereid;
 use crate::src::compat::imsg::PROTOCOL_VERSION;
 use crate::src::compat::imsg::*;
-use crate::src::compat::imsg::{imsg, imsgbuf};
+use crate::src::compat::imsg::imsg;
 use crate::src::compat::imsg::{
     imsg_compose, imsgbuf_clear, imsgbuf_get, imsgbuf_init, imsgbuf_output, imsgbuf_queuelen,
     imsgbuf_receive, imsgbuf_written,
@@ -11,7 +11,7 @@ use crate::src::ffi::libc::utsname;
 use crate::src::ffi::libc::{daemon, fork, getpid, memset, sigaction, sigemptyset, uname};
 use crate::src::ffi::utf8proc::utf8proc_version;
 use crate::src::format::bytes::write_cstr;
-use crate::src::log::{fatal, fatalx, log_cstr, log_debug, log_open, log_pointer, log_toggle};
+use crate::src::log::{fatal, log_cstr, log_debug, log_open, log_pointer, log_toggle};
 use crate::src::reactor;
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{gid_t, uid_t, uint32_t};
@@ -27,7 +27,6 @@ use crate::src::tmux::{getversion, socket_path};
 use hmux_rt::{AsyncRead as _, AsyncWrite as _, Runtime as _, Signals as _};
 use std::ffi::CStr;
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
-use std::os::unix::net::UnixStream;
 
 pub const SIGQUIT: ::core::ffi::c_int = 3 as ::core::ffi::c_int;
 pub const SIGPIPE: ::core::ffi::c_int = 13 as ::core::ffi::c_int;
@@ -501,6 +500,7 @@ pub unsafe fn proc_get_peer_gid(mut peer: *mut tmuxpeer) -> gid_t {
 #[cfg(test)]
 mod ownership_tests {
     use super::*;
+    use std::os::unix::net::UnixStream;
 
     #[test]
     fn loop_exit_releases_streams_and_runtime_for_both_exit_paths() {

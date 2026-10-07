@@ -1,33 +1,25 @@
 //! Authoritative client objects, file transfers, and scalar domains.
-use crate::src::session::Session as _;
-use crate::src::session::SessionIndex as _;
-use crate::src::shared::client::{ClientRef, ClientWeak};
+use crate::src::shared::client::ClientWeak;
 use crate::src::shared::session::{SessionRef, SessionWeak};
-use crate::src::shared::window::{WindowRef, WindowWeak};
-use crate::src::window::Window as _;
-use hmux_buffer::SegmentedBuf;
-use std::cell::UnsafeCell;
+use crate::src::shared::window::WindowWeak;
 use std::rc::Rc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::src::compat::imsg::msgtype;
 use crate::src::shared::abi::{pid_t, size_t, time_t, u_int, uint64_t};
 use crate::src::shared::colour::client_theme;
 use crate::src::shared::command::cmdq_list;
 use crate::src::shared::control::control_state;
-use crate::src::shared::display::{progress_bar, visible_ranges};
+use crate::src::shared::display::progress_bar;
 use crate::src::shared::environment::environ;
-use crate::src::shared::event::{bufferevent, Timer};
+use crate::src::shared::event::Timer;
 use crate::src::shared::format::format_job_tree;
-use crate::src::shared::key::{key_code, key_event, key_table};
+use crate::src::shared::key::{key_code, key_table};
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::process::tmuxpeer;
 use crate::src::shared::redraw::redraw_scene;
-use crate::src::shared::screen::screen;
-use crate::src::shared::session::session;
 use crate::src::shared::status::status_line;
 use crate::src::shared::tty::tty;
-use std::ffi::CStr;
 
 use crate::src::shared::client::*;
 pub struct client {

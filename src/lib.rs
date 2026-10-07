@@ -5,7 +5,6 @@
 #![allow(non_upper_case_globals)]
 #![allow(static_mut_refs)]
 #![allow(unused_assignments)]
-#![allow(unused_imports)]
 #![allow(unused_mut)]
 // The C2Rust translation intentionally retains these expression shapes while
 // the generated modules are migrated incrementally.

@@ -2,19 +2,16 @@ use crate::src::compat::strtonum::strtonum;
 use crate::src::ffi::libc::{__ctype_b_loc, sscanf, strcasecmp, strcmp, strlen, strncasecmp};
 use crate::src::ffi::libm::round;
 use crate::src::log::log_cstr;
-use crate::src::options::options_array_get_index;
 use crate::src::server_client::Client;
 use crate::src::shared::abi::*;
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::colour::*;
 use crate::src::shared::colour::{
-    COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME, COLOUR_THEME_COUNT,
+    COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME,
 };
 use crate::src::shared::ctype::_ISxdigit;
-use crate::src::shared::options::{options, options_array_item, options_entry, options_value};
-use crate::src::shared::tty::{TERM_256COLOURS, TERM_RGBCOLOURS, TTY_OPENED};
-use crate::src::tty_term::tty_term_owner_ptr;
+use crate::src::shared::options::options;
+use crate::src::shared::tty::{TERM_256COLOURS, TERM_RGBCOLOURS};
 
 #[derive(Copy, Clone)]
 #[repr(C)]

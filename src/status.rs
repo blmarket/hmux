@@ -1,5 +1,5 @@
 use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned};
-use crate::src::ffi::libc::{memcpy, memset};
+use crate::src::ffi::libc::memcpy;
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
@@ -9,13 +9,12 @@ use crate::src::format::{
 use crate::src::format_draw::format_draw;
 use crate::src::grid::{grid_cells_equal, grid_compare};
 use crate::src::log::{fatalx, log_cstr, log_debug, log_pointer};
-use crate::src::options::options_owner_ptr;
 use crate::src::options::{
-    options_array_get_index, options_get_number, options_get_string, options_string_to_style,
+    options_get_number, options_get_string,
     OptionsScope,
 };
 use crate::src::prompt::{
-    prompt_closed, prompt_create, prompt_draw, prompt_free, prompt_incremental_start, prompt_key,
+    prompt_closed, prompt_create, prompt_incremental_start, prompt_key,
     prompt_mouse, prompt_set_options, prompt_update,
 };
 use crate::src::reactor::Timer;
@@ -28,47 +27,37 @@ use crate::src::server::clients;
 use crate::src::server::server_add_message;
 use crate::src::server_client::Client as _;
 use crate::src::session::Session as _;
-use crate::src::session::SessionIndex as _;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::src::shared::session::SessionRef;
 use crate::src::style::{
-    style_apply, style_ranges_clear, style_ranges_free, style_ranges_get_range, style_ranges_init,
+    style_ranges_clear, style_ranges_free, style_ranges_init,
 };
 use crate::src::tmux::global_s_options;
 use std::ffi::{CStr, CString};
 use std::time::Duration;
 
 use crate::src::shared::abi::*;
-use crate::src::shared::client::client;
 use crate::src::shared::client::{
-    CLIENT_ALLREDRAWFLAGS, CLIENT_CONTROL, CLIENT_REDRAWSTATUS, CLIENT_STATUSFORCE,
+    CLIENT_CONTROL, CLIENT_REDRAWSTATUS, CLIENT_STATUSFORCE,
     CLIENT_STATUSOFF,
 };
 use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd_find_state, cmdq_item};
-use crate::src::shared::display::*;
+use crate::src::shared::command::cmd_find_state;
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::{FORMAT_FORCE, FORMAT_NONE, FORMAT_STATUS};
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 use crate::src::shared::options::{options_entry, options_value};
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{
-    prompt_free_cb, prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_INCREMENTAL,
-    PROMPT_NOFREEZE, PROMPT_SINGLE,
+    prompt_free_cb, PROMPT_ACCEPT, PROMPT_SINGLE,
 };
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::session;
 use crate::src::shared::status::{status_line, status_prompt_input_cb};
 use crate::src::shared::style::*;
-use crate::src::shared::tty::tty;
-use crate::src::shared::tty::{TTY_FREEZE, TTY_NOCURSOR};
-use crate::src::shared::window::winlink;
 
 unsafe fn status_timer_callback(client: &ClientRef) {
     let session = client.attached_session().upgrade();

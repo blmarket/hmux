@@ -1,7 +1,6 @@
 //! Authoritative mode_tree model declarations.
 
 use super::abi::{size_t, u_int, uint64_t};
-use super::client::client;
 use super::key::key_code;
 use super::pane::window_pane;
 use super::prompt::{prompt_free_cb, prompt_key_result, prompt_result};

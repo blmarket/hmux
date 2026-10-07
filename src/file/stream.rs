@@ -2,8 +2,6 @@
 //! and wake notifications after releasing model borrows. Not polling pauses only
 //! consumption: the peer can continue sending and input can continue growing.
 use super::*;
-use crate::src::server_client::Client as _;
-use crate::src::shared::client::ClientRef;
 use futures_core::Stream;
 use hmux_buffer::{Buf, BufMut, SegmentedBuf};
 use std::io;

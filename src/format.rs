@@ -1,16 +1,15 @@
 use crate::src::arguments::args_escape_cstring;
 use crate::src::cfg::cfg_files;
 use crate::src::cmd::queue::{
-    cmdq_get_client, cmdq_get_event, cmdq_get_target, cmdq_get_target_client, cmdq_merge_formats,
+    cmdq_get_client, cmdq_get_event, cmdq_get_target_client, cmdq_merge_formats,
     cmdq_print,
 };
-use crate::src::cmd::{cmd_mouse_at, cmd_mouse_pane, cmd_stringify_argv_cstring};
+use crate::src::cmd::cmd_mouse_pane;
 use crate::src::compat::strtonum::strtonum;
 use crate::src::environ::{environ_find, environ_iter};
 use crate::src::ffi::libc::{
-    __ctype_b_loc, __xpg_basename, ctime_r, dirname, fnmatch, free, gethostname, getpid, getpwuid,
-    getuid, localtime_r, memcmp, memcpy, memset, strcasecmp, strchr, strcmp, strcspn, strftime,
-    strlcat, strlen, strstr, strtod, time,
+    __ctype_b_loc, __xpg_basename, ctime_r, dirname, fnmatch, gethostname, getpid, getpwuid,
+    getuid, localtime_r, memcmp, memcpy, memset, strcasecmp, strchr, strcmp, strcspn, strftime, strlen, strstr, strtod, time,
 };
 use crate::src::ffi::libm::{fabs, fmod};
 use crate::src::ffi::regex::RegexStorage;
@@ -18,25 +17,20 @@ use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::{write_cstr, write_cstr_n};
 use crate::src::format_draw::{format_trim_left_bytes, format_trim_right_bytes, format_width};
 use crate::src::fuzzy::fuzzy_match_owned;
-use crate::src::grid::view::grid_view_get_cell;
-use crate::src::grid::{grid_get_cell, grid_get_line, grid_line_length, grid_peek_line};
+use crate::src::grid::{grid_get_cell, grid_line_length, grid_peek_line};
 use crate::src::hyperlinks::hyperlinks_get;
 use crate::src::job::{job_free, job_get_event, job_run};
-use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
-use crate::src::names::parse_window_name_cstring;
-use crate::src::options::options_table_entry;
+use crate::src::log::{log_cstr, log_debug, log_get_level};
 use crate::src::options::{
-    options_array_item_key, options_get_number, options_get_string, options_is_array, options_name,
+    options_get_number, options_get_string, options_is_array,
     options_parse_owned, options_to_cstring,
 };
-use crate::src::osdep_linux::{osdep_get_cwd, osdep_get_name_cstring};
 use crate::src::paste::{
     paste_buffer_created, paste_buffer_data, paste_buffer_name, paste_get_top,
     paste_make_sample_cstring,
 };
-use crate::src::proc::proc_get_peer_uid;
 use crate::src::reactor::{
-    evbuffer_add, evbuffer_get_length, evbuffer_new, evbuffer_pullup, evbuffer_readline,
+    evbuffer_add, evbuffer_new, evbuffer_pullup, evbuffer_readline,
 };
 use crate::src::regsub::regsub_cstring;
 use crate::src::server::clients;
@@ -47,7 +41,7 @@ use crate::src::window::Window as _;
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::server_status_client;
 use crate::src::session::{
-    session_group_attached_count, session_group_count, session_groups_minmax, session_groups_next,
+    session_groups_minmax, session_groups_next,
 };
 use crate::src::session::{session_groups, sessions, Session};
 use crate::src::shared::client::ClientRef;
@@ -59,40 +53,27 @@ use crate::src::sort::{
 };
 use crate::src::status::status_get_range;
 use crate::src::style::colour::{
-    colour_force_rgb, colour_format, colour_format_escape_for_client, colour_parse_cstr,
+    colour_force_rgb, colour_format_escape_for_client, colour_parse_cstr,
 };
 use crate::src::text::utf8::{utf8_cstrhas, utf8_pad_cstring, utf8_set, utf8_tocstr_cstring};
 use crate::src::tmux::{
-    get_timer, getversion, global_environ, global_options, global_s_options, global_w_options,
-    sig2name, socket_path, start_time,
+    get_timer, getversion, global_environ, global_options, global_s_options, global_w_options, socket_path, start_time,
 };
-use crate::src::tty::{tty_default_colours, tty_window_offset};
-use crate::src::tty_features::{tty_feature_present, tty_get_features};
-use crate::src::tty_term::{tty_term_has_name, tty_term_number};
-use crate::src::window::{winlink_count, winlink_find_by_window, winlinks_minmax, winlinks_next};
+use crate::src::tty_features::tty_feature_present;
+use crate::src::tty_term::tty_term_has_name;
+use crate::src::window::{winlink_find_by_window, winlinks_minmax, winlinks_next};
 use crate::src::window_buffer::window_buffer_mode;
 use crate::src::window_client::window_client_mode;
-use crate::src::window_copy::{
-    window_copy_get_hyperlink_cstring, window_copy_get_line_cstring, window_copy_get_word_cstring,
-};
 use crate::src::window_pane::WindowPane as _;
 use crate::src::window_tree::window_tree_mode;
 use std::ffi::{CStr, CString};
 
-use crate::src::shared::abi::NULL_0;
 use crate::src::shared::abi::*;
-use crate::src::shared::abi::{__uid_t, ssize_t, uid_t};
-use crate::src::shared::account::passwd;
-use crate::src::shared::client::client;
-use crate::src::shared::client::{
-    CLIENT_CONTROL, CLIENT_CONTROL_NEWLAYOUTS, CLIENT_READONLY, CLIENT_REDRAWSTATUS,
-    CLIENT_UNATTACHEDFLAGS, CLIENT_UTF8,
-};
+use crate::src::shared::client::CLIENT_UNATTACHEDFLAGS;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::ctype::_ISpunct;
 use crate::src::shared::environment::ENVIRON_HIDDEN;
 use crate::src::shared::environment::{environ, environ_entry};
-use crate::src::shared::event::*;
 pub use crate::src::shared::format::{
     format_entry, format_entry_tree, format_job, format_job_tree, format_tree, format_type,
 };
@@ -113,37 +94,20 @@ use crate::src::shared::grid::*;
 use crate::src::shared::job::JOB_NOWAIT;
 use crate::src::shared::job::{job, job_update_callback, JobCompletion};
 use crate::src::shared::key::key_event;
-use crate::src::shared::layout::*;
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::options::OPTIONS_TABLE_IS_HOOK;
-use crate::src::shared::options::*;
-use crate::src::shared::options::{options, options_array_item, options_entry};
+use crate::src::shared::options::{options, options_entry};
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::{
-    PANE_CMDRUNNING, PANE_INPUTOFF, PANE_MINIMUM, PANE_SCROLLBARS_ALWAYS, PANE_STATUSDRAWN,
-    PANE_STATUSREADY, PANE_UNSEENCHANGES,
-};
 use crate::src::shared::paste::PasteBufferRef;
 use crate::src::shared::posix_io::FNM_CASEFOLD;
-use crate::src::shared::screen::{
-    screen, ALL_MOUSE_MODES, EXTENDED_KEY_MODES, MODE_BRACKETPASTE, MODE_CURSOR,
-    MODE_CURSOR_BLINKING, MODE_CURSOR_BLINKING_SET, MODE_CURSOR_VERY_VISIBLE, MODE_FOCUSON,
-    MODE_INSERT, MODE_KCURSOR, MODE_KEYS_EXTENDED, MODE_KEYS_EXTENDED_2, MODE_KKEYPAD,
-    MODE_MOUSE_ALL, MODE_MOUSE_BUTTON, MODE_MOUSE_SGR, MODE_MOUSE_STANDARD, MODE_MOUSE_UTF8,
-    MODE_ORIGIN, MODE_SYNC, MODE_THEME_UPDATES, MODE_WRAP,
-};
-use crate::src::shared::session::session;
+use crate::src::shared::screen::screen;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
-use crate::src::shared::style::*;
 use crate::src::shared::time::tm;
 use crate::src::shared::tree::{RB_INF, RB_NEGINF};
-use crate::src::shared::tty::tty_term;
-use crate::src::shared::tty::*;
-use crate::src::shared::tty::{TERM_256COLOURS, TERM_RGBCOLOURS, TTY_STARTED};
-use crate::src::shared::window::{window, window_mode_entry, winlink};
+use crate::src::shared::window::winlink;
 use crate::src::shared::window::{
-    WINDOW_PANE_NO_MODE, WINDOW_SIZE_MANUAL, WINLINK_ACTIVITY, WINLINK_ALERTFLAGS, WINLINK_BELL,
+    WINDOW_SIZE_MANUAL, WINLINK_ACTIVITY, WINLINK_BELL,
     WINLINK_SILENCE,
 };
 use libc::{REG_EXTENDED, REG_ICASE};
@@ -193,7 +157,7 @@ pub(crate) use expression::format_pretty_time_cstring;
 pub(crate) use expression::format_quote_shell_single;
 use expression::*;
 pub(crate) use expression::{
-    format_expand_time_cstring, format_single_cstring, format_single_from_state_cstring,
+    format_expand_time_cstring, format_single_cstring,
     format_single_from_target_cstring,
 };
 pub use expression::{format_skip, format_true};

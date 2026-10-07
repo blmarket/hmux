@@ -1,8 +1,6 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::find::{cmd_find_copy_state, cmd_find_valid_state};
-use crate::src::ffi::libc::{memcpy, strcasestr, strlen, strstr};
-use crate::src::format::bytes::write_cstr;
-use crate::src::format::bytes::xformat;
+use crate::src::ffi::libc::{strcasestr, strstr};
 use crate::src::format::{
     format_add, format_create, format_defaults, format_defaults_paste_buffer,
     format_expand_cstring, format_free, format_true,
@@ -19,31 +17,25 @@ use crate::src::paste::{
     paste_is_empty, paste_replace_owned,
 };
 use crate::src::screen_write::{
-    screen_write_box, screen_write_clearcharacter, screen_write_cursormove, screen_write_nputs,
-    screen_write_start, screen_write_stop,
+    screen_write_cursormove, screen_write_nputs,
 };
-use crate::src::session::Session;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::FORMAT_NONE;
-use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
-use crate::src::shared::layout::*;
 use crate::src::shared::mode_tree::ModeTreeItemSnapshot;
 use crate::src::shared::mode_tree::{
-    mode_tree_data, mode_tree_help_info, mode_tree_item, ModeTreeItemData,
+    mode_tree_data, mode_tree_help_info, ModeTreeItemData,
 };
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::paste::PasteBufferRef;
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;

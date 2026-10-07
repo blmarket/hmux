@@ -1,5 +1,5 @@
 use crate::src::cmd::find::{cmd_find_from_client, cmd_find_valid_state};
-use crate::src::cmd::queue::{cmdq_append, cmdq_get_command, cmdq_insert_after, cmdq_print};
+use crate::src::cmd::queue::{cmdq_append, cmdq_get_command, cmdq_print};
 use crate::src::cmd::{
     cmd_get_alias, cmd_list_append, cmd_list_append_all, cmd_list_move, cmd_list_new,
     cmd_list_print_cstring, cmd_parse,
@@ -9,14 +9,12 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_create_with_client, format_defaults, format_expand_cstring, format_free, format_true,
 };
-use crate::src::log::{fatalx, log_bytes, log_cstr, log_debug};
-use crate::src::server_client::Client as _;
+use crate::src::log::{fatalx, log_bytes, log_debug};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_find_state, cmd_list, cmdq_item, cmdq_state};
+use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_state};
 use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
 use crate::src::shared::command::{
     CMD_PARSE_MAX_ENVIRON_LEN, CMD_PARSE_NOALIAS, CMD_PARSE_ONEGROUP, CMD_PARSE_PARSEONLY,
@@ -25,14 +23,10 @@ use crate::src::shared::command::{
 use crate::src::shared::environment::ENVIRON_HIDDEN;
 use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
 use crate::src::shared::limits::UINT_MAX;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::rc;
-use crate::src::shared::session::session;
 use crate::src::shared::stdio::FILE;
-use crate::src::shared::window::{window, winlink};
 use crate::src::tmux::global_environ;
 use libc;
-use std::cell::{RefCell, UnsafeCell};
+use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;

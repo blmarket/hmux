@@ -3,7 +3,6 @@ use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_from_session, cmd_fin
 use crate::src::cmd::parse::{cmd_parse_and_append, cmd_parse_error_uppercase_first};
 use crate::src::cmd::queue::cmdq_new_state;
 use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
-use crate::src::ffi::libc::__ctype_toupper_loc;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_create, format_defaults, format_expand_cstring, format_free};
 use crate::src::format_draw::format_draw;
@@ -18,26 +17,18 @@ use crate::src::screen_write::{
     screen_write_cell, screen_write_clearendofline, screen_write_clearscreen,
     screen_write_cursormove, screen_write_start, screen_write_stop,
 };
-use crate::src::server_fn::server_redraw_window;
 use crate::src::session::Session;
-use crate::src::session::SessionIndex as _;
 
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::cmd_parse_input;
-use crate::src::shared::command::{cmd_find_state, cmdq_item, cmdq_state};
-use crate::src::shared::display::*;
+use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::FORMAT_NONE;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::key_event;
 use crate::src::shared::key::*;
 use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
-use crate::src::shared::options::options;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::src::shared::prompt::{
@@ -46,18 +37,16 @@ use crate::src::shared::prompt::{
 };
 use crate::src::shared::screen::{screen, MODE_CURSOR};
 use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 use crate::src::shared::style::*;
 
-use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink};
+use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::src::sort::{sort_get_sessions, sort_get_winlinks};
 use crate::src::status::status_message_set;
 use crate::src::style::style_apply_with_options;
 use crate::src::window::winlink_find_by_index;
-use crate::src::window::Window as _;
 use crate::src::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
 

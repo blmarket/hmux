@@ -1,26 +1,22 @@
 use crate::src::compat::strtonum::strtonum;
 use crate::src::compat::unvis::strunvis;
 use crate::src::compat::vis::strnvis;
-use crate::src::environ::environ_find;
 use crate::src::ffi::libc::{
-    fnmatch, memset, strcasecmp, strchr, strcmp, strcspn, strlen, strncmp, strstr,
+    fnmatch, strchr, strcmp, strcspn, strlen, strncmp,
 };
 use crate::src::ffi::ncurses::{
     cur_term, del_curterm, setupterm, tigetflag, tigetnum, tigetstr, tiparm_s,
 };
 use crate::src::format::bytes::{format_message_with, xformat};
 use crate::src::log::{fatalx, log_cstr, log_debug};
-use crate::src::options::{options_array_item_value, options_get_only};
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
-use crate::src::shared::client::client;
 use crate::src::shared::client::{ClientRef, ClientWeak};
-use crate::src::shared::environment::environ_entry;
 use crate::src::shared::limits::INT_MAX;
 use crate::src::shared::options::{options_array_item, options_entry, options_value};
 use crate::src::shared::posix_io::STDIN_FILENO;
 use crate::src::shared::tty::*;
-use crate::src::shared::tty::{tty, tty_code, tty_code_type, tty_term};
+use crate::src::shared::tty::{tty_code, tty_code_type, tty_term};
 use crate::src::shared::tty::{
     TERM_DECFRA, TERM_DECSLRM, TERM_INVALIDMS, TERM_NOAM, TERM_RGBCOLOURS, TERM_SIXEL,
     TERM_VT100LIKE,

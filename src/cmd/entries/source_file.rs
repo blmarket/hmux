@@ -1,7 +1,7 @@
 use crate::src::arguments::{args_count, args_has, args_string};
 use crate::src::cfg::{cfg_finished, cfg_print_causes, load_cfg_from_buffer};
 use crate::src::cmd::queue::{
-    cmdq_continue, cmdq_error, cmdq_get_callback_owned, cmdq_get_client, cmdq_get_target,
+    cmdq_continue, cmdq_error, cmdq_get_callback_owned, cmdq_get_client,
     cmdq_insert_after,
 };
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_parse_flags};
@@ -15,21 +15,19 @@ use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
 use crate::src::server_client::Client as _;
 
 use crate::src::shared::abi::*;
-use crate::src::shared::abi::{__size_t, ssize_t};
+use crate::src::shared::abi::__size_t;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_CONTROL;
-use crate::src::shared::client::{client, client_file_cb};
+use crate::src::shared::client::client_file_cb;
 use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::command::{
     CMD_FIND_CANFAIL, CMD_PARSE_PARSEONLY, CMD_PARSE_QUIET, CMD_PARSE_VERBOSE,
     CMD_SOURCE_FILE_DEPTH_LIMIT,
 };
 use crate::src::shared::ctype::_ISalnum;
 use crate::src::shared::errno::{EINVAL, ENOENT, ENOMEM};
-use crate::src::shared::event::*;
-use crate::src::shared::session::session;
 use hmux_buffer::SegmentedBuf;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};

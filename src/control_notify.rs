@@ -8,15 +8,12 @@ use crate::src::format::{format_create, format_defaults, format_expand_cstring, 
 use crate::src::server::clients;
 use crate::src::server_client::Client;
 use crate::src::session::Session;
-use crate::src::session::SessionIndex as _;
 use crate::src::shared::abi::u_int;
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::events::{event_payload, events_callback};
 use crate::src::shared::format::FORMAT_NONE;
-use crate::src::shared::session::SessionRef;
 use crate::src::window::{winlink_find_by_window_id, Window, WindowPane};
-use std::{cell::UnsafeCell, ffi::CStr, rc::Rc};
+use std::{ffi::CStr, rc::Rc};
 
 #[derive(Copy, Clone)]
 pub struct C2RustUnnamed_35 {

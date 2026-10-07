@@ -7,7 +7,6 @@ use crate::src::ffi::libc::{fnmatch, strcasecmp, strcmp, strncmp, strsep, strstr
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
-use crate::src::format::format_expand_cstring;
 use crate::src::grid::grid_default_cell;
 use crate::src::input::input_set_buffer_size;
 use crate::src::key_string::{key_string_format, key_string_parse_cstr};
@@ -23,7 +22,6 @@ use crate::src::server::clients;
 use crate::src::server::current_time;
 use crate::src::server_client::Client as _;
 use crate::src::session::SessionIndex as _;
-use crate::src::window::Window as _;
 use crate::src::window::WindowIndex as _;
 
 use crate::src::server_fn::server_redraw_client;
@@ -33,9 +31,9 @@ use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::SessionRef;
 use crate::src::status::status_timer_start_all;
-use crate::src::style::colour::{colour_format, colour_palette_from_option, colour_parse_cstr};
+use crate::src::style::colour::{colour_format, colour_parse_cstr};
 use crate::src::style::{
-    style_parse, style_parse_colour, style_set, style_set_scrollbar_style_from_option,
+    style_parse, style_parse_colour,
 };
 use crate::src::text::utf8::utf8_update_width_cache;
 use crate::src::tmux::{checkshell, global_options, global_s_options, global_w_options};
@@ -94,7 +92,6 @@ unsafe fn options_string_cause(fmt: &CStr, args: &[*const ::core::ffi::c_char]) 
 
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
-use crate::src::shared::client::client;
 use crate::src::shared::command::{cmd_find_state, cmd_list};
 use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
 use crate::src::shared::format::format_tree;
@@ -111,12 +108,8 @@ use crate::src::shared::options::{
     OPTIONS_TABLE_PANE, OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW,
 };
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::{PANE_CHANGED, PANE_STYLECHANGED, PANE_THEMECHANGED};
-use crate::src::shared::session::session;
 use crate::src::shared::style::*;
-use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::tty::TTY_OPENED;
-use crate::src::shared::window::{window, winlink};
 
 fn set_scalar_string(o: &mut options_entry, value: CString) {
     // Formatting has completed, so callers may have supplied the old value

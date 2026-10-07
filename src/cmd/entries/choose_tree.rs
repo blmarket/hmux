@@ -1,5 +1,5 @@
 use crate::src::arguments::{args_get, args_has};
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_target};
+use crate::src::cmd::queue::cmdq_error;
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::paste::paste_is_empty;
 use crate::src::server_client::Client as _;
@@ -11,7 +11,6 @@ use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::CMD_AFTERHOOK;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::pane::window_pane;
 use crate::src::shared::sort::*;
 use crate::src::shared::window::window_mode;
 use crate::src::sort::sort_order_from_string;

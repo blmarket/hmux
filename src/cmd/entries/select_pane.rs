@@ -3,7 +3,7 @@ use crate::src::cmd::find::{
     cmd_find_from_pane, cmd_find_from_winlink, cmd_find_from_winlink_pane,
 };
 use crate::src::cmd::queue::{
-    cmdq_error, cmdq_get_state_owned, cmdq_get_target, cmdq_insert_hook, cmdq_print,
+    cmdq_error, cmdq_get_state_owned, cmdq_insert_hook, cmdq_print,
 };
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::events::events_fire;
@@ -20,13 +20,11 @@ use crate::src::server::{
 };
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::{
-    server_redraw_client, server_redraw_window, server_redraw_window_borders, server_status_window,
+    server_redraw_client, server_redraw_window_borders, server_status_window,
 };
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
-use crate::src::shared::events::event_payload;
 use crate::src::shared::layout::Direction;
-use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::tty::tty_window_bigger;
 use crate::src::window::Window as _;
@@ -34,13 +32,10 @@ use crate::src::window::Window as _;
 use crate::src::window_pane::WindowPane as _;
 
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::{args, args_parse};
-use crate::src::shared::client::client;
+use crate::src::shared::arguments::args_parse;
 use crate::src::shared::client::{CLIENT_CONTROL, CLIENT_REDRAWBORDERS, CLIENT_REDRAWSTATUS};
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::session::session;
-use crate::src::shared::window::{window, winlink};
 pub static cmd_select_pane_entry: cmd_entry = {
     cmd_entry {
         name: c"select-pane",

@@ -4,7 +4,7 @@ use crate::src::cmd::{cmd_mouse_at, cmd_mouse_pane};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::events_fire_pane;
 use crate::src::ffi::libc::{
-    __ctype_tolower_loc, abs, llabs, memcmp, memcpy, strcasecmp, strchr, strcmp, strcspn, strlen,
+    __ctype_tolower_loc, abs, llabs, memcmp, memcpy, strcasecmp, strchr, strcmp, strcspn,
     strncmp,
 };
 use crate::src::ffi::regex::{CompiledRegex, RegexMatch, RegexStorage};
@@ -33,7 +33,6 @@ use crate::src::log::{fatal, fatalx, log_cstr, log_debug};
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::paste::{paste_add_owned, paste_buffer_data, paste_get_top, paste_set_owned};
 use crate::src::reactor::bufferevent_write;
-use crate::src::screen::screen_share_hyperlinks;
 use crate::src::screen::{
     screen_check_selection, screen_clear_selection, screen_free, screen_hide_selection,
     screen_init, screen_resize, screen_resize_cursor, screen_set_default_cursor,
@@ -50,18 +49,14 @@ use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__int32_t, ssize_t};
 use crate::src::shared::arguments::args;
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_READONLY;
-use crate::src::shared::colour::*;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
-use crate::src::shared::environment::environ;
 use crate::src::shared::event::*;
 use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::WHITESPACE;
 use crate::src::shared::grid::*;
 use crate::src::shared::input::input_ctx;
-use crate::src::shared::job::job;
 use crate::src::shared::job::JOB_NOWAIT;
 use crate::src::shared::key::{MODEKEY_EMACS, MODEKEY_VI};
 use crate::src::shared::limits::{INT_MAX, UCHAR_MAX, UINT_MAX};
@@ -70,19 +65,16 @@ use crate::src::shared::mouse::{
 };
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::{PANE_REDRAW, PANE_REDRAWSCROLLBAR, PANE_UNSEENCHANGES};
+use crate::src::shared::pane::PANE_REDRAW;
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::style::*;
-use crate::src::shared::tty::{tty, tty_ctx};
 pub use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink};
 use crate::src::status::status_message_set;
 use crate::src::style::style_apply_with_options;
 use crate::src::text::utf8::{utf8_copy, utf8_fromcstr_vec, utf8_set, utf8_to_data};
 use crate::src::tmux::{get_timer, global_options, global_w_options};
-use crate::src::tty::tty_window_offset;
 use crate::src::tty_acs::tty_acs_get;
 use crate::src::window::Window as _;
 use crate::src::window_pane::WindowPane as _;

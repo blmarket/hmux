@@ -1,24 +1,19 @@
 use crate::src::arguments::{args_count, args_has, args_string, args_strtonum_result};
 use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_target};
+use crate::src::cmd::queue::cmdq_error;
 use crate::src::compat::strtonum::strtonum;
 use crate::src::format::bytes::write_cstr;
-use crate::src::options::options_owner_ptr;
-use crate::src::options::options_set_number;
 use crate::src::resize::{default_window_size, recalculate_size};
-use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
-use crate::src::shared::client::client;
 use crate::src::shared::command::CMD_AFTERHOOK;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::limits::INT_MAX;
-use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::{window, winlink};
+use crate::src::shared::window::winlink;
 use crate::src::shared::window::{
-    WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_SIZE_LARGEST, WINDOW_SIZE_MANUAL,
+    WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_SIZE_LARGEST,
 };
 use crate::src::window::Window as _;
 

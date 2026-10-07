@@ -1,5 +1,4 @@
 use crate::src::log::{log_cstr, log_pointer};
-use crate::src::server_client::Client as _;
 use crate::src::shared::client::{ClientRef, ClientWeak};
 // Private job-integration implementation.  This module owns the process-wide
 // format-job cache, per-client cache interaction, job callbacks, and tidy

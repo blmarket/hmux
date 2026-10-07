@@ -1,16 +1,12 @@
 //! Alert dispatch owns queued references; Window owns flags and its timer.
 use crate::src::log::{log_debug, log_hex};
 use crate::src::session::Session;
-use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::tree::RB_NEGINF;
-use crate::src::shared::window::window;
 use crate::src::shared::window::WindowRef;
-use crate::src::window::Window as _;
 use crate::src::window::WindowIndex as _;
 use crate::src::window::{windows, winlinks_minmax, winlinks_next, Window};
 use std::collections::VecDeque;
-use std::{cell::UnsafeCell, rc::Rc};
 
 static mut alerts_task: Option<hmux_rt::mio::Task> = None::<hmux_rt::mio::Task>;
 static mut alerts_list: VecDeque<WindowRef> = VecDeque::new();

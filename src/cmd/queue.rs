@@ -32,27 +32,22 @@ use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__uid_t, uid_t};
 use crate::src::shared::account::passwd;
 use crate::src::shared::arguments::args;
-use crate::src::shared::client::{client, client_file};
+use crate::src::shared::client::client_file;
 use crate::src::shared::client::{ClientRef, ClientWeak};
 use crate::src::shared::client::{CLIENT_CONTROL, CLIENT_UTF8};
 use crate::src::shared::command::*;
 use crate::src::shared::command::{
-    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_cb, cmdq_state, cmdq_type,
+    cmd, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_cb, cmdq_state, cmdq_type,
 };
 use crate::src::shared::command::{
     CMDQ_FIRED, CMDQ_STATE_CONTROL, CMDQ_STATE_NOHOOKS, CMDQ_WAITING, CMD_AFTERHOOK,
     CMD_CLIENT_CANFAIL, CMD_CLIENT_CFLAG, CMD_CLIENT_TFLAG,
 };
-use crate::src::shared::event::*;
-use crate::src::shared::events::event_payload;
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::FORMAT_NONE;
 use crate::src::shared::key::key_event;
 use crate::src::shared::key::*;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::{window, winlink};
 use crate::src::status::status_message_set;
 use crate::src::text::utf8::utf8_sanitize_cstring;
 use hmux_buffer::SegmentedBuf;

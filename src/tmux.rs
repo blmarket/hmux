@@ -39,7 +39,7 @@ use crate::src::shared::options::{
     OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION, OPTIONS_TABLE_WINDOW,
 };
 use crate::src::shared::posix_io::stat;
-use crate::src::shared::posix_io::{O_NONBLOCK, S_IRWXU, X_OK};
+use crate::src::shared::posix_io::{S_IRWXU, X_OK};
 use crate::src::shared::time::{timespec, CLOCK_REALTIME};
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
 use crate::src::text::utf8::{utf8_isvalid, utf8_stravis_cstring};

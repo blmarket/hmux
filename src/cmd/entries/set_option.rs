@@ -1,6 +1,6 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::find::cmd_find_copy_state;
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target};
+use crate::src::cmd::queue::{cmdq_error, cmdq_get_client};
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::events::events_fire;
 use crate::src::events_payload::{
@@ -15,26 +15,20 @@ use crate::src::options::{
     options_array_get, options_match_owned, options_push_changes, options_scope_from_name,
     OptionMatchFailure, OptionsScope,
 };
-use crate::src::server_client::Client as _;
 use crate::src::session::sessions;
 use crate::src::session::Session;
 use crate::src::session::SessionIndex as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 use crate::src::shared::arguments::{args, args_parse};
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
-use crate::src::shared::events::event_payload;
 use crate::src::shared::monitor::{MONITOR_NOTIFY_TRUE, MONITOR_SESSION};
 use crate::src::shared::options::{
     OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_NONE, OPTIONS_TABLE_WINDOW,
 };
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::session;
-use crate::src::shared::window::{window, winlink};
 use crate::src::window::{Window, WindowPane};
 use std::ffi::{CStr, CString};
 pub static cmd_set_option_entry: cmd_entry = {

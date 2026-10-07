@@ -5,35 +5,28 @@ use crate::src::arguments::{
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::parse::cmd_parse_error_uppercase_first;
 use crate::src::cmd::queue::{
-    cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_state,
-    cmdq_get_target, cmdq_get_target_client, cmdq_insert_after,
+    cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_target_client, cmdq_insert_after,
 };
-use crate::src::ffi::libc::__ctype_toupper_loc;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::job::job_run;
 
 use crate::src::server_client::Client as _;
-use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_command_state;
 use crate::src::shared::arguments::*;
 use crate::src::shared::arguments::{args, args_parse};
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_FIND_CANFAIL;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{
-    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item, cmdq_state,
+    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item,
 };
-use crate::src::shared::environment::environ;
 use crate::src::shared::job::{JobCompletion, JobExitStatus};
-use crate::src::shared::rc;
-use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::status::status_message_set;
 use std::cell::UnsafeCell;
-use std::rc::{Rc, Weak};
+use std::rc::Weak;
 
 pub struct cmd_if_shell_data {
     pub cmd_if: Option<Box<args_command_state>>,

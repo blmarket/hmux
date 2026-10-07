@@ -3,8 +3,7 @@ use crate::src::arguments::{
 };
 use crate::src::cmd::cmd_mouse_at;
 use crate::src::cmd::queue::{
-    cmdq_append, cmdq_error, cmdq_get_cmd, cmdq_get_command, cmdq_get_error, cmdq_get_source,
-    cmdq_get_target,
+    cmdq_append, cmdq_error, cmdq_get_cmd, cmdq_get_command, cmdq_get_error,
 };
 use crate::src::ffi::libc::memcpy;
 use crate::src::format::bytes::write_cstr;
@@ -12,7 +11,6 @@ use crate::src::format::bytes::{xformat, xformat_with};
 use crate::src::format::{format_create_defaults, format_free, format_single_cstring};
 use crate::src::format_draw::format_draw;
 use crate::src::grid::grid_default_cell;
-use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_get_number, options_get_string};
 use crate::src::screen::{screen_free, screen_init, screen_resize};
 use crate::src::screen_write::{
@@ -24,16 +22,14 @@ use crate::src::server_fn::{
     server_redraw_window, server_redraw_window_borders, server_status_window,
 };
 use crate::src::session::Session;
-use crate::src::session::SessionIndex as _;
 use crate::src::window::Window as _;
 
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
 use crate::src::shared::arguments::args_command_state;
 use crate::src::shared::borders::{CELL_BORDERS, CELL_LR, CELL_UD};
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
-use crate::src::shared::command::{cmd, cmd_find_state, cmdq_item, cmdq_state};
+use crate::src::shared::command::{cmd, cmd_find_state, cmdq_item};
 use crate::src::shared::event::*;
 use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
@@ -41,16 +37,13 @@ use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::mouse::mouse_event;
-use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::PANE_REDRAW;
 use crate::src::shared::screen::{screen, MODE_CURSOR};
 use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::session;
 use crate::src::shared::session::{SessionRef, SessionWeak};
 use crate::src::shared::style::*;
 use crate::src::shared::window::WINDOW_MODE_NO_STACK;
-use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink};
+use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::src::shared::window::{WindowRef, WindowWeak};
 use crate::src::style::style_apply_with_options;
 use crate::src::text::utf8::utf8_set;

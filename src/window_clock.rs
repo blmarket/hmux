@@ -10,7 +10,6 @@ use crate::src::screen_write::{
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::event::*;
@@ -18,10 +17,8 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::mouse::mouse_event;
-use crate::src::shared::pane::window_pane;
 use crate::src::shared::screen::{screen, MODE_CURSOR};
 use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::session;
 use crate::src::shared::time::tm;
 use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::src::style::style_apply_with_options;

@@ -1,10 +1,7 @@
 //! Authoritative key-code scalar domains.
 
-use super::abi::{size_t, u_int};
-use super::client::client;
 use super::command::cmd_list;
 use super::mouse::mouse_event;
-use crate::src::server_client::Client as _;
 use crate::src::shared::client::{ClientRef, ClientWeak};
 use std::time::{SystemTime, UNIX_EPOCH};
 // Underlying type of the historical 2,053-value anonymous KEYC enum.

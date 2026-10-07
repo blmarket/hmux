@@ -6,17 +6,13 @@ use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::compat::imsg::*;
 use crate::src::server::clients;
 use crate::src::server_client::Client;
-use crate::src::shared::abi::*;
-use crate::src::shared::arguments::{args, args_parse};
-use crate::src::shared::client::client;
+use crate::src::shared::arguments::args_parse;
 use crate::src::shared::client::ClientRef;
-use crate::src::shared::client::CLIENT_READONLY;
 use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
+use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::command::{
     CMD_CLIENT_TFLAG, CMD_FIND_CANFAIL, CMD_READONLY, CMD_TARGET_CLIENT_USAGE,
 };
-use crate::src::shared::session::session;
 pub static cmd_detach_client_entry: cmd_entry = {
     cmd_entry {
         name: c"detach-client",

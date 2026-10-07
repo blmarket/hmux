@@ -1,9 +1,8 @@
 use crate::src::log::log_cstr;
-use crate::src::server_client::Client as _;
 
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::format::FormatEntryState;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 // Private tree-storage implementation.  It owns the format-entry tree and
 // format-tree CRUD operations.
 // Shared C-layout types, allocator/FFI helpers, and callback-table symbols
@@ -281,6 +280,7 @@ pub unsafe fn format_add_owned_cb(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{Duration, UNIX_EPOCH};
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;
 

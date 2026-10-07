@@ -1,22 +1,17 @@
 use crate::src::arguments::args_has;
-use crate::src::cmd::queue::{cmdq_get_client, cmdq_get_event, cmdq_get_source, cmdq_get_target};
+use crate::src::cmd::queue::{cmdq_get_client, cmdq_get_event};
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry, cmd_mouse_pane};
 use crate::src::server_client::Client as _;
-use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_READONLY, CMD_TARGET_PANE_USAGE};
 use crate::src::shared::key::key_event;
 use crate::src::shared::key::*;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::winlink;
-use crate::src::tty::tty_window_offset;
 use crate::src::window::WindowPane;
 use crate::src::window_clock::window_clock_mode;
 use crate::src::window_copy::{

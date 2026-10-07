@@ -13,7 +13,7 @@ use crate::src::events_payload::{
     event_payload_set_uint, event_payload_set_window,
 };
 use crate::src::ffi::libc::{
-    memcpy, memset, strchr, strcmp, strlen, strncmp, strpbrk, strsep, strstr, strtol, time,
+    memcpy, strchr, strcmp, strlen, strncmp, strpbrk, strsep, strstr, strtol, time,
 };
 use crate::src::ffi::resolv::{__b64_ntop, __b64_pton};
 use crate::src::format::bytes::format_message_with;
@@ -27,7 +27,7 @@ use crate::src::log::{
     fatalx, log_byte, log_bytes, log_cstr, log_cstr_n, log_cstr_width, log_debug, log_hex,
 };
 use crate::src::options::options_owner_ptr;
-use crate::src::options::{options_get_number, options_get_only, options_set_number};
+use crate::src::options::{options_get_number, options_set_number};
 use crate::src::paste::{paste_add_owned, paste_buffer_data, paste_get_top};
 use crate::src::reactor::BufferEvent;
 use crate::src::reactor::{
@@ -58,7 +58,6 @@ use crate::src::server_client::Client as _;
 use crate::src::server_fn::{server_redraw_window_borders, server_status_window};
 use crate::src::session::Session as _;
 use crate::src::shared::client::ClientRef;
-use crate::src::shared::events::event_payload;
 use crate::src::shared::input::{input_request_clipboard_data, input_request_palette_data};
 use crate::src::shared::pane::pane_output_data as window_pane_get_new_data;
 use crate::src::style::colour::{
@@ -67,19 +66,17 @@ use crate::src::style::colour::{
 };
 use crate::src::text::utf8::{utf8_append, utf8_copy, utf8_isvalid, utf8_open, utf8_set};
 use crate::src::tmux::{get_timer, getversion, global_options, global_w_options};
-use crate::src::tty::{tty_default_colours, tty_putcode_ss, tty_puts, tty_set_selection};
+use crate::src::tty::{tty_default_colours, tty_set_selection};
 use crate::src::window::Window as _;
-use crate::src::window::{Window as _, WindowPane};
+use crate::src::window::WindowPane;
 use hmux_buffer::SegmentedBuf;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::time::Duration;
 
 use crate::src::shared::abi::*;
-use crate::src::shared::client::client;
 use crate::src::shared::client::CLIENT_UNATTACHEDFLAGS;
 use crate::src::shared::colour::COLOUR_FLAG_256;
-use crate::src::shared::colour::*;
 use crate::src::shared::command::cmd_find_state;
 use crate::src::shared::display::*;
 use crate::src::shared::event::*;
@@ -93,7 +90,7 @@ use crate::src::shared::input::{
     INPUT_BUF_DEFAULT_SIZE, INPUT_REQUEST_CLIPBOARD, INPUT_REQUEST_PALETTE, INPUT_REQUEST_QUEUE,
 };
 use crate::src::shared::limits::INT_MAX;
-use crate::src::shared::options::{options, options_entry};
+use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{
     PANE_ACTIVITY, PANE_CHANGED, PANE_CMDRUNNING, PANE_STYLECHANGED, PANE_THEMECHANGED,
@@ -107,12 +104,9 @@ use crate::src::shared::screen::{
     MODE_ORIGIN, MODE_SYNC, MODE_THEME_UPDATES, MODE_WRAP,
 };
 use crate::src::shared::screen_write::{screen_write_ctx, screen_write_init_ctx_cb};
-use crate::src::shared::session::session;
-use crate::src::shared::tty::TTY_STARTED;
 use crate::src::shared::tty::*;
 use crate::src::shared::utf8::*;
 use crate::src::shared::window::WINDOW_BELL;
-use crate::src::shared::window::{window, winlink};
 
 pub const INPUT_END_BEL: input_end_type = 1;
 pub const INPUT_END_ST: input_end_type = 0;

@@ -3,7 +3,6 @@ use super::*;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::window::WindowRef;
-use crate::src::window::Window as _;
 use std::time::SystemTime;
 
 /// Operations on the independent Session registry, including detached test heads.

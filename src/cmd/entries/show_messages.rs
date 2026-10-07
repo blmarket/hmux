@@ -7,19 +7,13 @@ use crate::src::format::{
 };
 use crate::src::job::job_print_summary;
 use crate::src::server::message_log;
-use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
-use crate::src::shared::client::client;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_TFLAG};
 use crate::src::shared::format::format_tree;
-use crate::src::shared::tty::tty_term;
-use crate::src::shared::tty::*;
 use crate::src::tty_term::tty_term_descriptions;
-use crate::src::tty_term::tty_term_owner_ptr;
-use crate::src::tty_term::{tty_term_describe, tty_term_ncodes};
 
 pub const SHOW_MESSAGES_TEMPLATE: &std::ffi::CStr = c"#{t/p:message_time}: #{message_text}";
 pub static cmd_show_messages_entry: cmd_entry = {

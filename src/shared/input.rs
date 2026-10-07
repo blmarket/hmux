@@ -7,9 +7,8 @@ use std::collections::VecDeque;
 use std::ffi::CString;
 
 use super::abi::{size_t, u_char, u_int, uint64_t};
-use super::client::client;
 use super::colour::colour_palette;
-use super::event::{bufferevent, Timer};
+use super::event::Timer;
 use super::grid::{grid_cell, utf8_data};
 use super::pane::window_pane;
 use super::screen_write::screen_write_ctx;

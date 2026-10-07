@@ -7,7 +7,6 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::log::{fatalx, log_cstr, log_debug, log_pointer};
 use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked};
-use crate::src::server_client::Client as _;
 use crate::src::server_client::Client;
 use crate::src::session::sessions;
 use crate::src::session::Session;
@@ -24,25 +23,20 @@ use crate::src::window::{
 };
 use crate::src::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
-use std::time::{Duration, UNIX_EPOCH};
-use std::{cell::UnsafeCell, rc::Rc};
+use std::rc::Rc;
 
 use crate::src::shared::abi::*;
-use crate::src::shared::client::client;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::command::{
     CMD_FIND_CANFAIL, CMD_FIND_DEFAULT_MARKED, CMD_FIND_EXACT_SESSION, CMD_FIND_EXACT_WINDOW,
     CMD_FIND_PREFER_UNATTACHED, CMD_FIND_QUIET, CMD_FIND_WINDOW_INDEX,
 };
-use crate::src::shared::environment::environ_entry;
-use crate::src::shared::key::key_event;
 use crate::src::shared::limits::INT_MAX;
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::session;
 use crate::src::shared::tree::{RB_INF, RB_NEGINF};
-use crate::src::shared::window::{window, winlink};
+use crate::src::shared::window::winlink;
 
 pub const _PATH_DEV: &std::ffi::CStr = c"/dev/";
 const cmd_find_window_table: &[(&CStr, &CStr)] = &[

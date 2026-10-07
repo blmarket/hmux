@@ -2,12 +2,9 @@
 use super::*;
 use crate::src::format::FormatValue;
 use crate::src::session::sessions;
-use crate::src::session::Session as _;
-use crate::src::session::SessionIndex as _;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::tty::{TERM_256COLOURS, TERM_RGBCOLOURS};
 use crate::src::tty_term::{tty_term_number, tty_term_owner_ptr};
-use std::cell::UnsafeCell;
 use std::rc::Rc;
 
 pub(super) unsafe fn value(

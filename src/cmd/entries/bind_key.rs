@@ -10,7 +10,7 @@ use crate::src::shared::arguments::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::CMD_AFTERHOOK;
 use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_list, cmdq_item};
+use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
 use crate::src::shared::key::*;
 use std::ffi::CStr;

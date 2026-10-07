@@ -7,15 +7,11 @@ use crate::src::format::{
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
-use crate::src::shared::client::client;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_STARTSERVER};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::FORMAT_NONE;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::session;
-use crate::src::shared::window::winlink;
 use std::ffi::CStr;
 
 pub const LIST_COMMANDS_TEMPLATE: &std::ffi::CStr =

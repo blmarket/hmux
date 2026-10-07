@@ -1,25 +1,21 @@
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target};
+use crate::src::cmd::queue::{cmdq_error, cmdq_get_client};
 use crate::src::format::{
     format_create_with_client, format_defaults, format_expand_cstring, format_free, format_true,
 };
 use crate::src::server_client::Client as _;
 use crate::src::shared::client::ClientRef;
-use crate::src::window::Window as _;
 
 use crate::src::server_fn::{server_kill_pane, server_redraw_window};
-use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
-use crate::src::shared::client::client;
 use crate::src::shared::command::CMD_AFTERHOOK;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::format::FORMAT_NONE;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::winlink;
 use crate::src::window::Window;

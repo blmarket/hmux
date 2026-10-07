@@ -5,7 +5,6 @@ use super::*;
 use crate::src::control::{control_get_window_size, control_write_output};
 use crate::src::reactor::BufferEvent;
 use crate::src::session::Session;
-use crate::src::session::SessionIndex as _;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::control::control_state;
 use crate::src::shared::environment::environ;
@@ -1405,8 +1404,9 @@ mod tests {
         }
     }
     use super::*;
-    use crate::src::shared::terminal::termios;
-    use std::cell::Cell;
+    use crate::src::shared::screen::screen;
+    
+    
 
     #[test]
     fn source_file_reservations_preserve_limit_and_explicit_completion() {

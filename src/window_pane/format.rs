@@ -2,7 +2,6 @@
 use super::*;
 use crate::src::cmd::cmd_stringify_argv_cstring;
 use crate::src::ffi::libc::time;
-use crate::src::format::bytes::xformat;
 use crate::src::format::format_quote_shell_single;
 use crate::src::format::C2RustUnnamed_43;
 use crate::src::format::{format_tree, FormatValue, FORMAT_TYPE_PANE};

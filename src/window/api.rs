@@ -6,11 +6,9 @@
 //! let references or pointers escape.
 
 use super::*;
-use crate::src::server_client::Client as _;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_RESIZE};
-use crate::src::window_pane::WindowPane as _;
 use std::time::{Duration, Instant, SystemTime};
 
 /// Operations on independently movable registry heads. Entries remain weak;
@@ -813,6 +811,7 @@ unsafe fn resize_window(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::src::options::options_create;
 
     #[test]
     fn fill_rendering_keeps_inside_outside_formats_and_composes_border_style() {

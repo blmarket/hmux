@@ -1,9 +1,7 @@
 //! Authoritative redraw model declarations.
 
 use super::abi::{u_int, uint64_t};
-use super::client::client;
 use super::pane::window_pane;
-use super::window::window;
 use crate::src::shared::client::ClientWeak;
 use crate::src::shared::window::WindowWeak;
 use std::{cell::UnsafeCell, rc::Weak};

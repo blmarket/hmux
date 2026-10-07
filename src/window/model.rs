@@ -1,18 +1,10 @@
 //! Window storage is private to its implementation.
 use crate::src::shared::abi::{u_int, uint64_t};
-use crate::src::shared::arguments::args;
-use crate::src::shared::client::client;
-use crate::src::shared::client::{ClientRef, ClientWeak};
-use crate::src::shared::command::{cmd_find_state, cmdq_item};
+use crate::src::shared::client::ClientWeak;
 use crate::src::shared::event::Timer;
-use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::grid_cell;
-use crate::src::shared::key::key_code;
-use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::options::options;
-use crate::src::shared::pane::{window_pane, window_pane_history, window_panes, PANE_MINIMUM};
-use crate::src::shared::screen::screen;
-use crate::src::shared::session::session;
+use crate::src::shared::pane::{window_pane, window_pane_history, window_panes};
 use crate::src::shared::window::WindowRef;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 

@@ -7,9 +7,8 @@ use crate::src::format::{format_create, format_free, format_single_cstring};
 use crate::src::grid::grid_default_cell;
 use crate::src::hyperlinks::{hyperlinks_get, hyperlinks_put, HyperlinksRef};
 use crate::src::log::{fatalx, log_cstr, log_debug};
-use crate::src::options::{options_get_string, options_string_to_style};
+use crate::src::options::options_string_to_style;
 use crate::src::shared::abi::*;
-pub use crate::src::shared::client::client;
 pub use crate::src::shared::command::cmdq_item;
 pub use crate::src::shared::environment::environ;
 pub use crate::src::shared::format::FORMAT_NOJOBS;
@@ -21,14 +20,11 @@ pub use crate::src::shared::limits::UINT_MAX;
 pub use crate::src::shared::mouse::mouse_event;
 pub use crate::src::shared::options::options_table_entry;
 pub use crate::src::shared::options::{options, options_entry};
-pub use crate::src::shared::pane::window_pane;
 pub use crate::src::shared::pane::{
     PANE_SCROLLBARS_CHARACTER, PANE_SCROLLBARS_DEFAULT_PADDING, PANE_SCROLLBARS_DEFAULT_WIDTH,
 };
-pub use crate::src::shared::session::session;
 use crate::src::shared::style::*;
 pub use crate::src::shared::tty::tty_term;
-pub use crate::src::shared::window::winlink;
 use crate::src::style::attributes::{attributes_format, attributes_parse_cstr};
 use crate::src::style::colour::{colour_format, colour_parse_cstr};
 use crate::src::text::utf8::utf8_set;

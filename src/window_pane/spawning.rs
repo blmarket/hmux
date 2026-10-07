@@ -1,95 +1,75 @@
 //! Pane process creation and editor completion keep storage inside its owner.
 use super::{
-    window_pane_create, window_pane_index, window_pane_reset_mode_all, window_pane_resize,
+    window_pane_create, window_pane_index, window_pane_reset_mode_all,
     window_pane_set_cwd, window_pane_set_event, window_pane_set_shell,
 };
 use crate::src::cmd::find::cmd_find_from_winlink_pane;
-use crate::src::cmd::queue::{cmdq_get_client, cmdq_get_target};
+use crate::src::cmd::queue::cmdq_get_client;
 use crate::src::cmd::{cmd_log_argv, cmd_stringify_argv_cstring};
 use crate::src::compat::fdforkpty::fdforkpty;
 use crate::src::compat::stdio::CFile;
 use crate::src::compat::systemd::systemd_move_to_new_cgroup;
 use crate::src::control::control_reset_pane;
 use crate::src::environ::{
-    environ_copy, environ_create, environ_find, environ_for_session, environ_log, environ_push,
+    environ_copy, environ_for_session, environ_log, environ_push,
     environ_set,
 };
-use crate::src::events::{events_fire, events_fire_window, events_fire_winlink};
+use crate::src::events::{events_fire, events_fire_window};
 use crate::src::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_session,
     event_payload_set_string, event_payload_set_target, event_payload_set_window,
 };
 use crate::src::ffi::libc::{
-    __errno_location, _exit, chdir, execl, execvp, fdopen, fopen, fread, fseeko, ftello, fwrite,
-    getcwd, getpid, kill, memcpy, memset, mkstemp, sigfillset, sigprocmask, strerror, strrchr,
-    unlink,
+    __errno_location, _exit, chdir, execl, execvp, fopen, fread, fseeko, ftello,
+    getcwd, getpid, kill, memset, sigfillset, sigprocmask, strerror, strrchr,
 };
 use crate::src::ffi::utempter::utempter_add_record;
 use crate::src::format::bytes::write_cstr;
-use crate::src::format::bytes::xformat;
 use crate::src::format::format_single_cstring;
 use crate::src::input::input_free;
-use crate::src::log::{log_close, log_cstr, log_debug, log_hex};
-use crate::src::names::default_window_name_cstring;
-use crate::src::options::options_owner_ptr;
+use crate::src::log::{log_close, log_cstr, log_debug};
 use crate::src::options::{options_get_number, options_get_string, options_set_number};
 use crate::src::proc::proc_clear_signals;
 use crate::src::reactor::BufferEvent;
-use crate::src::resize::default_window_size;
 use crate::src::screen::screen_reinit;
 use crate::src::server::clients;
 use crate::src::server::server_proc;
-use crate::src::server_client::Client as _;
 use crate::src::server_client::Client;
-use crate::src::session::SessionIndex as _;
 use crate::src::window::Window as _;
 
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
-use crate::src::shared::events::event_payload;
 use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::window::WindowRef;
 use crate::src::tmux::{checkshell, find_home_cstr, global_options, ptm_fd};
 
-use crate::src::window::{
-    winlink_add, winlink_find_by_index, winlink_remove, winlink_set_window, winlink_stack_remove,
-};
-use crate::src::window_border::window_set_fill_cells;
 use crate::src::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};
 
 use crate::src::shared::abi::__off_t;
 use crate::src::shared::abi::*;
-use crate::src::shared::client::client;
 use crate::src::shared::client::CLIENT_CONTROL;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
-use crate::src::shared::environment::{environ, environ_entry};
-use crate::src::shared::event::*;
-use crate::src::shared::input::input_ctx;
 use crate::src::shared::key::*;
-use crate::src::shared::layout::layout_geometry;
 use crate::src::shared::limits::SIZE_MAX;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{PANE_EMPTY, PANE_EXITED, PANE_STATUSDRAWN, PANE_STATUSREADY};
 use crate::src::shared::posix_io::{_PATH_BSHELL, STDERR_FILENO, STDIN_FILENO};
 use crate::src::shared::posix_terminal::{winsize, TCSANOW, VERASE};
 use crate::src::shared::screen::{MODE_CRLF, MODE_CURSOR};
-use crate::src::shared::session::session;
 use crate::src::shared::signal::{__sigset_t, sigset_t, SIGCHLD, SIGHUP, SIG_BLOCK, SIG_SETMASK};
-use crate::src::shared::spawn::{spawn_editor_state, spawn_finish_edit_cb};
+use crate::src::shared::spawn::spawn_editor_state;
 use crate::src::shared::spawn::{
     SPAWN_BEFORE, SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_KILL, SPAWN_NONOTIFY, SPAWN_RESPAWN,
 };
 use crate::src::shared::stdio::FILE;
 use crate::src::shared::terminal::*;
-use crate::src::shared::window::WINLINK_ALERTFLAGS;
-use crate::src::shared::window::{window, winlink};
 
-use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 
-use crate::src::shared::spawn::{EditorHandle, EditorId};
+use crate::src::shared::spawn::EditorHandle;
 use crate::src::spawn::{
-    off_t, set_spawn_cause, spawn_editor, spawn_editor_fdopen, spawn_editor_finish, spawn_log,
+    off_t, set_spawn_cause, spawn_log,
     uintmax_t, _PATH_DEFPATH, IUTF8, SEEK_END, SEEK_SET,
 };
 unsafe fn spawn_fire_pane_created(
@@ -832,6 +812,9 @@ pub(super) unsafe fn install_editor(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::src::ffi::libc::{fwrite, mkstemp};
+    use crate::src::shared::spawn::spawn_finish_edit_cb;
+    use crate::src::spawn::{spawn_editor_fdopen, spawn_editor_finish};
     use crate::src::ffi::libc::fclose;
     use crate::src::shared::spawn::EditorHandle;
     use std::ffi::CStr;

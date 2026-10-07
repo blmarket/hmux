@@ -2,8 +2,6 @@
 use super::*;
 use crate::src::server::clients;
 use crate::src::server_client::Client;
-use crate::src::shared::client::CLIENT_UNATTACHEDFLAGS;
-use crate::src::shared::session::SessionRef;
 
 /// Publish the Session-owned state used by the subsequent client/window sizing
 /// passes. A removed Session can still be retained by a closing client: preserve

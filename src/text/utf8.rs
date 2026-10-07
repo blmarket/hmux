@@ -1,11 +1,9 @@
 use crate::src::compat::utf8proc::utf8proc_wcwidth;
 use crate::src::ffi::vis::{is_alpha, vis_into};
 use crate::src::log::{fatalx, log_bytes, log_debug};
-use crate::src::options::options_array_item_value;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
-use crate::src::shared::options::{options_array_item, options_entry};
 use crate::src::shared::utf8::wchar_t;
 use crate::src::shared::utf8::*;
 use crate::src::shared::vis::VIS_DQ;

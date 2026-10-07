@@ -9,21 +9,17 @@ use crate::src::paste::paste_set_owned;
 use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
 
 use crate::src::server_client::Client as _;
-use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
-use crate::src::shared::client::CLIENT_DEAD;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_TFLAG};
-use crate::src::shared::event::*;
 use crate::src::tty::tty_set_selection;
 use hmux_buffer::SegmentedBuf;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
-use std::rc::{Rc, Weak};
+use std::rc::Weak;
 
 #[repr(C)]
 pub struct cmd_load_buffer_data {

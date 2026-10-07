@@ -9,14 +9,13 @@ use crate::src::shared::grid::*;
 use crate::src::shared::screen::screen;
 use crate::src::shared::tty::TTY_NOCURSOR;
 use crate::src::shared::tty::*;
-use crate::src::shared::tty::{tty, tty_style_ctx};
+use crate::src::shared::tty::tty_style_ctx;
 use crate::src::tty::{
     terminal_set, terminal_term, terminal_value, tty_attributes, tty_check_codeset, tty_cursor,
     tty_default_attributes, tty_fake_bce, tty_margin_off, tty_putc, tty_putcode, tty_putcode_i,
     tty_putn, tty_region_off, tty_repeat_space, tty_update_mode,
 };
 use crate::src::tty_term::tty_term_has;
-use crate::src::tty_term::tty_term_owner_ptr;
 
 pub type tty_draw_line_state = ::core::ffi::c_uint;
 pub const TTY_DRAW_LINE_DONE: tty_draw_line_state = 6;

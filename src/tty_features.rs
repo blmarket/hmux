@@ -2,7 +2,6 @@ use crate::src::ffi::libc::{strcasecmp, strcmp, strlen, strsep};
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::tty::tty_term;
 use crate::src::shared::tty::{

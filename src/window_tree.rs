@@ -17,8 +17,6 @@ use crate::src::mode_tree::{
     mode_tree_view_name,
 };
 use crate::src::options::options_get_string;
-use crate::src::options::options_owner_ptr;
-use crate::src::osdep_linux::osdep_get_name_cstring;
 use crate::src::resize::recalculate_sizes;
 use crate::src::screen_write::{
     screen_write_box, screen_write_clearcharacter, screen_write_cursormove, screen_write_hline,
@@ -31,11 +29,9 @@ use crate::src::server_fn::{
 };
 use crate::src::session::session_group_synchronize_from;
 use crate::src::session::Session;
-use crate::src::session::SessionIndex as _;
 use crate::src::shared::abi::__int32_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
@@ -50,27 +46,24 @@ use crate::src::shared::mode_tree::{
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::PANE_REDRAW;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{
     prompt_result, PROMPT_ACCEPT, PROMPT_CLOSE, PROMPT_NOFORMAT, PROMPT_SINGLE,
 };
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::session;
 use crate::src::shared::session::session_group;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
 use crate::src::shared::style::*;
 use crate::src::shared::tree::RB_NEGINF;
-use crate::src::shared::window::{window, window_mode, window_mode_entry, winlink};
+use crate::src::shared::window::{window_mode, window_mode_entry, winlink};
 use crate::src::sort::{
     sort_get_panes_window, sort_get_sessions, sort_get_winlinks_session,
     sort_would_window_tree_swap,
 };
 use crate::src::style::style_apply_with_options;
-use crate::src::window::Window as _;
 use crate::src::window::Window;
 use crate::src::window::WindowPane;
 use crate::src::window::{winlink_count, winlink_find_by_index, winlinks_minmax, winlinks_next};

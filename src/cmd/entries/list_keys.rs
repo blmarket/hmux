@@ -13,7 +13,6 @@ use crate::src::options::options_get_number;
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_CONTROL;
 use crate::src::shared::command::*;
@@ -26,11 +25,8 @@ use crate::src::shared::format::FORMAT_NONE;
 use crate::src::shared::key::KEY_BINDING_REPEAT;
 use crate::src::shared::key::*;
 use crate::src::shared::key::{key_binding, key_table};
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::session;
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::sort::*;
-use crate::src::shared::window::winlink;
 use crate::src::sort::{
     sort_get_key_bindings, sort_get_key_bindings_table, sort_order_from_string,
 };

@@ -14,7 +14,6 @@ use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
 use crate::src::shared::colour::COLOUR_FLAG_256;
 use crate::src::shared::command::cmdq_item;
-use crate::src::shared::command::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::limits::{INT_MIN, SHRT_MAX};
 use crate::src::shared::pane::window_pane;

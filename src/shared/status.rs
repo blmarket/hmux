@@ -1,7 +1,6 @@
 //! Authoritative status model declarations.
 
 use super::abi::u_int;
-use super::client::client;
 use super::event::Timer;
 use super::grid::grid_cell;
 use super::prompt::{prompt_key_result, prompt_result};

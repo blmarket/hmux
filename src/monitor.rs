@@ -20,13 +20,11 @@ pub use crate::src::shared::monitor::{
     MONITOR_NOTIFY_TRUE, MONITOR_PANE, MONITOR_SESSION, MONITOR_WINDOW,
 };
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::window::winlink;
 use crate::src::window::Window as _;
-use crate::src::window::WindowIndex as _;
-use crate::src::window::{winlinks_minmax, winlinks_next, Window as _};
+use crate::src::window::{winlinks_minmax, winlinks_next};
 use crate::src::window_pane::WindowPane as _;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};

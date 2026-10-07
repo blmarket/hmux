@@ -10,7 +10,6 @@ use crate::src::screen_write::{
 };
 use crate::src::shared::abi::*;
 use crate::src::shared::grid::*;
-use crate::src::shared::pane::window_pane;
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
 use crate::src::shared::style::*;

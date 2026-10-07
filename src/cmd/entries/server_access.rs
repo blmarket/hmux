@@ -8,20 +8,15 @@ use crate::src::server_acl::{
     server_acl_allow, server_acl_allow_write, server_acl_deny, server_acl_deny_write,
     server_acl_display, server_acl_find,
 };
-use crate::src::server_client::Client as _;
 use crate::src::shared::abi::id_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::account::{group, passwd};
 use crate::src::shared::arguments::{args, args_parse};
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_CLIENT_CANFAIL;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
-use crate::src::shared::pane::window_pane;
 use crate::src::shared::server_acl::SERVER_ACL_IS_GROUP;
-use crate::src::shared::session::session;
-use crate::src::shared::window::winlink;
 pub static cmd_server_access_entry: cmd_entry = {
     cmd_entry {
         name: c"server-access",

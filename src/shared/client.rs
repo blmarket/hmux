@@ -2,10 +2,6 @@
 use std::cell::UnsafeCell;
 use std::rc::Rc;
 
-use super::abi::u_int;
-use super::display::visible_ranges;
-use super::key::key_event;
-use super::screen::ScreenMode;
 pub type client_exit_type = ::core::ffi::c_uint;
 
 pub const CLIENT_EXIT_DETACH: client_exit_type = 2;

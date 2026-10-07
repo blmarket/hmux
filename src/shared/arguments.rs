@@ -1,10 +1,8 @@
 //! Authoritative argument storage, parsing callbacks, and scalar domains.
 
 use super::abi::{u_char, u_int};
-use super::client::client;
 use super::command::{cmd_list, cmd_parse_input};
 use crate::src::shared::client::ClientRef;
-use std::cell::UnsafeCell;
 use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;

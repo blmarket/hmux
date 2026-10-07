@@ -1,15 +1,13 @@
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::cmd_find_from_winlink_pane;
-use crate::src::cmd::queue::{cmdq_get_state_owned, cmdq_get_target};
+use crate::src::cmd::queue::cmdq_get_state_owned;
 use crate::src::server_fn::server_redraw_window;
-use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::window::winlink;
 use crate::src::window::Window as _;
-use crate::src::window_pane::WindowPane as _;
 use std::rc::Rc;
 pub static cmd_rotate_window_entry: cmd_entry = {
     cmd_entry {

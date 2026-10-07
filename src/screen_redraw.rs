@@ -1,13 +1,8 @@
-use crate::src::ffi::libc::{memcpy, memset};
+use crate::src::ffi::libc::memcpy;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_create_defaults, format_free};
-use crate::src::grid::grid_default_cell;
 use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
 use crate::src::options::options_get_number;
-use crate::src::options::options_owner_ptr;
-use crate::src::prompt::prompt_draw;
-use crate::src::screen::{screen_free, screen_init};
-use crate::src::screen_write::{screen_write_start, screen_write_stop};
 use crate::src::server::{marked_pane, server_is_marked};
 use crate::src::server_client::Client as _;
 use crate::src::session::Session;
@@ -16,60 +11,44 @@ use crate::src::shared::borders::{
     CELL_LD, CELL_LR, CELL_LRD, CELL_LRU, CELL_LRUD, CELL_LU, CELL_RD, CELL_RU, CELL_UD, CELL_ULD,
     CELL_URD,
 };
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::{
     CLIENT_REDRAWBORDERS, CLIENT_REDRAWSTATUS, CLIENT_REDRAWWINDOW, CLIENT_SUSPENDED, CLIENT_UTF8,
 };
-use crate::src::shared::colour::*;
-use crate::src::shared::command::cmdq_item;
-use crate::src::shared::display::{visible_range, visible_ranges};
 use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::SIZE_MAX;
-use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{
     PANE_BORDER_ARROWS, PANE_BORDER_BOTH, PANE_BORDER_COLOUR, PANE_SCROLLBARS_LEFT,
     PANE_STATUS_OFF, PANE_STATUS_TOP,
 };
-use crate::src::shared::prompt::prompt_draw_data;
 use crate::src::shared::redraw::{
     redraw_line, redraw_scene, redraw_span, redraw_span_data, redraw_span_type, redraw_spans,
     RedrawBorderSpan, RedrawStatusSpan,
 };
-use crate::src::shared::screen::{screen, CURSOR_MODES, MODE_SYNC};
-use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::session;
+use crate::src::shared::screen::CURSOR_MODES;
 use crate::src::shared::session::SessionRef;
-use crate::src::shared::style::*;
-use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::tty::*;
-use crate::src::shared::tty::{tty, tty_style_ctx};
-use crate::src::shared::window::window;
 use crate::src::shared::window::WindowRef;
-use crate::src::shared::window::WINDOW_PANE_NO_MODE;
 use crate::src::status::{
     status_line_size, status_message_redraw, status_prompt_redraw, status_redraw,
 };
 use crate::src::style::style_apply_with_options;
 use crate::src::text::utf8::utf8_set;
 use crate::src::tty::{
-    tty_cell, tty_cursor, tty_default_colours, tty_puts, tty_reset, tty_sync_start,
-    tty_update_mode, tty_window_offset,
+    tty_cell, tty_cursor, tty_puts, tty_reset, tty_sync_start,
+    tty_update_mode,
 };
-use crate::src::tty_draw::tty_draw_line;
 use crate::src::tty_term::tty_term_has;
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::window::windows;
 use crate::src::window::Window as _;
 use crate::src::window::WindowIndex as _;
-use std::ffi::CStr;
 
 use crate::src::window::WindowPane;
 use crate::src::window_border::{window_get_border_cell, window_get_fill_cell};
-use crate::src::window_copy::window_copy_get_current_offset;
 use std::cell::RefCell;
 
 pub const REDRAW_SPAN_SCROLLBAR: redraw_span_type = 5;

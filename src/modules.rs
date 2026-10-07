@@ -7,6 +7,7 @@ pub mod cfg;
 pub mod client;
 pub mod cmd;
 pub mod ffi;
+#[allow(unused_imports)]
 pub mod compat {
     pub mod fdforkpty;
     pub mod getopt_long;

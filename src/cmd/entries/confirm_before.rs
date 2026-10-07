@@ -1,24 +1,21 @@
 use crate::src::arguments::{args_get, args_has, args_make_commands_now};
 use crate::src::cmd::queue::{
-    cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_state,
-    cmdq_get_target, cmdq_get_target_client, cmdq_insert_after,
+    cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_target_client, cmdq_insert_after,
 };
 use crate::src::cmd::{cmd_get_args_mut, cmd_list_first};
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
 use crate::src::shared::arguments::{args, args_parse};
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_DEAD;
 use crate::src::shared::command::CMD_CLIENT_TFLAG;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{
-    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_item, cmdq_state,
+    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmd_list, cmdq_item,
 };
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{prompt_result, PROMPT_CLOSE, PROMPT_SINGLE};
-use crate::src::shared::rc;
 use crate::src::status::status_prompt_set;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};

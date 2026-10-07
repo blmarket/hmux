@@ -5,7 +5,7 @@ use crate::src::cmd::queue::{
 };
 use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
 use crate::src::ffi::libc::{
-    __ctype_tolower_loc, __ctype_toupper_loc, memcpy, memset, strcasestr, strlen, strstr,
+    __ctype_tolower_loc, memcpy, strcasestr, strstr,
 };
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_add, format_create_defaults, format_expand_cstring, format_free};
@@ -25,33 +25,25 @@ use crate::src::screen_write::{
     screen_write_stop,
 };
 use crate::src::server_client::Client as _;
-use crate::src::server_fn::server_redraw_window;
 use crate::src::session::Session as _;
 use crate::src::shared::abi::__int32_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
-use crate::src::shared::client::{client, CLIENT_DEAD};
-use crate::src::shared::client::{ClientRef, ClientWeak};
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_CYAN};
-use crate::src::shared::command::cmd_parse_input;
 use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd_find_state, cmdq_item};
-use crate::src::shared::display::*;
+use crate::src::shared::command::cmd_find_state;
 use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
-use crate::src::shared::key::key_event;
 use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::mode_tree::{
-    mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_height_cb, mode_tree_help_cb,
-    mode_tree_help_info, mode_tree_item, mode_tree_key_cb, mode_tree_line, mode_tree_list,
+    mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_height_cb, mode_tree_help_cb, mode_tree_item, mode_tree_key_cb, mode_tree_line, mode_tree_list,
     mode_tree_prompt, mode_tree_prompt_input_cb, mode_tree_search_cb, mode_tree_search_dir,
     mode_tree_sort_cb, mode_tree_swap_cb, ModeTreeItemData, ModeTreeItemRef,
 };
 use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
-use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::src::shared::prompt::{
@@ -60,11 +52,8 @@ use crate::src::shared::prompt::{
 };
 use crate::src::shared::screen::{screen, MODE_CURSOR};
 use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::session;
-use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::style::*;
 
-use crate::src::shared::window::{window, winlink};
 use crate::src::sort::{sort_next_order, sort_order_from_string, sort_order_to_string};
 use crate::src::status::status_message_set;
 use crate::src::style::style_apply_with_options;
@@ -2278,7 +2267,7 @@ unsafe fn mode_tree_test_row(mtd: *mut mode_tree_data) -> ModeTreeItemRef {
 #[cfg(test)]
 mod mode_tree_tests {
     use super::*;
-    use crate::src::shared::sort::sort_criteria;
+    
 
     #[test]
     fn child_owners_preserve_search_order_and_survive_removal() {
@@ -2614,8 +2603,8 @@ mod mode_prompt_data_tests {
 mod queued_prompt_accept_tests {
     use super::*;
 
-    use crate::src::shared::rc;
-    use std::ptr::NonNull;
+    
+    
 
     #[test]
     fn observed_prompt_callbacks_retain_only_during_live_dispatch() {

@@ -16,23 +16,18 @@ use crate::src::server_client::Client as _;
 use crate::src::server_fn::{
     server_redraw_session, server_redraw_session_group, server_status_session_group,
 };
-use crate::src::session::SessionIndex as _;
 
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::{args, args_parse, args_value};
-use crate::src::shared::client::client;
+use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_FIND_WINDOW_INDEX;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
-use crate::src::shared::environment::environ;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::session;
 use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::spawn::{SPAWN_DETACHED, SPAWN_EMPTY, SPAWN_KILL};
 use crate::src::shared::tree::RB_NEGINF;
-use crate::src::shared::window::{window, winlink};
+use crate::src::shared::window::winlink;
 use crate::src::spawn::spawn_window;
 use crate::src::tmux::{check_name, clean_name_cstring};
 use crate::src::window::Window as _;

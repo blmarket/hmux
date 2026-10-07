@@ -16,11 +16,10 @@ use crate::src::server_client::Client as _;
 use crate::src::server_fn::{server_redraw_client, server_status_client};
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::{args, args_parse, args_value};
-use crate::src::shared::client::client;
+use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::{
-    CLIENT_CONTROL, CLIENT_SIZECHANGED, CLIENT_STATUSFORCE, CLIENT_WINDOWSIZECHANGED,
+    CLIENT_CONTROL, CLIENT_STATUSFORCE, CLIENT_WINDOWSIZECHANGED,
 };
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
@@ -28,10 +27,8 @@ use crate::src::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_TFLAG};
 use crate::src::shared::layout::Direction;
 use crate::src::shared::limits::INT_MAX;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::tty::tty;
-use crate::src::shared::window::window;
 use crate::src::shared::window::{WINDOW_MAXIMUM, WINDOW_MINIMUM};
-use crate::src::tty::{tty_clipboard_query, tty_set_size, tty_update_client_offset};
+use crate::src::tty::{tty_clipboard_query, tty_update_client_offset};
 use crate::src::tty_keys::tty_keys_colours;
 use crate::src::window_pane::WindowPane as _;
 use std::ffi::{CStr, CString};

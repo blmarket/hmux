@@ -10,13 +10,11 @@ use crate::src::reactor::{evbuffer_add, evbuffer_new};
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_CONTROL;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_BUFFER_USAGE};
-use crate::src::shared::event::*;
 use crate::src::shared::posix_io::{O_APPEND, O_TRUNC};
 use std::ffi::CStr;
 pub static cmd_save_buffer_entry: cmd_entry = {

@@ -2,7 +2,7 @@ use crate::src::ffi::libc::{environ, fnmatch, free, getpid, setenv};
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{log_cstr, log_debug};
-use crate::src::options::{options_array_item_value, options_get_string};
+use crate::src::options::options_get_string;
 use crate::src::session::Session;
 use crate::src::shared::session::SessionRef;
 use crate::src::tmux::{getversion, global_environ, global_options, socket_path};
@@ -117,8 +117,7 @@ pub fn environ_iter(env: &environ) -> impl Iterator<Item = &environ_entry> {
 use crate::src::shared::abi::*;
 pub use crate::src::shared::environment::ENVIRON_HIDDEN;
 pub use crate::src::shared::environment::{environ, environ_entry};
-use crate::src::shared::options::{options, options_array_item, options_entry, options_value};
-use crate::src::shared::session::session;
+use crate::src::shared::options::options;
 
 pub fn environ_create() -> Box<environ> {
     Box::default()

@@ -2,11 +2,9 @@
 use crate::src::window_pane::WindowPane as _;
 
 use super::abi::pid_t;
-use super::client::client;
 use super::command::cmdq_item;
 use super::environment::environ;
 use super::pane::window_pane;
-use super::session::session;
 use super::window::winlink;
 use crate::src::shared::client::ClientWeak;
 use crate::src::shared::session::SessionWeak;

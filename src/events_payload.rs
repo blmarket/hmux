@@ -6,28 +6,21 @@ use crate::src::cmd::find::{
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_add;
-use crate::src::log::{fatalx, log_cstr, log_cstr_n, log_debug};
+use crate::src::log::{log_cstr, log_cstr_n, log_debug};
 use crate::src::reactor::{
-    evbuffer_add, evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
+    evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup,
 };
-use crate::src::session::Session as _;
-use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::cmd_find_state;
-use crate::src::shared::event::*;
 use crate::src::shared::events::{
     event_payload, event_payload_item, event_payload_tree, event_payload_type,
     EventPayloadIdentity, EventPayloadValue,
 };
 use crate::src::shared::format::format_tree;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
-use crate::src::shared::window::{window, winlink};
-use crate::src::window::Window as _;
 use crate::src::window::{winlink_find_by_index, Window};
 use crate::src::{server_client::Client, session::Session, window::WindowPane};
 use hmux_buffer::SegmentedBuf;
@@ -492,8 +485,8 @@ pub unsafe fn event_payload_get_identity(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::reactor::evbuffer_add;
-    use std::ffi::{CStr, CString};
+    
+    use std::ffi::CString;
 
     #[test]
     fn replacement_accepts_the_previous_items_borrowed_name() {

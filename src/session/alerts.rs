@@ -4,15 +4,11 @@ use crate::src::events::events_fire_winlink;
 use crate::src::server::clients;
 use crate::src::server_client::Client;
 use crate::src::server_fn::server_status_session;
-use crate::src::shared::alerts::{ALERT_ANY, ALERT_CURRENT, ALERT_OTHER, VISUAL_BOTH, VISUAL_OFF};
-use crate::src::shared::client::{client, CLIENT_CONTROL};
-use crate::src::shared::tty::TTYC_BEL;
+use crate::src::shared::alerts::{ALERT_ANY, ALERT_CURRENT, ALERT_OTHER};
 use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{
     WINDOW_ACTIVITY, WINDOW_BELL, WINDOW_SILENCE, WINLINK_ACTIVITY, WINLINK_BELL, WINLINK_SILENCE,
 };
-use crate::src::status::status_message_set;
-use crate::src::tty::tty_putcode;
 use crate::src::window::Window;
 
 const SESSION_ALERTED: ::core::ffi::c_int = 0x1;

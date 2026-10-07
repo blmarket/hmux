@@ -1,6 +1,6 @@
 use crate::src::arguments::args_has;
 use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_source, cmdq_get_target};
+use crate::src::cmd::queue::cmdq_error;
 use crate::src::resize::recalculate_sizes;
 use crate::src::server::marked_pane;
 use crate::src::server_fn::server_redraw_session_group;
@@ -11,10 +11,9 @@ use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_FIND_DEFAULT_MARKED};
-use crate::src::shared::session::session;
 use crate::src::shared::session::session_group;
 use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::{window, winlink};
+use crate::src::shared::window::winlink;
 use crate::src::window::Window as _;
 
 pub static cmd_swap_window_entry: cmd_entry = {

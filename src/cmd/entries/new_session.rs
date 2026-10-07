@@ -3,22 +3,19 @@ use crate::src::cfg::{cfg_finished, cfg_show_causes};
 use crate::src::cmd::entries::attach_session::cmd_attach_session;
 use crate::src::cmd::find::cmd_find_from_session;
 use crate::src::cmd::queue::{
-    cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned, cmdq_get_target,
+    cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned,
     cmdq_insert_hook, cmdq_print,
 };
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
-use crate::src::compat::imsg::*;
 use crate::src::compat::strtonum::strtonum;
 use crate::src::environ::{environ_create, environ_put, environ_update};
 use crate::src::events::events_fire_session;
 use crate::src::ffi::libc::{sscanf, strcmp};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
-use crate::src::log::fatal;
 use crate::src::options::{
-    options_create, options_get_number, options_get_string, options_set_string,
+    options_get_number, options_get_string, options_set_string,
 };
-use crate::src::proc::proc_send;
 use crate::src::server_client::Client as _;
 
 use crate::src::session::Session;
@@ -26,8 +23,7 @@ use crate::src::session::{
     session_group_add, session_group_find, session_group_new, session_group_synchronize_to,
 };
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::{args, args_parse, args_value};
-use crate::src::shared::client::client;
+use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::{CLIENT_ATTACHED, CLIENT_CONTROL};
 use crate::src::shared::command::*;
@@ -38,15 +34,12 @@ use crate::src::shared::command::{
 use crate::src::shared::environment::environ;
 use crate::src::shared::limits::USHRT_MAX;
 use crate::src::shared::options::options;
-use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::session;
 use crate::src::shared::session::session_group;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::spawn::spawn_context;
 use crate::src::shared::terminal::*;
 use crate::src::shared::tree::RB_NEGINF;
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
-use crate::src::shared::window::{window, winlink};
 use crate::src::spawn::spawn_window;
 use crate::src::text::utf8::utf8_stravis_cstring;
 use crate::src::tmux::{check_name, clean_name_cstring, global_s_options};

@@ -1,11 +1,5 @@
-use crate::src::options::options_owner_ptr;
-use crate::src::server_client::Client as _;
-use crate::src::session::SessionIndex as _;
-use crate::src::shared::client::client_handle;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::SessionRef;
-use crate::src::tty_term::tty_term_owner_ptr;
-use crate::src::window::Window as _;
 // Private expression parser/evaluator.  The modifier parser, loops,
 // conditionals, escaping, job expansion, and recursive expansion routines
 // remain in their original order. The

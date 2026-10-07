@@ -1,18 +1,15 @@
 use crate::src::cmd::queue::cmdq_print;
 use crate::src::ffi::libc::{getgrgid, getpwuid, getuid};
 use crate::src::format::bytes::write_cstr;
-use crate::src::proc::{proc_get_peer_gid, proc_get_peer_uid};
 use crate::src::server::clients;
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::abi::{__gid_t, __uid_t, gid_t, id_t, uid_t};
 use crate::src::shared::account::{group, passwd};
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
-use crate::src::shared::client::{CLIENT_EXIT, CLIENT_READONLY};
+use crate::src::shared::client::CLIENT_READONLY;
 use crate::src::shared::command::cmdq_item;
 use crate::src::shared::server_acl::SERVER_ACL_IS_GROUP;
-use std::ffi::CString;
 
 #[repr(C)]
 pub struct server_acl_entry {

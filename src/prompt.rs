@@ -1,6 +1,5 @@
 use crate::src::cmd::cmd_table;
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_valid_state};
-use crate::src::ffi::libc::strlen;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_create_defaults, format_create_from_state, format_expand_time_cstring,
@@ -10,9 +9,8 @@ use crate::src::format_draw::{format_draw, format_width};
 use crate::src::grid::grid_default_cell;
 use crate::src::key_string::key_string_format;
 use crate::src::log::{log_cstr, log_debug};
-use crate::src::options::options_owner_ptr;
 use crate::src::options::{
-    options_array_item_value, options_get_number, options_get_only, options_get_string,
+    options_get_number, options_get_string,
 };
 use crate::src::paste::{paste_buffer_data, paste_get_top};
 use crate::src::prompt_history::{prompt_add_history, prompt_down_history, prompt_up_history};
@@ -22,30 +20,25 @@ use crate::src::screen_write::{
 };
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
-use crate::src::shared::client::client;
-use crate::src::shared::command::{cmd_entry, cmd_find_state, cmdq_item};
+use crate::src::shared::command::cmd_find_state;
 use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::MODEKEY_VI;
 use crate::src::shared::key::*;
 use crate::src::shared::options::{options, options_array_item, options_entry};
-use crate::src::shared::pane::window_pane;
 use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::src::shared::prompt::{
-    prompt_result, PROMPT_ACCEPT, PROMPT_BSPACE_EXIT, PROMPT_CLOSE, PROMPT_COMMANDMODE,
-    PROMPT_CONTINUE, PROMPT_EDITARROWS, PROMPT_INCREMENTAL, PROMPT_ISMODE, PROMPT_ISPANE,
+    PROMPT_ACCEPT, PROMPT_BSPACE_EXIT, PROMPT_CLOSE, PROMPT_COMMANDMODE, PROMPT_EDITARROWS, PROMPT_INCREMENTAL, PROMPT_ISMODE, PROMPT_ISPANE,
     PROMPT_KEY, PROMPT_NOFORMAT, PROMPT_NOFREEZE, PROMPT_NUMERIC, PROMPT_QUOTENEXT, PROMPT_SINGLE,
 };
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::style::*;
 use crate::src::shared::utf8::*;
-use crate::src::shared::window::winlink;
-use crate::src::style::{style_apply, style_parse, style_set};
+use crate::src::style::{style_parse, style_set};
 use crate::src::text::utf8::{
     utf8_append, utf8_copy, utf8_cstrwidth, utf8_fromcstr_vec, utf8_open, utf8_set, utf8_strlen,
     utf8_strwidth, utf8_to_data, utf8_tocstr_cstring,

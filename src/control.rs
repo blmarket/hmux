@@ -2,49 +2,37 @@ use crate::src::cmd::parse::cmd_parse_and_append;
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_get_callback_owned, cmdq_get_client, cmdq_guard, cmdq_new_state,
 };
-use crate::src::ffi::libc::{__errno_location, memset, strcmp, strlen};
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{fatalx, log_bytes, log_cstr, log_cstr_n, log_debug};
 use crate::src::monitor::{monitor_add, monitor_create_client_owned, monitor_remove};
-use crate::src::reactor::BufferEvent;
 use crate::src::reactor::{
-    bufferevent_disable, bufferevent_enable, bufferevent_get_input, bufferevent_new,
-    bufferevent_setwatermark, bufferevent_write, bufferevent_write_buffer, evbuffer_add,
+    bufferevent_disable, bufferevent_enable, bufferevent_get_input, bufferevent_write, bufferevent_write_buffer, evbuffer_add,
     evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup, evbuffer_readln,
 };
 use crate::src::server_client::Client as _;
-use crate::src::server_client::Client;
 use crate::src::session::Session;
-use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
-use crate::src::shared::client::client;
-use crate::src::shared::client::{ClientRef, ClientWeak};
+use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::{
-    CLIENT_CONTROLCONTROL, CLIENT_CONTROL_DISCARD, CLIENT_CONTROL_NOOUTPUT,
+    CLIENT_CONTROL_NOOUTPUT,
     CLIENT_CONTROL_PAUSEAFTER, CLIENT_EXIT, CLIENT_UNATTACHEDFLAGS,
 };
-use crate::src::shared::command::cmd_parse_input;
 use crate::src::shared::command::CMDQ_STATE_CONTROL;
 use crate::src::shared::command::*;
-use crate::src::shared::command::{cmd_find_state, cmdq_item, cmdq_state};
+use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::control::{
     control_block, control_pane, control_panes, control_state, control_window, control_windows,
 };
-use crate::src::shared::errno::{EAGAIN, EINTR};
 use crate::src::shared::event::*;
 use crate::src::shared::event::{EV_READ, EV_WRITE};
 use crate::src::shared::key::key_event;
-use crate::src::shared::limits::SIZE_MAX;
 use crate::src::shared::monitor::{monitor_callback, monitor_change};
 use crate::src::shared::monitor::{monitor_type, MONITOR_NOTIFY_INITIAL};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::window_pane_offset;
-use crate::src::shared::posix_io::STDIN_FILENO;
-use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::{window, winlink};
-use crate::src::tmux::{get_timer, setblocking};
+use crate::src::tmux::get_timer;
 use crate::src::window::{winlink_find_by_window, Window, WindowPane};
 use hmux_buffer::SegmentedBuf;
 use std::cell::UnsafeCell;

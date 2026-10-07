@@ -5,10 +5,9 @@ use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::cmd_find_from_nothing;
 use crate::src::cmd::parse::cmd_parse_error_uppercase_first;
 use crate::src::cmd::queue::{
-    cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_state,
-    cmdq_get_target, cmdq_get_target_client, cmdq_insert_after, cmdq_print,
+    cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_target_client, cmdq_insert_after, cmdq_print,
 };
-use crate::src::ffi::libc::{__ctype_toupper_loc, strtod};
+use crate::src::ffi::libc::strtod;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
 use crate::src::format::{
@@ -18,39 +17,32 @@ use crate::src::job::job_run;
 use crate::src::reactor::{
     evbuffer_add, evbuffer_get_length, evbuffer_new, evbuffer_pullup, evbuffer_readln,
 };
-use crate::src::session::SessionIndex as _;
 
 use crate::src::server_client::Client as _;
 
 use crate::src::session::Session;
-use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_command_state;
 use crate::src::shared::arguments::*;
 use crate::src::shared::arguments::{args, args_parse};
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_FIND_CANFAIL;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{
-    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item, cmdq_state,
+    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item,
 };
-use crate::src::shared::environment::environ;
 use crate::src::shared::event::*;
 use crate::src::shared::format::format_tree;
 use crate::src::shared::job::{JobCompletion, JobExitStatus, JOB_NOWAIT, JOB_SHOWSTDERR};
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::rc;
-use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::{window, window_mode_entry, winlink};
 use crate::src::status::status_message_set;
 use crate::src::window::Window as _;
 use crate::src::window_copy::{window_copy_add, window_view_mode};
 use crate::src::window_pane::WindowPane as _;
 use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
-use std::rc::{Rc, Weak};
+use std::rc::Weak;
 use std::time::Duration;
 
 pub struct cmd_run_shell_data {

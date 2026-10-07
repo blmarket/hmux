@@ -1,11 +1,8 @@
 //! Authoritative events model declarations.
 
 use super::abi::{time_t, u_int};
-use super::client::client;
 use super::command::{cmd_find_state, cmdq_item};
 use super::pane::window_pane;
-use super::session::session;
-use super::window::window;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;

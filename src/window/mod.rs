@@ -1,8 +1,5 @@
-use crate::src::server_client::Client as _;
 use crate::src::session::Session;
-use crate::src::shared::client::ClientRef;
 use crate::src::shared::window::WindowRef;
-use crate::src::window_pane::WindowPane as _;
 use std::time::SystemTime;
 mod alerts;
 mod api;
@@ -17,126 +14,53 @@ pub use model::window;
 use model::WindowLifecycle;
 
 use crate::src::alerts::alerts_queue;
-use crate::src::arguments::args_has;
-use crate::src::cmd::cmd_mouse_at;
 use crate::src::cmd::find::{cmd_find_from_pane, cmd_find_from_window};
-use crate::src::cmd::queue::{cmdq_continue, cmdq_get_client};
 use crate::src::compat::strtonum::strtonum;
-use crate::src::events::{events_fire, events_fire_pane, events_fire_window};
+use crate::src::events::{events_fire, events_fire_window};
 use crate::src::events_payload::{
-    event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_string,
+    event_payload_create, event_payload_set_pane, event_payload_set_string,
     event_payload_set_target, event_payload_set_uint, event_payload_set_window,
 };
-use crate::src::ffi::libc::{
-    __ctype_b_loc, fnmatch, gethostname, getpid, kill, memcpy, memset, strcasecmp,
-};
-use crate::src::ffi::regex::RegexStorage;
-use crate::src::ffi::utempter::utempter_remove_record;
-use crate::src::file::{file_cancel, file_read_with_cmdq_wait_init};
+use crate::src::ffi::libc::strcasecmp;
 use crate::src::format::bytes::write_cstr;
-use crate::src::grid::grid_cells_look_equal;
-use crate::src::grid::view::grid_view_string_cells_bytes;
-use crate::src::input::{input_parse_buffer, input_parse_pane};
-use crate::src::input_keys::input_key_pane;
-use crate::src::log::{fatal, fatalx, log_cstr, log_cstr_n, log_debug};
+use crate::src::log::{log_cstr, log_debug};
 use crate::src::options::options_owner_ptr;
 use crate::src::options::{
-    options_create, options_free, options_get_number, options_get_number_ref,
-};
-use crate::src::prompt::{
-    prompt_closed, prompt_create, prompt_free, prompt_incremental_start, prompt_key, prompt_mouse,
-    prompt_set_options, prompt_type_string, prompt_update,
-};
-use crate::src::reactor::BufferEvent;
-use crate::src::reactor::{
-    bufferevent_disable, bufferevent_enable, bufferevent_new, bufferevent_write, evbuffer_drain,
-    evbuffer_get_length, evbuffer_pullup,
-};
-use crate::src::screen::{
-    screen_free, screen_init, screen_resize, screen_set_default_cursor, screen_set_title,
+    options_get_number, options_get_number_ref,
 };
 
 use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked, server_clear_marked};
 use crate::src::server_client::Client;
-use crate::src::server_fn::{
-    server_destroy_pane, server_kill_pane, server_redraw_window, server_redraw_window_borders,
-    server_status_session, server_status_window,
-};
-use crate::src::shared::events::event_payload;
-use crate::src::shared::pane::window_pane_tree;
-use crate::src::shared::prompt::prompt_create_data;
-use crate::src::spawn::spawn_editor_finish;
-use crate::src::status::status_at_line;
-use crate::src::style::colour::{
-    colour_palette_free, colour_palette_from_option, colour_palette_get, colour_palette_init,
-    colour_totheme,
-};
-use crate::src::style::{
-    style_ranges_free, style_ranges_get_range, style_ranges_init,
-    style_set_scrollbar_style_from_option,
-};
-use crate::src::tmux::{clean_name_cstring, global_options, global_w_options, setblocking};
-use crate::src::tty::{tty_default_colours, tty_update_window_offset};
-use crate::src::window_copy::{window_copy_mode, window_view_mode};
-use hmux_buffer::SegmentedBuf;
-use std::cell::{RefCell, UnsafeCell};
+use crate::src::server_fn::server_redraw_window;
+use crate::src::style::colour::colour_palette_get;
+use crate::src::tmux::{clean_name_cstring, global_options};
+use crate::src::tty::tty_update_window_offset;
+use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
-use std::ptr::NonNull;
 use std::rc::{Rc, Weak};
 
-use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
-use crate::src::shared::arguments::args;
-use crate::src::shared::client::{client, client_file, client_file_cb};
-use crate::src::shared::client::{
-    CLIENT_CONTROL, CLIENT_DEAD, CLIENT_EXIT, CLIENT_EXITED, CLIENT_FOCUSED, CLIENT_UNATTACHEDFLAGS,
-};
-use crate::src::shared::colour::*;
-use crate::src::shared::command::{cmd_find_state, cmdq_item};
-use crate::src::shared::ctype::_ISspace;
-use crate::src::shared::display::*;
+use crate::src::shared::command::cmd_find_state;
 use crate::src::shared::event::*;
-use crate::src::shared::event::{EV_READ, EV_WRITE};
 use crate::src::shared::grid::*;
-use crate::src::shared::input::input_ctx;
-use crate::src::shared::key::*;
 use crate::src::shared::layout::layout_geometry;
 use crate::src::shared::layout::*;
-use crate::src::shared::limits::{INT_MAX, UINT_MAX};
-use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
+use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::options::options;
 use crate::src::shared::pane::{
-    pane_history_first, pane_history_push, pane_history_remove, window_pane_history,
-    window_pane_modes, window_pane_prompt, window_panes, PaneScreenSource,
+    pane_history_first, pane_history_push, pane_history_remove, window_pane_history, window_panes,
 };
 use crate::src::shared::pane::{
-    window_pane_offset, window_pane_resize, window_pane_resizes, PANE_CHANGED, PANE_DESTROYED,
-    PANE_EMPTY, PANE_EXITED, PANE_FOCUSED, PANE_INPUTOFF, PANE_MINIMUM, PANE_REDRAW,
-    PANE_REDRAWSCROLLBAR, PANE_SCROLLBARS_ALWAYS, PANE_SCROLLBARS_AUTOHIDE, PANE_SCROLLBARS_LEFT,
-    PANE_SCROLLBARS_MODAL, PANE_STATUSREADY, PANE_STATUS_BOTTOM, PANE_STATUS_TOP,
-    PANE_STYLECHANGED, PANE_THEMECHANGED, PANE_UNSEENCHANGES,
+    PANE_STATUS_BOTTOM, PANE_STATUS_TOP,
 };
-use crate::src::shared::posix_io::FNM_CASEFOLD;
-use crate::src::shared::posix_terminal::{winsize, TIOCSWINSZ};
-use crate::src::shared::prompt::prompt;
-use crate::src::shared::prompt::*;
-use crate::src::shared::prompt::{prompt_free_cb, prompt_input_cb, prompt_result, PROMPT_CLOSE};
-use crate::src::shared::screen::{screen, MODE_BRACKETPASTE, MODE_FOCUSON, MODE_THEME_UPDATES};
-use crate::src::shared::session::session;
-use crate::src::shared::signal::SIGCHLD;
-use crate::src::shared::spawn::spawn_editor_state;
-use crate::src::shared::status::status_prompt_input_cb;
-use crate::src::shared::style::*;
-use crate::src::shared::tree::{RB_INF, RB_NEGINF};
 pub use crate::src::shared::window::{
     window_mode, window_mode_entry, window_winlinks, windows, winlink, winlink_stack, winlinks,
 };
 use crate::src::shared::window::{
-    WINDOW_ACTIVITY, WINDOW_ALERTFLAGS, WINDOW_MAXIMUM, WINDOW_MODE_NO_STACK, WINDOW_PANE_NO_MODE,
-    WINLINK_ACTIVITY, WINLINK_ALERTFLAGS, WINLINK_BELL, WINLINK_SILENCE, WINLINK_VISITED,
+    WINDOW_ACTIVITY,
+    WINLINK_ACTIVITY, WINLINK_BELL, WINLINK_SILENCE,
 };
-use libc::{REG_EXTENDED, REG_ICASE};
 
 pub const DEFAULT_XPIXEL: ::core::ffi::c_int = 16 as ::core::ffi::c_int;
 pub const DEFAULT_YPIXEL: ::core::ffi::c_int = 32 as ::core::ffi::c_int;

@@ -1,12 +1,12 @@
 //! Pane process exit and explicit teardown transactions.
 use super::window_pane_wait_finish;
 use crate::src::cmd::find::cmd_find_from_pane;
-use crate::src::events::{events_fire, events_fire_winlink};
+use crate::src::events::events_fire;
 use crate::src::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_string,
     event_payload_set_target, event_payload_set_window,
 };
-use crate::src::ffi::libc::{getpid, kill, memcpy, strlen};
+use crate::src::ffi::libc::{getpid, kill, memcpy};
 use crate::src::ffi::utempter::utempter_remove_record;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
@@ -15,62 +15,29 @@ use crate::src::grid::grid_default_cell;
 use crate::src::log::log_debug;
 use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_get_number, options_get_string};
-use crate::src::proc::proc_send;
 use crate::src::reactor::BufferEvent;
 use crate::src::resize::recalculate_sizes;
 use crate::src::screen_write::{
     screen_write_cursormove, screen_write_linefeed, screen_write_scrollregion,
     screen_write_start_pane, screen_write_stop,
 };
-use crate::src::server::clients;
-use crate::src::server::marked_pane;
-use crate::src::server_client::Client as _;
 use crate::src::server_client::Client;
-use crate::src::session::session_group_count;
-use crate::src::session::sessions;
-use crate::src::session::Session;
-use crate::src::session::SessionIndex as _;
 use crate::src::shared::client::ClientRef;
-use crate::src::shared::events::event_payload;
-use crate::src::shared::session::session_group;
-use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::WindowRef;
 use crate::src::tmux::sig2name;
-use crate::src::tty::{tty_raw, tty_stop_tty};
-use crate::src::tty_term::tty_term_owner_ptr;
-use crate::src::tty_term::tty_term_string;
 use crate::src::window::Window as _;
-use crate::src::window::{
-    winlink_find_by_index, winlink_find_by_window, winlink_remove, winlink_stack_remove,
-};
 use crate::src::window_pane::WindowPane as _;
 use std::os::fd::AsRawFd;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 
-use crate::src::compat::imsg::*;
-use crate::src::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE};
 use crate::src::shared::abi::*;
-use crate::src::shared::client::client;
-use crate::src::shared::client::{
-    CLIENT_ALLREDRAWFLAGS, CLIENT_CONTROL, CLIENT_EXIT, CLIENT_NO_DETACH_ON_DESTROY,
-    CLIENT_REDRAWBORDERS, CLIENT_REDRAWSTATUS, CLIENT_SUSPENDED,
-};
-use crate::src::shared::command::{cmd_find_state, cmdq_item};
-use crate::src::shared::event::*;
+use crate::src::shared::command::cmd_find_state;
 use crate::src::shared::grid::*;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::pane::{PANE_REDRAW, PANE_STATUSDRAWN, PANE_STATUSREADY};
-use crate::src::shared::screen::{screen, MODE_CURSOR};
+use crate::src::shared::screen::MODE_CURSOR;
 use crate::src::shared::screen_write::screen_write_ctx;
-use crate::src::shared::session::session;
 use crate::src::shared::signal::SIGCHLD;
-use crate::src::shared::sort::sort_criteria;
-use crate::src::shared::sort::*;
 use crate::src::shared::style::*;
-use crate::src::shared::tree::RB_NEGINF;
-use crate::src::shared::tty::*;
-use crate::src::shared::window::winlink;
-use crate::src::shared::window::WINLINK_ALERTFLAGS;
 
 use crate::src::server_fn::{server_kill_window, server_redraw_window};
 use crate::src::shared::pane::PANE_EXITED;

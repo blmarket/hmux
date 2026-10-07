@@ -3,8 +3,7 @@ use crate::src::arguments::{
     args_make_commands_prepare,
 };
 use crate::src::cmd::queue::{
-    cmdq_append, cmdq_continue, cmdq_error, cmdq_get_command, cmdq_get_error, cmdq_get_state,
-    cmdq_get_target, cmdq_get_target_client, cmdq_insert_after,
+    cmdq_append, cmdq_continue, cmdq_error, cmdq_get_command, cmdq_get_error, cmdq_get_target_client, cmdq_insert_after,
 };
 use crate::src::cmd::{cmd_append_argv, cmd_get_args_mut};
 use crate::src::format::bytes::write_cstr;
@@ -14,12 +13,11 @@ use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args_command_state;
 use crate::src::shared::arguments::*;
 use crate::src::shared::arguments::{args, args_parse};
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_CLIENT_TFLAG;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{
-    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item, cmdq_state,
+    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item,
 };
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::prompt::*;
@@ -27,7 +25,6 @@ use crate::src::shared::prompt::{
     prompt_result, PROMPT_BSPACE_EXIT, PROMPT_CLOSE, PROMPT_CONTINUE, PROMPT_INCREMENTAL,
     PROMPT_ISPANE, PROMPT_KEY, PROMPT_NOFREEZE, PROMPT_NUMERIC, PROMPT_SINGLE,
 };
-use crate::src::shared::rc;
 use crate::src::status::{status_prompt_set, status_prompt_update};
 use crate::src::window_pane::WindowPane as _;
 use std::cell::UnsafeCell;
@@ -402,12 +399,12 @@ impl Drop for cmd_command_prompt_cdata {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::cmd::cmd_list_new;
-    use crate::src::cmd::queue::cmdq_get_callback_owned;
-    use crate::src::prompt::{prompt_free, prompt_key};
-    use crate::src::shared::rc;
-    use crate::src::text::utf8::utf8_fromcstr_vec;
-    use std::{cell::RefCell, rc::Rc};
+    
+    
+    
+    
+    
+    
 
     #[test]
     fn expired_wait_closes_prompt_without_resuming_queue() {

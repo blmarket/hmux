@@ -23,14 +23,13 @@ use crate::src::compat::strtonum::strtonum;
 use crate::src::events::{events_fire, events_fire_session, events_fire_winlink};
 use crate::src::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_session,
-    event_payload_set_string, event_payload_set_target, event_payload_set_uint,
+    event_payload_set_string, event_payload_set_target,
     event_payload_set_window,
 };
-use crate::src::ffi::libc::{memcpy, strcmp};
-use crate::src::format::bytes::write_cstr;
-use crate::src::log::{fatal, fatalx, log_bytes, log_cstr, log_debug};
+use crate::src::ffi::libc::strcmp;
+use crate::src::log::{log_bytes, log_cstr, log_debug};
 use crate::src::options::options_owner_ptr;
-use crate::src::options::{options_free, options_get_number};
+use crate::src::options::options_get_number;
 use crate::src::resize::recalculate_sizes;
 use crate::src::server::{marked_pane, server_clear_marked};
 use crate::src::server_fn::server_lock_session;
@@ -38,18 +37,16 @@ use crate::src::shared::abi::*;
 use crate::src::shared::command::cmd_find_state;
 use crate::src::shared::environment::environ;
 use crate::src::shared::event::*;
-use crate::src::shared::events::event_payload;
-use crate::src::shared::grid::*;
 use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::{session_group, session_groups};
+use crate::src::shared::session::session_group;
 use crate::src::shared::session::{SessionRef, SessionWeak};
 use crate::src::shared::sort::sort_criteria;
 use crate::src::shared::terminal::*;
 use crate::src::shared::tree::{RB_INF, RB_NEGINF};
 use crate::src::shared::window::WindowRef;
-use crate::src::shared::window::{window, winlink, winlink_stack, winlinks};
+use crate::src::shared::window::{winlink, winlink_stack, winlinks};
 use crate::src::shared::window::{WINLINK_ALERTFLAGS, WINLINK_VISITED};
 use crate::src::tmux::global_options;
 use crate::src::tty::tty_update_window_offset;
@@ -62,7 +59,6 @@ use crate::src::window_pane::WindowPane as _;
 use size::recalculate_size_state;
 use size::status_update_cache;
 use sort::sort_get_sessions;
-use std::cell::UnsafeCell;
 use std::ffi::{CStr, CString};
 use std::rc::Rc;
 pub static mut sessions: sessions = sessions { storage: None };
@@ -822,6 +818,7 @@ unsafe fn session_update_history(session: &session) {
 #[cfg(test)]
 mod session_index_tests {
     use super::*;
+    use crate::src::shared::session::session_groups;
 
     #[test]
     fn current_winlink_observer_expires_when_index_removes_it() {

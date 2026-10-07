@@ -11,32 +11,24 @@ use crate::src::grid::{
     grid_cells_equal, grid_clear_history, grid_default_cell, grid_get_cell, grid_get_line,
     grid_get_line_mut,
 };
-use crate::src::log::{fatal, fatalx, log_bytes, log_debug, log_get_level};
+use crate::src::log::{fatalx, log_bytes, log_debug, log_get_level};
 use crate::src::options::options_get_number;
-use crate::src::options::options_owner_ptr;
 use crate::src::screen::{
     screen_alternate_off, screen_alternate_on, screen_check_selection, screen_mode_display,
     screen_reset_tabs, screen_select_cell,
 };
-use crate::src::server_client::Client as _;
-use crate::src::server_fn::server_redraw_window_borders;
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::borders::{
     CELL_BORDERS, CELL_LD, CELL_LR, CELL_LU, CELL_RD, CELL_RU, CELL_UD, CELL_ULD, CELL_URD,
     SIMPLE_BORDERS,
 };
-use crate::src::shared::client::client;
-use crate::src::shared::client::ClientRef;
-use crate::src::shared::client::CLIENT_REDRAWWINDOW;
-use crate::src::shared::colour::*;
 use crate::src::shared::display::visible_range;
 use crate::src::shared::grid::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::options::options;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::pane::{window_pane_resize, PANE_DROP, PANE_REDRAW, PANE_REDRAWSCROLLBAR};
 use crate::src::shared::screen::{
     screen, EXTENDED_KEY_MODES, MODE_CURSOR, MODE_INSERT, MODE_KEYS_EXTENDED, MODE_ORIGIN,
     MODE_SYNC, MODE_WRAP,
@@ -50,12 +42,9 @@ use crate::src::shared::tty::{
     tty_command_data, tty_ctx, tty_ctx_redraw_cb, tty_ctx_set_client_cb,
 };
 use crate::src::shared::tty::{
-    TTY_CTX_CELL_INVALIDATE, TTY_CTX_INVISIBLE_PANES, TTY_CTX_PANE_OBSCURED, TTY_CTX_SYNC,
-    TTY_CTX_WINDOW_BIGGER, TTY_CTX_WRAPPED,
+    TTY_CTX_CELL_INVALIDATE, TTY_CTX_INVISIBLE_PANES, TTY_CTX_PANE_OBSCURED, TTY_CTX_SYNC, TTY_CTX_WRAPPED,
 };
 use crate::src::shared::utf8::*;
-use crate::src::shared::window::window;
-use crate::src::status::{status_at_line, status_line_size};
 use crate::src::text::utf8::{utf8_append, utf8_copy, utf8_fromcstr_vec, utf8_open, utf8_set};
 use crate::src::text::utf8_combined::{
     hanguljamo_check_state, utf8_has_zwj, utf8_is_hangul_filler, utf8_is_vs, utf8_is_zwj,
@@ -67,11 +56,9 @@ use crate::src::tty::{
     tty_cmd_clearendofscreen, tty_cmd_clearscreen, tty_cmd_clearstartofscreen,
     tty_cmd_deletecharacter, tty_cmd_deleteline, tty_cmd_insertcharacter, tty_cmd_insertline,
     tty_cmd_rawstring, tty_cmd_redrawline, tty_cmd_reverseindex, tty_cmd_scrolldown,
-    tty_cmd_scrollup, tty_cmd_setselection, tty_cmd_syncstart, tty_default_colours,
-    tty_update_window_offset, tty_window_offset, tty_write,
+    tty_cmd_scrollup, tty_cmd_setselection, tty_cmd_syncstart, tty_write,
 };
 use crate::src::tty_acs::{tty_acs_double_borders, tty_acs_heavy_borders, tty_acs_rounded_borders};
-use crate::src::window::Window as _;
 use crate::src::window::WindowPane;
 use crate::src::window_visible::window_position_is_visible;
 use std::ffi::CStr;
@@ -3195,6 +3182,7 @@ pub unsafe fn screen_write_alternateoff(
 #[cfg(test)]
 mod write_ctx_tests {
     use super::*;
+    use crate::src::shared::colour::colour_palette;
     use std::{cell::Cell, rc::Rc};
 
     struct DropCounter(Rc<Cell<usize>>);

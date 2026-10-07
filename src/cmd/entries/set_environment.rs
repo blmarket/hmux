@@ -1,6 +1,6 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{cmdq_error, cmdq_get_target};
+use crate::src::cmd::queue::cmdq_error;
 use crate::src::environ::{environ_clear, environ_set, environ_unset};
 use crate::src::ffi::libc::strchr;
 use crate::src::format::bytes::write_cstr;

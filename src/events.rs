@@ -11,15 +11,13 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::log::log_get_level;
 use crate::src::session::Session as _;
 use crate::src::shared::abi::*;
-use crate::src::shared::client::client;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::cmd_find_state;
 use crate::src::shared::events::{event_payload, events_cb, events_sink, EventSinkId};
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::session::session;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
-use crate::src::shared::window::{window, winlink};
+use crate::src::shared::window::winlink;
 use crate::src::window_pane::WindowPane as _;
 use std::ffi::CStr;
 
