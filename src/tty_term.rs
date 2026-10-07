@@ -1151,21 +1151,21 @@ pub unsafe fn tty_term_apply(
             if remove != 0 {
                 log_debug(format_args!(
                     "{} override: {}@",
-                    log_cstr((name) as *const _),
-                    log_cstr((s) as *const _)
+                    log_cstr(CStr::from_ptr(name)),
+                    log_cstr(CStr::from_ptr(s))
                 ));
             } else if *value as ::core::ffi::c_int == '\0' as i32 {
                 log_debug(format_args!(
                     "{} override: {}",
-                    log_cstr((name) as *const _),
-                    log_cstr((s) as *const _)
+                    log_cstr(CStr::from_ptr(name)),
+                    log_cstr(CStr::from_ptr(s))
                 ));
             } else {
                 log_debug(format_args!(
                     "{} override: {}={}",
-                    log_cstr((name) as *const _),
-                    log_cstr((s) as *const _),
-                    log_cstr((value) as *const _)
+                    log_cstr(CStr::from_ptr(name)),
+                    log_cstr(CStr::from_ptr(s)),
+                    log_cstr(CStr::from_ptr(value))
                 ));
             }
         }
@@ -1326,7 +1326,10 @@ pub unsafe fn tty_term_create(
     let mut offset: size_t = 0;
     let mut namelen: size_t = 0;
     let mut n: ::core::ffi::c_int = 0;
-    log_debug(format_args!("adding term {}", log_cstr((name) as *const _)));
+    log_debug(format_args!(
+        "adding term {}",
+        log_cstr(CStr::from_ptr(name))
+    ));
     // Register identity before validation; failure and explicit free retire it.
     let mut owner = Box::new(tty_term {
         name: CStr::from_ptr(name).to_owned(),
@@ -1377,7 +1380,7 @@ pub unsafe fn tty_term_create(
                                 log_debug(format_args!(
                                     "{}: {}",
                                     crate::src::log::log_bytes((*ent).name.to_bytes()),
-                                    log_cstr((errstr) as *const _)
+                                    log_cstr(CStr::from_ptr(errstr))
                                 ));
                             } else {
                                 (&mut (*term).codes)[j as usize] = tty_code::Number(n);
@@ -1439,8 +1442,8 @@ pub unsafe fn tty_term_create(
         let name = client_owner.name();
         log_debug(format_args!(
             "{} COLORTERM={}",
-            log_cstr(name.as_ref().map_or(std::ptr::null(), |s| s.as_ptr())),
-            log_cstr(value.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()))
+            log_cstr(name.as_deref().unwrap_or(c"(null)")),
+            log_cstr(value.as_deref().unwrap_or(c"(null)"))
         ));
         if let Some(value) = value {
             if value.to_bytes().eq_ignore_ascii_case(b"truecolor")
@@ -1481,8 +1484,8 @@ pub unsafe fn tty_term_create(
         while i < tty_term_ncodes() {
             log_debug(format_args!(
                 "{}{}",
-                log_cstr((name) as *const _),
-                log_cstr(tty_term_describe(term, i as tty_code_code).as_ptr())
+                log_cstr(CStr::from_ptr(name)),
+                log_cstr(&tty_term_describe(term, i as tty_code_code))
             ));
             i = i.wrapping_add(1);
         }

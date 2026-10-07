@@ -1242,7 +1242,7 @@ unsafe fn tty_keys_add(tty: *mut tty, s: *const ::core::ffi::c_char, key: key_co
     if let Some(tk) = tty_keys_find_mut((*tty).key_tree.as_deref_mut(), bytes, &mut size) {
         log_debug(format_args!(
             "replacing key {}: 0x{:x} ({})",
-            log_cstr((s) as *const _),
+            log_cstr(CStr::from_ptr(s)),
             { key },
             crate::src::log::log_bytes(key_string.as_bytes())
         ));
@@ -1250,7 +1250,7 @@ unsafe fn tty_keys_add(tty: *mut tty, s: *const ::core::ffi::c_char, key: key_co
     } else {
         log_debug(format_args!(
             "new key {}: 0x{:x} ({})",
-            log_cstr((s) as *const _),
+            log_cstr(CStr::from_ptr(s)),
             { key },
             crate::src::log::log_bytes(key_string.as_bytes())
         ));
@@ -1435,12 +1435,7 @@ unsafe fn tty_keys_next1(
     let mut i: u_int = 0;
     log_debug(format_args!(
         "{}: next key is {} ({}) (expired={})",
-        log_cstr(
-            ((diagnostic_name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                as *const _
-        ),
+        log_cstr(diagnostic_name.unwrap_or(c"(null)")),
         { len },
         log_cstr_n((buf) as *const _, len as ::core::ffi::c_int),
         { expired }
@@ -1458,12 +1453,7 @@ unsafe fn tty_keys_next1(
         while let Some(node) = current {
             log_debug(format_args!(
                 "{}: keys in list: {}",
-                log_cstr(
-                    (diagnostic_name
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                        as *const _
-                ),
+                log_cstr(diagnostic_name.unwrap_or(c"(null)")),
                 log_hex(node.key)
             ));
             current = node.next.as_deref();
@@ -1499,12 +1489,7 @@ unsafe fn tty_keys_next1(
         *key = uc as key_code;
         log_debug(format_args!(
             "{}: UTF-8 key {} {}",
-            log_cstr(
-                ((diagnostic_name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            ),
+            log_cstr(diagnostic_name.unwrap_or(c"(null)")),
             log_cstr_n(
                 (&raw mut ud.data as *mut u_char) as *const _,
                 ud.size as ::core::ffi::c_int
@@ -1616,12 +1601,11 @@ unsafe fn tty_keys_winsz(
     log_debug(format_args!(
         "{}: unrecognized window size sequence: {}",
         log_cstr(
-            ((terminal_client_owner.name())
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                as *const _
+            (terminal_client_owner.name())
+                .as_deref()
+                .unwrap_or(c"(null)")
         ),
-        log_cstr((&raw mut tmp as *mut ::core::ffi::c_char) as *const _)
+        log_cstr(CStr::from_ptr(&raw mut tmp as *mut ::core::ffi::c_char))
     ));
     -(1 as ::core::ffi::c_int)
 }
@@ -1677,10 +1661,9 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
     log_debug(format_args!(
         "{}: keys are {} ({})",
         log_cstr(
-            ((terminal_client_owner.name())
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                as *const _
+            (terminal_client_owner.name())
+                .as_deref()
+                .unwrap_or(c"(null)")
         ),
         (len) as usize,
         log_cstr_n((buf) as *const _, len as ::core::ffi::c_int)
@@ -1907,16 +1890,10 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                                                                 log_debug(format_args!(
                                                                     "{}: discard key {} {}",
                                                                     log_cstr(
-                                                                        ((terminal_client_owner
+                                                                        (terminal_client_owner
                                                                             .name())
-                                                                        .as_ref()
-                                                                        .map_or(
-                                                                            ::core::ptr::null_mut(),
-                                                                            |value| value
-                                                                                .as_ptr()
-                                                                                .cast_mut()
-                                                                        ))
-                                                                            as *const _
+                                                                        .as_deref()
+                                                                        .unwrap_or(c"(null)")
                                                                     ),
                                                                     log_cstr_n(
                                                                         (buf) as *const _,
@@ -2101,11 +2078,9 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                         log_debug(format_args!(
                             "{}: key {} is BSpace",
                             log_cstr(
-                                ((terminal_client_owner.name())
-                                    .as_ref()
-                                    .map_or(::core::ptr::null_mut(), |value| value
-                                        .as_ptr()
-                                        .cast_mut())) as *const _
+                                (terminal_client_owner.name())
+                                    .as_deref()
+                                    .unwrap_or(c"(null)")
                             ),
                             log_hex((key) as u64)
                         ));
@@ -2115,11 +2090,9 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                         log_debug(format_args!(
                             "{}: key {} is M-BSpace",
                             log_cstr(
-                                ((terminal_client_owner.name())
-                                    .as_ref()
-                                    .map_or(::core::ptr::null_mut(), |value| value
-                                        .as_ptr()
-                                        .cast_mut())) as *const _
+                                (terminal_client_owner.name())
+                                    .as_deref()
+                                    .unwrap_or(c"(null)")
                             ),
                             log_hex((key) as u64)
                         ));
@@ -2148,10 +2121,9 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                 log_debug(format_args!(
                     "{}: complete key {} {}",
                     log_cstr(
-                        ((terminal_client_owner.name())
-                            .as_ref()
-                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                            as *const _
+                        (terminal_client_owner.name())
+                            .as_deref()
+                            .unwrap_or(c"(null)")
                     ),
                     log_cstr_n((buf) as *const _, size as ::core::ffi::c_int),
                     log_hex((key) as u64)
@@ -2219,10 +2191,9 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                 log_debug(format_args!(
                     "{}: partial key {}",
                     log_cstr(
-                        ((terminal_client_owner.name())
-                            .as_ref()
-                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                            as *const _
+                        (terminal_client_owner.name())
+                            .as_deref()
+                            .unwrap_or(c"(null)")
                     ),
                     log_cstr_n((buf) as *const _, len as ::core::ffi::c_int)
                 ));
@@ -2260,11 +2231,9 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                         log_debug(format_args!(
                             "{}: increasing delay (partial paste end)",
                             log_cstr(
-                                ((terminal_client_owner.name())
-                                    .as_ref()
-                                    .map_or(::core::ptr::null_mut(), |value| value
-                                        .as_ptr()
-                                        .cast_mut())) as *const _
+                                (terminal_client_owner.name())
+                                    .as_deref()
+                                    .unwrap_or(c"(null)")
                             )
                         ));
                         if delay < 500 as ::core::ffi::c_int {
@@ -2279,11 +2248,9 @@ pub unsafe fn tty_keys_next(terminal_client_owner: &ClientRef) -> ::core::ffi::c
                         log_debug(format_args!(
                             "{}: increasing delay (active query)",
                             log_cstr(
-                                ((terminal_client_owner.name())
-                                    .as_ref()
-                                    .map_or(::core::ptr::null_mut(), |value| value
-                                        .as_ptr()
-                                        .cast_mut())) as *const _
+                                (terminal_client_owner.name())
+                                    .as_deref()
+                                    .unwrap_or(c"(null)")
                             )
                         ));
                         if delay < 500 as ::core::ffi::c_int {
@@ -2478,12 +2445,7 @@ unsafe fn tty_keys_extended_key(
         let key_string = key_string_format(nkey, true);
         log_debug(format_args!(
             "{}: extended key {} is {:x} ({})",
-            log_cstr(
-                ((diagnostic_name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            ),
+            log_cstr(diagnostic_name.unwrap_or(c"(null)")),
             log_cstr_n((buf) as *const _, *size as ::core::ffi::c_int),
             (nkey) as u64,
             crate::src::log::log_bytes(key_string.as_bytes())
@@ -2546,12 +2508,7 @@ unsafe fn tty_keys_mouse(
         }
         log_debug(format_args!(
             "{}: mouse input: {}",
-            log_cstr(
-                ((diagnostic_name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            ),
+            log_cstr(diagnostic_name.unwrap_or(c"(null)")),
             log_cstr_n((buf) as *const _, *size as ::core::ffi::c_int)
         ));
         if b < MOUSE_PARAM_BTN_OFF as u_int
@@ -2618,12 +2575,7 @@ unsafe fn tty_keys_mouse(
         }
         log_debug(format_args!(
             "{}: mouse input (SGR): {}",
-            log_cstr(
-                ((diagnostic_name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            ),
+            log_cstr(diagnostic_name.unwrap_or(c"(null)")),
             log_cstr_n((buf) as *const _, *size as ::core::ffi::c_int)
         ));
         if x < 1 as u_int || y < 1 as u_int {
@@ -2883,10 +2835,9 @@ unsafe fn tty_keys_device_attributes(
             log_debug(format_args!(
                 "{}: DA feature: {}",
                 log_cstr(
-                    ((terminal_client_owner.name())
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                        as *const _
+                    (terminal_client_owner.name())
+                        .as_deref()
+                        .unwrap_or(c"(null)")
                 ),
                 p[i as usize] as ::core::ffi::c_int
             ));
@@ -2920,10 +2871,9 @@ unsafe fn tty_keys_device_attributes(
     log_debug(format_args!(
         "{}: received primary DA {}",
         log_cstr(
-            ((terminal_client_owner.name())
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                as *const _
+            (terminal_client_owner.name())
+                .as_deref()
+                .unwrap_or(c"(null)")
         ),
         log_cstr_n((buf) as *const _, *size as ::core::ffi::c_int)
     ));
@@ -2992,10 +2942,9 @@ unsafe fn tty_keys_sync(
     log_debug(format_args!(
         "{}: received DECRPM {}",
         log_cstr(
-            ((terminal_client_owner.name())
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                as *const _
+            (terminal_client_owner.name())
+                .as_deref()
+                .unwrap_or(c"(null)")
         ),
         log_cstr_n((buf) as *const _, *size as ::core::ffi::c_int)
     ));
@@ -3126,10 +3075,9 @@ unsafe fn tty_keys_device_attributes2(
     log_debug(format_args!(
         "{}: received secondary DA {}",
         log_cstr(
-            ((terminal_client_owner.name())
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                as *const _
+            (terminal_client_owner.name())
+                .as_deref()
+                .unwrap_or(c"(null)")
         ),
         log_cstr_n((buf) as *const _, *size as ::core::ffi::c_int)
     ));
@@ -3261,10 +3209,9 @@ unsafe fn tty_keys_extended_device_attributes(
     log_debug(format_args!(
         "{}: received extended DA {}",
         log_cstr(
-            ((terminal_client_owner.name())
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                as *const _
+            (terminal_client_owner.name())
+                .as_deref()
+                .unwrap_or(c"(null)")
         ),
         log_cstr_n((buf) as *const _, *size as ::core::ffi::c_int)
     ));
@@ -3365,7 +3312,7 @@ pub unsafe fn tty_keys_colours(
         if let Some(name) = diagnostic_name {
             log_debug(format_args!(
                 "{} fg is {}",
-                log_cstr(name.as_ptr()),
+                log_cstr(name),
                 crate::src::log::log_bytes(colour_format(n).as_bytes())
             ));
         } else {
@@ -3380,7 +3327,7 @@ pub unsafe fn tty_keys_colours(
         if let Some(name) = diagnostic_name {
             log_debug(format_args!(
                 "{} bg is {}",
-                log_cstr(name.as_ptr()),
+                log_cstr(name),
                 crate::src::log::log_bytes(colour_format(n).as_bytes())
             ));
         } else {

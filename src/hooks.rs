@@ -121,7 +121,7 @@ unsafe fn hooks_insert_one(
             "{}: hook {} is: {}",
             "hooks_insert_one",
             crate::src::log::log_bytes((*hd).name.to_bytes()),
-            log_cstr((s.as_ptr()) as *const _)
+            log_cstr(&s)
         ));
     }
     let new_item_allocation = cmdq_get_command(commands, Some(state));
@@ -217,11 +217,7 @@ unsafe fn hooks_insert(
             0 => log_debug(format_args!(
                 "hooks_insert: can't parse hook {}: {}",
                 crate::src::log::log_bytes(name.to_bytes()),
-                log_cstr(
-                    pr.error
-                        .as_ref()
-                        .map_or(std::ptr::null(), |cause| cause.as_ptr())
-                )
+                log_cstr(pr.error.as_deref().unwrap_or(c"(null)"))
             )),
             1 => {
                 hooks_insert_one(after.upgrade().as_ref(), hd, pr.cmdlist.as_ref(), &state);

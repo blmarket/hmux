@@ -424,7 +424,7 @@ unsafe fn window_add_ref(w_owner: &WindowRef, from: *const ::core::ffi::c_char) 
     log_debug(format_args!(
         "retain window @{} ({})",
         { (*w).id },
-        log_cstr((from) as *const _)
+        log_cstr(CStr::from_ptr(from))
     ));
     owner
 }
@@ -450,7 +450,7 @@ unsafe fn window_prepare_release(w_owner: &WindowRef, from: *const ::core::ffi::
     log_debug(format_args!(
         "release window @{} ({})",
         { (*w).id },
-        log_cstr((from) as *const _)
+        log_cstr(CStr::from_ptr(from))
     ));
 }
 

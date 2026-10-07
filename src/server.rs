@@ -516,7 +516,7 @@ unsafe fn server_signal(sig: ProcessSignal) {
     log_debug(format_args!(
         "{}: {}",
         "server_signal",
-        log_cstr((strsignal(sig.as_raw())) as *const _)
+        log_cstr(CStr::from_ptr(strsignal(sig.as_raw())))
     ));
     match sig {
         ProcessSignal::Interrupt | ProcessSignal::Terminate => {
@@ -605,10 +605,7 @@ pub unsafe fn server_add_message(
 ) {
     let mut limit: u_int = 0;
     let s = format_message_with(write);
-    log_debug(format_args!(
-        "message: {}",
-        log_cstr((s.as_ptr()) as *const _)
-    ));
+    log_debug(format_args!("message: {}", log_cstr(&s)));
     let fresh0 = message_next;
     message_next = message_next.wrapping_add(1);
     let msg_time = SystemTime::now();

@@ -196,10 +196,7 @@ unsafe fn cmd_wait_for_add(name: *const ::core::ffi::c_char) -> *mut wait_channe
         lockers: Vec::new(),
     });
     let wc = wait_channels_insert(&mut wait_channels, owner);
-    log_debug(format_args!(
-        "add wait channel {}",
-        log_cstr((((*wc).name).as_ptr().cast_mut()) as *const _)
-    ));
+    log_debug(format_args!("add wait channel {}", log_cstr(&(*wc).name)));
     wc
 }
 unsafe fn cmd_wait_for_remove(mut wc: *mut wait_channel) {
@@ -211,7 +208,7 @@ unsafe fn cmd_wait_for_remove(mut wc: *mut wait_channel) {
     }
     log_debug(format_args!(
         "remove wait channel {}",
-        log_cstr((((*wc).name).as_ptr().cast_mut()) as *const _)
+        log_cstr(&(*wc).name)
     ));
     drop(wait_channels_remove(&mut wait_channels, &*wc));
 }
@@ -224,7 +221,7 @@ unsafe fn cmd_wait_for_remove_empty(mut wc: *mut wait_channel) {
     }
     log_debug(format_args!(
         "remove empty wait channel {}",
-        log_cstr((((*wc).name).as_ptr().cast_mut()) as *const _)
+        log_cstr(&(*wc).name)
     ));
     drop(wait_channels_remove(&mut wait_channels, &*wc));
 }
@@ -526,14 +523,14 @@ unsafe fn cmd_wait_for_signal(
     if (*wait_channel_waiters(wc)).is_empty() && (*wc).woken == 0 {
         log_debug(format_args!(
             "signal wait channel {}, no waiters",
-            log_cstr((((*wc).name).as_ptr().cast_mut()) as *const _)
+            log_cstr(&(*wc).name)
         ));
         (*wc).woken = 1 as ::core::ffi::c_int;
         return CMD_RETURN_NORMAL;
     }
     log_debug(format_args!(
         "signal wait channel {}, with waiters",
-        log_cstr((((*wc).name).as_ptr().cast_mut()) as *const _)
+        log_cstr(&(*wc).name)
     ));
     let waiters = wait_channel_waiters(wc);
     let mut wi = wait_item_ptr(waiters, 0);
@@ -564,7 +561,7 @@ unsafe fn cmd_wait_for_wait(
     if (*wc).woken != 0 {
         log_debug(format_args!(
             "wait channel {} already woken ({})",
-            log_cstr((((*wc).name).as_ptr().cast_mut()) as *const _),
+            log_cstr(&(*wc).name),
             log_pointer(std::rc::Rc::as_ptr(c.as_ref().expect("waiting client")).cast())
         ));
         cmd_wait_for_remove(wc);
@@ -572,7 +569,7 @@ unsafe fn cmd_wait_for_wait(
     }
     log_debug(format_args!(
         "wait channel {} not woken ({})",
-        log_cstr((((*wc).name).as_ptr().cast_mut()) as *const _),
+        log_cstr(&(*wc).name),
         log_pointer(std::rc::Rc::as_ptr(c.as_ref().expect("waiting client")).cast())
     ));
     (*wait_channel_waiters(wc)).push(Box::new(wait_item {

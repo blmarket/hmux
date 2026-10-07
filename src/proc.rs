@@ -264,26 +264,32 @@ pub unsafe fn proc_start(mut name: *const ::core::ffi::c_char) -> Box<tmuxproc> 
     }
     log_debug(format_args!(
         "{} started ({}): version {}, socket {}, protocol {}",
-        log_cstr((name) as *const _),
+        log_cstr(CStr::from_ptr(name)),
         getpid() as ::core::ffi::c_long,
-        log_cstr(getversion().as_ptr()),
-        log_cstr((socket_path) as *const _),
+        log_cstr(getversion()),
+        log_cstr(CStr::from_ptr(socket_path)),
         { PROTOCOL_VERSION }
     ));
     log_debug(format_args!(
         "on {} {} {}",
-        log_cstr((&raw mut u.sysname as *mut ::core::ffi::c_char) as *const _),
-        log_cstr((&raw mut u.release as *mut ::core::ffi::c_char) as *const _),
-        log_cstr((&raw mut u.version as *mut ::core::ffi::c_char) as *const _)
+        log_cstr(CStr::from_ptr(
+            &raw mut u.sysname as *mut ::core::ffi::c_char
+        )),
+        log_cstr(CStr::from_ptr(
+            &raw mut u.release as *mut ::core::ffi::c_char
+        )),
+        log_cstr(CStr::from_ptr(
+            &raw mut u.version as *mut ::core::ffi::c_char
+        ))
     ));
     log_debug(format_args!("using runtime hmux-rt mio"));
     log_debug(format_args!(
         "using utf8proc {}",
-        log_cstr((utf8proc_version()) as *const _)
+        log_cstr(CStr::from_ptr(utf8proc_version()))
     ));
     log_debug(format_args!(
         "using ncurses {} {:06}",
-        log_cstr((NCURSES_VERSION.as_ptr()) as *const _),
+        log_cstr(NCURSES_VERSION),
         (NCURSES_VERSION_PATCH) as u32
     ));
     Box::new(tmuxproc {

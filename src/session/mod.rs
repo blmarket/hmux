@@ -295,7 +295,7 @@ unsafe fn session_destroy(
     log_debug(format_args!(
         "session {} destroyed ({})",
         log_bytes((*s).name.as_bytes()),
-        log_cstr((from) as *const _)
+        log_cstr(CStr::from_ptr(from))
     ));
     // This field also marks explicit session teardown. An expired observer
     // still needs the normal destruction path if the index owner remains.

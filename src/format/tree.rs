@@ -203,9 +203,9 @@ pub unsafe fn format_log_debug(mut ft: *mut format_tree, mut prefix: *const ::co
     format_each(ft, |key, value| {
         log_debug(format_args!(
             "{}: {}={}",
-            log_cstr((prefix) as *const _),
-            log_cstr((key.as_ptr()) as *const _),
-            log_cstr((value.as_ptr()) as *const _)
+            log_cstr(CStr::from_ptr(prefix)),
+            log_cstr(key),
+            log_cstr(value)
         ));
     });
 }

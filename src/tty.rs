@@ -241,7 +241,7 @@ pub unsafe fn tty_resize(owner: &ClientRef) {
         };
         log_debug(format_args!(
             "tty_resize: {} now {}x{} ({}x{})",
-            log_cstr(name.as_deref().map_or(std::ptr::null(), CStr::as_ptr)),
+            log_cstr(name.as_deref().unwrap_or(c"(null)")),
             sx,
             sy,
             xpixel,
@@ -272,13 +272,13 @@ unsafe fn tty_read_callback(owner: &ClientRef, result: std::io::Result<Vec<u8>>)
             if let Err(error) = result {
                 log_debug(format_args!(
                     "{}: read error: {}",
-                    log_cstr(name.as_deref().map_or(std::ptr::null(), CStr::as_ptr)),
+                    log_cstr(name.as_deref().unwrap_or(c"(null)")),
                     error
                 ));
             } else {
                 log_debug(format_args!(
                     "{}: read closed",
-                    log_cstr(name.as_deref().map_or(std::ptr::null(), CStr::as_ptr))
+                    log_cstr(name.as_deref().unwrap_or(c"(null)"))
                 ));
             }
             drop(owner.borrow_terminal_mut().read_task.take());
@@ -290,7 +290,7 @@ unsafe fn tty_read_callback(owner: &ClientRef, result: std::io::Result<Vec<u8>>)
     let size = owner.append_terminal_input(bytes);
     log_debug(format_args!(
         "{}: read {} bytes (already {})",
-        log_cstr(name.as_deref().map_or(std::ptr::null(), CStr::as_ptr)),
+        log_cstr(name.as_deref().unwrap_or(c"(null)")),
         nread,
         size
     ));
@@ -301,7 +301,7 @@ unsafe fn tty_timer_callback(owner: &ClientRef) {
     let discarded = owner.borrow_terminal().discarded;
     log_debug(format_args!(
         "{}: {} discarded",
-        log_cstr(name.as_deref().map_or(std::ptr::null(), CStr::as_ptr)),
+        log_cstr(name.as_deref().unwrap_or(c"(null)")),
         discarded
     ));
     owner.update_flags(CLIENT_ALLREDRAWFLAGS as u64, 0);
@@ -356,12 +356,7 @@ unsafe fn tty_block_maybe(terminal: &ClientRef) -> bool {
     terminal_set!(terminal, flags, |=, TTY_BLOCK);
     log_debug(format_args!(
         "{}: can't keep up, {} discarded",
-        log_cstr(
-            terminal
-                .name()
-                .as_deref()
-                .map_or(std::ptr::null(), CStr::as_ptr)
-        ),
+        log_cstr(terminal.name().as_deref().unwrap_or(c"(null)")),
         size
     ));
     evbuffer_drain(
@@ -405,24 +400,14 @@ unsafe fn tty_write_callback(owner: &ClientRef, result: std::io::Result<usize>) 
         );
         log_debug(format_args!(
             "{}: wrote {} bytes (of {})",
-            log_cstr(
-                terminal
-                    .name()
-                    .as_deref()
-                    .map_or(std::ptr::null(), CStr::as_ptr)
-            ),
+            log_cstr(terminal.name().as_deref().unwrap_or(c"(null)")),
             written,
             size
         ));
         if let Some(left) = terminal.acknowledge_terminal_redraw(written as usize) {
             log_debug(format_args!(
                 "{}: waiting for redraw, {} bytes left",
-                log_cstr(
-                    terminal
-                        .name()
-                        .as_deref()
-                        .map_or(std::ptr::null(), CStr::as_ptr)
-                ),
+                log_cstr(terminal.name().as_deref().unwrap_or(c"(null)")),
                 left
             ));
         } else if tty_block_maybe(terminal) {
@@ -552,7 +537,7 @@ unsafe fn tty_start_timer_callback(owner: &ClientRef) {
     let name = owner.name();
     log_debug(format_args!(
         "{}: start timer fired",
-        log_cstr(name.as_deref().map_or(std::ptr::null(), CStr::as_ptr))
+        log_cstr(name.as_deref().unwrap_or(c"(null)"))
     ));
     let no_attributes =
         owner.borrow_terminal().flags & (TTY_HAVEDA | TTY_HAVEDA2 | TTY_HAVEXDA) == 0;
@@ -567,12 +552,7 @@ unsafe fn tty_start_start_timer(tty: &ClientRef) {
     let tv = Duration::from_secs(TTY_QUERY_TIMEOUT as u64);
     log_debug(format_args!(
         "{}: start timer started",
-        log_cstr(
-            ((tty.name())
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                as *const _
-        )
+        log_cstr(tty.name().as_deref().unwrap_or(c"(null)"))
     ));
     drop(tty.borrow_terminal_mut().start_timer.take());
     tty.borrow_terminal_mut().start_timer = Some(
@@ -654,23 +634,13 @@ pub unsafe fn tty_start_tty(owner: &ClientRef) {
         {
             log_debug(format_args!(
                 "{}: using capabilities for ACS",
-                log_cstr(
-                    ((tty.name())
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                        as *const _
-                )
+                log_cstr(tty.name().as_deref().unwrap_or(c"(null)"))
             ));
             tty_putcode(tty, TTYC_ENACS);
         } else {
             log_debug(format_args!(
                 "{}: using UTF-8 for ACS",
-                log_cstr(
-                    ((tty.name())
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                        as *const _
-                )
+                log_cstr(tty.name().as_deref().unwrap_or(c"(null)"))
             ));
         }
         tty_putcode(tty, TTYC_CNORM);
@@ -730,31 +700,15 @@ pub unsafe fn tty_repeat_requests(tty: &ClientRef, mut force: ::core::ffi::c_int
     if force == 0 && n <= TTY_REQUEST_LIMIT as u_int {
         log_debug(format_args!(
             "{}: not repeating requests ({} seconds)",
-            log_cstr(
-                ((tty.name())
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            ),
+            log_cstr(tty.name().as_deref().unwrap_or(c"(null)")),
             (n) as u32
         ));
         return;
     }
     log_debug(format_args!(
         "{}: {}repeating requests ({} seconds)",
-        log_cstr(
-            ((tty.name())
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                as *const _
-        ),
-        log_cstr(
-            (if force != 0 {
-                c"(force) ".as_ptr()
-            } else {
-                c"".as_ptr()
-            }) as *const _
-        ),
+        log_cstr(tty.name().as_deref().unwrap_or(c"(null)")),
+        log_cstr(if force != 0 { c"(force) " } else { c"" }),
         (n) as u32
     ));
     terminal_set!(tty, last_requests, =, t);
@@ -1207,12 +1161,7 @@ pub unsafe fn tty_update_client_offset(owner: &ClientRef) {
     }
     log_debug(format_args!(
         "tty_update_client_offset: {} offset has changed ({},{} {}x{} -> {},{} {}x{})",
-        log_cstr(
-            owner
-                .name()
-                .as_ref()
-                .map_or(std::ptr::null(), |name| name.as_ptr())
-        ),
+        log_cstr(owner.name().as_deref().unwrap_or(c"(null)")),
         old.ox,
         old.oy,
         old.sx,
@@ -1256,12 +1205,7 @@ unsafe fn tty_redraw_region(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
         log_debug(format_args!(
             "{}: {} large region redraw",
             "tty_redraw_region",
-            log_cstr(
-                ((name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            )
+            log_cstr(name.as_deref().unwrap_or(c"(null)"))
         ));
         ctx.redraw_cb.as_ref().expect("non-null redraw callback")(ctx);
         return;
@@ -1269,12 +1213,7 @@ unsafe fn tty_redraw_region(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
     log_debug(format_args!(
         "{}: {} small region redraw ({}-{})",
         "tty_redraw_region",
-        log_cstr(
-            ((name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                as *const _
-        ),
+        log_cstr(name.as_deref().unwrap_or(c"(null)")),
         { ctx.orupper },
         { ctx.orlower }
     ));
@@ -1356,7 +1295,7 @@ unsafe fn tty_clear_line(
     let name = owner.name();
     log_debug(format_args!(
         "tty_clear_line: {}, {} at {},{}",
-        log_cstr(name.as_deref().map_or(std::ptr::null(), CStr::as_ptr)),
+        log_cstr(name.as_deref().unwrap_or(c"(null)")),
         nx,
         px,
         py
@@ -1406,7 +1345,7 @@ unsafe fn tty_clear_pane_line(
     let name = owner.name();
     log_debug(format_args!(
         "tty_clear_pane_line: {}, {} at {},{}",
-        log_cstr(name.as_deref().map_or(std::ptr::null(), CStr::as_ptr)),
+        log_cstr(name.as_deref().unwrap_or(c"(null)")),
         nx,
         px,
         py
@@ -1501,7 +1440,7 @@ unsafe fn tty_clear_area(
     let name = owner.name();
     log_debug(format_args!(
         "tty_clear_area: {}, {},{} at {},{}",
-        log_cstr(name.as_deref().map_or(std::ptr::null(), CStr::as_ptr)),
+        log_cstr(name.as_deref().unwrap_or(c"(null)")),
         nx,
         ny,
         px,
@@ -1591,7 +1530,7 @@ unsafe fn tty_draw_pane(owner: &ClientRef, ctx: &tty_ctx, s: &screen, py: u_int)
     let name = owner.name();
     log_debug(format_args!(
         "tty_draw_pane: {} {}",
-        log_cstr(name.as_deref().map_or(std::ptr::null(), CStr::as_ptr)),
+        log_cstr(name.as_deref().unwrap_or(c"(null)")),
         py
     ));
     let line = if ctx.flags & TTY_CTX_WINDOW_BIGGER == 0 {

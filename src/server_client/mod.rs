@@ -1308,12 +1308,7 @@ unsafe fn server_client_check_mouse(
         let mut loc: key_code_mouse_location = KEYC_MOUSE_LOCATION_NOWHERE;
         log_debug(format_args!(
             "{} mouse {:02x} at {},{} (last {},{}) ({})",
-            log_cstr(
-                (((*c).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            ),
+            log_cstr((*c).name.as_deref().unwrap_or(c"(null)")),
             { (*m).b },
             { (*m).x },
             { (*m).y },
@@ -1327,12 +1322,7 @@ unsafe fn server_client_check_mouse(
             if let Some(pane) = last_pane.as_ref() {
                 log_debug(format_args!(
                     "{} mouse last pane %{}",
-                    log_cstr(
-                        (((*c).name)
-                            .as_ref()
-                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                            as *const _
-                    ),
+                    log_cstr((*c).name.as_deref().unwrap_or(c"(null)")),
                     { pane.id() }
                 ));
             }
@@ -1809,10 +1799,7 @@ unsafe fn server_client_check_mouse(
         }
         if log_get_level() != 0 as ::core::ffi::c_int {
             let key_string = key_string_format(key, true);
-            log_debug(format_args!(
-                "mouse key is {}",
-                log_cstr((key_string.as_ptr()) as *const _)
-            ));
+            log_debug(format_args!("mouse key is {}", log_cstr(&key_string)));
         }
         key
     })();
@@ -1874,12 +1861,7 @@ unsafe fn server_client_is_bracket_paste(c: &mut client, mut key: key_code) -> :
         c.paste_time = current_time;
         log_debug(format_args!(
             "{}: bracket paste on",
-            log_cstr(
-                ((c.name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            )
+            log_cstr(c.name.as_deref().unwrap_or(c"(null)"))
         ));
         return 0 as ::core::ffi::c_int;
     }
@@ -1889,12 +1871,7 @@ unsafe fn server_client_is_bracket_paste(c: &mut client, mut key: key_code) -> :
         c.flags = (c.flags as ::core::ffi::c_ulonglong & !CLIENT_BRACKETPASTING) as uint64_t;
         log_debug(format_args!(
             "{}: bracket paste off",
-            log_cstr(
-                ((c.name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            )
+            log_cstr(c.name.as_deref().unwrap_or(c"(null)"))
         ));
         return 0 as ::core::ffi::c_int;
     }
@@ -1932,12 +1909,7 @@ unsafe fn server_client_is_assume_paste(c: &mut client) -> ::core::ffi::c_int {
         c.paste_time = current_time;
         log_debug(format_args!(
             "{}: assume paste on",
-            log_cstr(
-                ((c.name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            )
+            log_cstr(c.name.as_deref().unwrap_or(c"(null)"))
         ));
         return 0 as ::core::ffi::c_int;
     }
@@ -1945,12 +1917,7 @@ unsafe fn server_client_is_assume_paste(c: &mut client) -> ::core::ffi::c_int {
         c.flags = (c.flags as ::core::ffi::c_ulonglong & !CLIENT_ASSUMEPASTING) as uint64_t;
         log_debug(format_args!(
             "{}: assume paste off",
-            log_cstr(
-                ((c.name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            )
+            log_cstr(c.name.as_deref().unwrap_or(c"(null)"))
         ));
     }
     0 as ::core::ffi::c_int
@@ -2212,18 +2179,12 @@ unsafe fn server_client_key_callback(
                                     if target_pane.is_none() {
                                         log_debug(format_args!(
                                             "key table {} (no pane)",
-                                            log_cstr(
-                                                ((table.borrow().name).as_ptr().cast_mut())
-                                                    as *const _
-                                            )
+                                            log_cstr(&table.borrow().name)
                                         ));
                                     } else {
                                         log_debug(format_args!(
                                             "key table {} (pane %{})",
-                                            log_cstr(
-                                                ((table.borrow().name).as_ptr().cast_mut())
-                                                    as *const _
-                                            ),
+                                            log_cstr(&table.borrow().name),
                                             { target_pane.as_ref().expect("key pane").id() }
                                         ));
                                     }
@@ -2304,10 +2265,7 @@ unsafe fn server_client_key_callback(
                                         }
                                         log_debug(format_args!(
                                             "not found in key table {}",
-                                            log_cstr(
-                                                ((table.borrow().name).as_ptr().cast_mut())
-                                                    as *const _
-                                            )
+                                            log_cstr(&table.borrow().name)
                                         ));
                                         if server_client_is_default_key_table(
                                             &*(c),
@@ -2338,10 +2296,7 @@ unsafe fn server_client_key_callback(
                                     13763002826403452995 => {
                                         log_debug(format_args!(
                                             "found in key table {}",
-                                            log_cstr(
-                                                ((table.borrow().name).as_ptr().cast_mut())
-                                                    as *const _
-                                            )
+                                            log_cstr(&table.borrow().name)
                                         ));
                                         let bd = bd.take().expect("matched binding");
                                         repeat = server_client_repeat_time(&*(c), &bd);
@@ -2390,10 +2345,7 @@ unsafe fn server_client_key_callback(
                                     _ => {
                                         log_debug(format_args!(
                                             "found in key table {} (not repeating)",
-                                            log_cstr(
-                                                ((table.borrow().name).as_ptr().cast_mut())
-                                                    as *const _
-                                            )
+                                            log_cstr(&table.borrow().name)
                                         ));
                                         server_client_set_key_table(
                                             &c_owner,
@@ -2774,12 +2726,7 @@ unsafe fn server_client_reset_state(client_owner: &ClientRef) {
             log_debug(format_args!(
                 "{}: client {} mode {}",
                 "server_client_reset_state",
-                log_cstr(
-                    (((*c).name)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                        as *const _
-                ),
+                log_cstr((*c).name.as_deref().unwrap_or(c"(null)")),
                 screen_mode_display(mode)
             ));
         }
@@ -2951,24 +2898,14 @@ unsafe fn server_client_exit_timer(owner: &ClientRef) {
         log_debug(format_args!(
             "{}: {} took too long to exit",
             "server_client_exit_timer",
-            log_cstr(
-                (((*c).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            )
+            log_cstr((*c).name.as_deref().unwrap_or(c"(null)"))
         ));
         server_client_lost(owner);
     } else if (*c).flags & CLIENT_EXIT as uint64_t != 0 {
         log_debug(format_args!(
             "{}: {} took too long to flush",
             "server_client_exit_timer",
-            log_cstr(
-                (((*c).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            )
+            log_cstr((*c).name.as_deref().unwrap_or(c"(null)"))
         ));
         server_client_check_exit(owner, 1 as ::core::ffi::c_int);
     }
@@ -3125,33 +3062,22 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
         if (*c).flags & CLIENT_ALLREDRAWFLAGS as uint64_t != 0 {
             log_debug(format_args!(
                 "{}: redraw{}{}{}",
-                log_cstr(
-                    (((*c).name)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                        as *const _
-                ),
-                log_cstr(
-                    (if (*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
-                        c" window".as_ptr()
-                    } else {
-                        c"".as_ptr()
-                    }) as *const _
-                ),
-                log_cstr(
-                    (if (*c).flags & CLIENT_REDRAWSTATUS as uint64_t != 0 {
-                        c" status".as_ptr()
-                    } else {
-                        c"".as_ptr()
-                    }) as *const _
-                ),
-                log_cstr(
-                    (if (*c).flags & CLIENT_REDRAWBORDERS as uint64_t != 0 {
-                        c" borders".as_ptr()
-                    } else {
-                        c"".as_ptr()
-                    }) as *const _
-                )
+                log_cstr((*c).name.as_deref().unwrap_or(c"(null)")),
+                log_cstr(if (*c).flags & CLIENT_REDRAWWINDOW as uint64_t != 0 {
+                    c" window"
+                } else {
+                    c""
+                }),
+                log_cstr(if (*c).flags & CLIENT_REDRAWSTATUS as uint64_t != 0 {
+                    c" status"
+                } else {
+                    c""
+                }),
+                log_cstr(if (*c).flags & CLIENT_REDRAWBORDERS as uint64_t != 0 {
+                    c" borders"
+                } else {
+                    c""
+                })
             ));
         }
         needed = 0 as ::core::ffi::c_int;
@@ -3171,23 +3097,13 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
             if n != 0 as size_t {
                 log_debug(format_args!(
                     "{}: redraw deferred ({} left)",
-                    log_cstr(
-                        (((*c).name)
-                            .as_ref()
-                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                            as *const _
-                    ),
+                    log_cstr((*c).name.as_deref().unwrap_or(c"(null)")),
                     (n) as usize
                 ));
             } else {
                 log_debug(format_args!(
                     "{}: redraw deferred (blocked)",
-                    log_cstr(
-                        (((*c).name)
-                            .as_ref()
-                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                            as *const _
-                    )
+                    log_cstr((*c).name.as_deref().unwrap_or(c"(null)"))
                 ));
             }
             if ev.is_none() {
@@ -3218,12 +3134,7 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
         }
         log_debug(format_args!(
             "{}: redraw needed",
-            log_cstr(
-                (((*c).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            )
+            log_cstr((*c).name.as_deref().unwrap_or(c"(null)"))
         ));
         tflags = (*tty).flags & (TTY_BLOCK | TTY_FREEZE | TTY_NOCURSOR);
         (*tty).flags = (*tty).flags & !(TTY_BLOCK | TTY_FREEZE) | TTY_NOCURSOR;
@@ -3273,12 +3184,7 @@ unsafe fn server_client_check_redraw(client_owner: &ClientRef) {
         (*c).redraw = evbuffer_get_length((*tty).out.as_deref().expect("open TTY buffer"));
         log_debug(format_args!(
             "{}: redraw added {} bytes",
-            log_cstr(
-                (((*c).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            ),
+            log_cstr((*c).name.as_deref().unwrap_or(c"(null)")),
             { (*c).redraw }
         ));
     })();
@@ -3705,7 +3611,7 @@ unsafe fn server_client_dispatch_identify(
             log_debug(format_args!(
                 "client {} IDENTIFY_FEATURES {}",
                 log_pointer((c) as *const ::core::ffi::c_void),
-                log_cstr(tty_get_features(feat).as_ptr())
+                log_cstr(&tty_get_features(feat))
             ));
         }
         MSG_IDENTIFY_FLAGS => {
@@ -3750,7 +3656,7 @@ unsafe fn server_client_dispatch_identify(
             log_debug(format_args!(
                 "client {} IDENTIFY_TERM {}",
                 log_pointer((c) as *const ::core::ffi::c_void),
-                log_cstr((data) as *const _)
+                log_cstr(CStr::from_ptr(data))
             ));
         }
         MSG_IDENTIFY_TERMINFO => {
@@ -3763,7 +3669,7 @@ unsafe fn server_client_dispatch_identify(
             log_debug(format_args!(
                 "client {} IDENTIFY_TERMINFO {}",
                 log_pointer((c) as *const ::core::ffi::c_void),
-                log_cstr((data) as *const _)
+                log_cstr(CStr::from_ptr(data))
             ));
         }
         MSG_IDENTIFY_TTYNAME => {
@@ -3776,7 +3682,7 @@ unsafe fn server_client_dispatch_identify(
             log_debug(format_args!(
                 "client {} IDENTIFY_TTYNAME {}",
                 log_pointer((c) as *const ::core::ffi::c_void),
-                log_cstr((data) as *const _)
+                log_cstr(CStr::from_ptr(data))
             ));
         }
         MSG_IDENTIFY_CWD => {
@@ -3797,7 +3703,7 @@ unsafe fn server_client_dispatch_identify(
             log_debug(format_args!(
                 "client {} IDENTIFY_CWD {}",
                 log_pointer((c) as *const ::core::ffi::c_void),
-                log_cstr((data) as *const _)
+                log_cstr(CStr::from_ptr(data))
             ));
         }
         MSG_IDENTIFY_STDIN => {
@@ -3838,7 +3744,7 @@ unsafe fn server_client_dispatch_identify(
             log_debug(format_args!(
                 "client {} IDENTIFY_ENVIRON {}",
                 log_pointer((c) as *const ::core::ffi::c_void),
-                log_cstr((data) as *const _)
+                log_cstr(CStr::from_ptr(data))
             ));
         }
         MSG_IDENTIFY_CLIENTPID => {
@@ -3878,12 +3784,7 @@ unsafe fn server_client_dispatch_identify(
     log_debug(format_args!(
         "client {} name is {}",
         log_pointer((c) as *const ::core::ffi::c_void),
-        log_cstr(
-            (((*c).name)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                as *const _
-        )
+        log_cstr((*c).name.as_deref().unwrap_or(c"(null)"))
     ));
     if (*c).flags & CLIENT_CONTROL as uint64_t != 0 {
         control_start(owner);
@@ -3905,12 +3806,7 @@ unsafe fn server_client_dispatch_identify(
     {
         log_debug(format_args!(
             "{}: paste time limit exceeded",
-            log_cstr(
-                (((*c).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            )
+            log_cstr((*c).name.as_deref().unwrap_or(c"(null)"))
         ));
         (*c).flags = ((*c).flags as ::core::ffi::c_ulonglong
             & !(CLIENT_BRACKETPASTING | CLIENT_ASSUMEPASTING)) as uint64_t;
@@ -4017,13 +3913,8 @@ unsafe fn server_client_set_flags(c_owner: &ClientRef, mut flags: *const ::core:
         }
         log_debug(format_args!(
             "client {} set flag {}",
-            log_cstr(
-                (((*c).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            ),
-            log_cstr((next) as *const _)
+            log_cstr((*c).name.as_deref().unwrap_or(c"(null)")),
+            log_cstr(CStr::from_ptr(next))
         ));
         if not != 0 {
             if (*c).flags & CLIENT_READONLY as uint64_t != 0 {
@@ -4205,7 +4096,7 @@ unsafe fn server_client_print(
     log_debug(format_args!(
         "{}: {}",
         "server_client_print",
-        log_cstr((msg) as *const _)
+        log_cstr(CStr::from_ptr(msg))
     ));
     if !c.is_null() {
         if (*c).session_handle().is_none() || (*c).flags & CLIENT_CONTROL as uint64_t != 0 {

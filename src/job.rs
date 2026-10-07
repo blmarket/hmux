@@ -181,16 +181,16 @@ pub unsafe fn job_run(
             log_debug(format_args!(
                 "{}: cwd={}, shell={}",
                 "job_run",
-                log_cstr((cwd.map_or(c"".as_ptr(), CStr::as_ptr,)) as *const _),
-                log_cstr((shell) as *const _)
+                log_cstr(cwd.unwrap_or(c"")),
+                log_cstr(CStr::from_ptr(shell))
             ));
         } else {
             log_debug(format_args!(
                 "{}: cmd={}, cwd={}, shell={}",
                 "job_run",
-                log_cstr((cmd.unwrap().as_ptr()) as *const _),
-                log_cstr((cwd.map_or(c"".as_ptr(), CStr::as_ptr,)) as *const _),
-                log_cstr((shell) as *const _)
+                log_cstr(cmd.unwrap()),
+                log_cstr(cwd.unwrap_or(c"")),
+                log_cstr(CStr::from_ptr(shell))
             ));
         }
         match pid {

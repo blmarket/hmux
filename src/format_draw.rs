@@ -1081,7 +1081,7 @@ pub unsafe fn format_draw(
     log_debug(format_args!(
         "{}: {}",
         "format_draw",
-        log_cstr((expanded) as *const _)
+        log_cstr(CStr::from_ptr(expanded))
     ));
     i = 0 as u_int;
     while i < TOTAL as ::core::ffi::c_int as u_int {
@@ -1187,7 +1187,7 @@ pub unsafe fn format_draw(
                 log_debug(format_args!(
                     "{}: no terminating ] at '{}'",
                     "format_draw",
-                    log_cstr((cp.offset(2 as ::core::ffi::c_int as isize)) as *const _)
+                    log_cstr(CStr::from_ptr(cp.offset(2 as ::core::ffi::c_int as isize)))
                 ));
                 frs.clear();
                 i = 0 as u_int;
@@ -1223,7 +1223,7 @@ pub unsafe fn format_draw(
                         "{}: style '{}' -> '{}'",
                         "format_draw",
                         crate::src::log::log_bytes(style_text.as_bytes()),
-                        log_cstr((style_tostring(&raw mut sy)) as *const _)
+                        log_cstr(CStr::from_ptr(style_tostring(&raw mut sy)))
                     ));
                     drop(style_text);
                     if default_colours != 0 {
@@ -1347,8 +1347,8 @@ pub unsafe fn format_draw(
                         log_debug(format_args!(
                             "{}: change {} -> {}",
                             "format_draw",
-                            log_cstr(names[last as usize].as_ptr()),
-                            log_cstr(names[current as usize].as_ptr())
+                            log_cstr(names[last as usize]),
+                            log_cstr(names[current as usize])
                         ));
                         last = current;
                     }
@@ -1396,7 +1396,7 @@ pub unsafe fn format_draw(
             log_debug(format_args!(
                 "{}: width {} is {}",
                 "format_draw",
-                log_cstr(names[i as usize].as_ptr()),
+                log_cstr(names[i as usize]),
                 (width[i as usize]) as u32
             ));
             i = i.wrapping_add(1);
@@ -1415,7 +1415,7 @@ pub unsafe fn format_draw(
                 "format_draw",
                 (fr.type_0 as ::core::ffi::c_uint) as i32,
                 { fr.argument },
-                log_cstr(names[fr.index as usize].as_ptr()),
+                log_cstr(names[fr.index as usize]),
                 { fr.start },
                 { fr.end }
             ));

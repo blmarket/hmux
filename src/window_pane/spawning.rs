@@ -463,37 +463,20 @@ pub(super) unsafe fn spawn_pane(
         log_debug(format_args!(
             "{}: shell={}",
             "spawn_pane",
-            log_cstr(
-                ((*new_wp)
-                    .shell
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |value| value.as_ptr()))
-                    as *const _
-            )
+            log_cstr((*new_wp).shell.as_deref().unwrap_or(c"(null)"))
         ));
         if !(*new_wp).argv.is_empty() {
             let command = cmd_stringify_argv_cstring(&(*new_wp).argv);
             log_debug(format_args!(
                 "{}: cmd={}",
                 "spawn_pane",
-                log_cstr(
-                    (command
-                        .as_ref()
-                        .map_or(::core::ptr::null(), |text| text.as_ptr()))
-                        as *const _
-                )
+                log_cstr(command.as_deref().unwrap_or(c"(null)"))
             ));
         }
         log_debug(format_args!(
             "{}: cwd={}",
             "spawn_pane",
-            log_cstr(
-                ((*new_wp)
-                    .cwd
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |value| value.as_ptr()))
-                    as *const _
-            )
+            log_cstr((*new_wp).cwd.as_deref().unwrap_or(c"(null)"))
         ));
         cmd_log_argv(&(*new_wp).argv, c"spawn_pane");
         environ_log(child, |out| {
@@ -603,12 +586,7 @@ pub(super) unsafe fn spawn_pane(
                     log_debug(format_args!(
                         "{}: moving pane to new cgroup failed: {}",
                         "spawn_pane",
-                        log_cstr(
-                            (systemd_error
-                                .as_ref()
-                                .map_or(::core::ptr::null(), |error| error.as_ptr()))
-                                as *const _
-                        )
+                        log_cstr(systemd_error.as_deref().unwrap_or(c"(null)"))
                     ));
                 }
                 drop(systemd_error);

@@ -193,7 +193,7 @@ mod tests {
                 assert_eq!(
                     message(format_args!(
                         "before {} after",
-                        log_cstr(bytes.as_ptr().cast())
+                        log_cstr(CStr::from_bytes_until_nul(&bytes).unwrap())
                     )),
                     legacy_message!(c"before %s after".as_ptr(), bytes.as_ptr()),
                     "C string byte {byte}"

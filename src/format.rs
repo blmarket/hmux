@@ -327,8 +327,8 @@ unsafe fn format_log1(
     let s = format_message_with(write);
     log_debug(format_args!(
         "{}: {}",
-        log_cstr((from) as *const _),
-        log_cstr((s.as_ptr()) as *const _)
+        log_cstr(CStr::from_ptr(from)),
+        log_cstr(&s)
     ));
     if let Some(item) = (*ft)
         .item
@@ -420,10 +420,9 @@ pub unsafe fn format_defaults(
             "{}: c={}",
             "format_defaults",
             log_cstr(
-                ((c.as_ref().expect("live client").name())
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
+                (c.as_ref().expect("live client").name())
+                    .as_deref()
+                    .unwrap_or(c"(null)")
             )
         ));
     } else {

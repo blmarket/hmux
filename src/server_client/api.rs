@@ -685,12 +685,7 @@ impl Client for ClientRef {
         }
         log_debug(format_args!(
             "control_check_reply_buffer: {}: {} bytes of replies buffered",
-            log_cstr(
-                state
-                    .name
-                    .as_ref()
-                    .map_or(std::ptr::null(), |name| name.as_ptr())
-            ),
+            log_cstr(state.name.as_deref().unwrap_or(c"(null)")),
             size
         ));
         if state.flags & CLIENT_EXIT as u64 == 0 {
@@ -957,12 +952,7 @@ impl Client for ClientRef {
         if control_get_window_size(self, window.id(), &mut cx, &mut cy) != 0 {
             log_debug(format_args!(
                 "clients_calculate_size: {} size for @{} is {}x{}",
-                log_cstr(
-                    (*self.get())
-                        .name
-                        .as_ref()
-                        .map_or(std::ptr::null(), |name| name.as_ptr())
-                ),
+                log_cstr((*self.get()).name.as_deref().unwrap_or(c"(null)")),
                 window.id(),
                 cx,
                 cy,

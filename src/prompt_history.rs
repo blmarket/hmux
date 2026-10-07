@@ -85,7 +85,7 @@ pub unsafe fn prompt_load_history() {
         log_debug(format_args!(
             "{}: {}",
             log_bytes(history_file.as_bytes()),
-            log_cstr((strerror(*__errno_location())) as *const _)
+            log_cstr(CStr::from_ptr(strerror(*__errno_location())))
         ));
         return;
     }
@@ -112,7 +112,7 @@ pub unsafe fn prompt_save_history() {
         log_debug(format_args!(
             "{}: {}",
             log_bytes(history_file.as_bytes()),
-            log_cstr((strerror(*__errno_location())) as *const _)
+            log_cstr(CStr::from_ptr(strerror(*__errno_location())))
         ));
         return;
     }

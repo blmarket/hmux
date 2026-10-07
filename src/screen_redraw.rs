@@ -65,6 +65,7 @@ use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::window::windows;
 use crate::src::window::Window as _;
 use crate::src::window::WindowIndex as _;
+use std::ffi::CStr;
 
 use crate::src::window::WindowPane;
 use crate::src::window_border::{window_get_border_cell, window_get_fill_cell};
@@ -767,10 +768,9 @@ unsafe fn redraw_make_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene
     log_debug(format_args!(
         "{}: building @{} scene ({}x{} {},{}; generation {})",
         log_cstr(
-            ((c.as_ref().expect("live client").name())
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                as *const _
+            (c.as_ref().expect("live client").name())
+                .as_deref()
+                .unwrap_or(c"(null)")
         ),
         { window_owner.id() },
         { bctx.sx },
@@ -830,10 +830,9 @@ unsafe fn redraw_make_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene
     log_debug(format_args!(
         "{}: finished building @{} scene",
         log_cstr(
-            ((c.as_ref().expect("live client").name())
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                as *const _
+            (c.as_ref().expect("live client").name())
+                .as_deref()
+                .unwrap_or(c"(null)")
         ),
         { window_owner.id() }
     ));
@@ -883,8 +882,8 @@ unsafe fn redraw_get_scene(client_owner: &ClientRef) -> Option<Box<redraw_scene>
                 c.as_ref()
                     .expect("live client")
                     .name()
-                    .as_ref()
-                    .map_or(std::ptr::null(), |name| name.as_ptr())
+                    .as_deref()
+                    .unwrap_or(c"(null)")
             ),
             window_owner.id(),
             reason
@@ -1396,10 +1395,9 @@ unsafe fn redraw_draw(
         log_debug(format_args!(
             "{}: starting @{} redraw ({})",
             log_cstr(
-                ((c.as_ref().expect("live client").name())
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
+                (c.as_ref().expect("live client").name())
+                    .as_deref()
+                    .unwrap_or(c"(null)")
             ),
             {
                 (((s.as_ref().expect("live session").current_winlink())
@@ -1409,7 +1407,7 @@ unsafe fn redraw_draw(
                 .expect("live window"))
                 .id()
             },
-            log_cstr(redraw_flags_to_string(flags).as_ptr())
+            log_cstr(&redraw_flags_to_string(flags))
         ));
     }
     let Some(scene) = redraw_get_scene(client_owner) else {
@@ -1546,10 +1544,9 @@ unsafe fn redraw_draw_scene(
     log_debug(format_args!(
         "{}: finished @{} redraw",
         log_cstr(
-            ((c.as_ref().expect("live client").name())
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                as *const _
+            (c.as_ref().expect("live client").name())
+                .as_deref()
+                .unwrap_or(c"(null)")
         ),
         { (window_owner).id() }
     ));

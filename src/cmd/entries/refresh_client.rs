@@ -112,10 +112,9 @@ unsafe fn cmd_refresh_client_control_client_size(
             "{}: client {} window @{}: size {}x{}",
             "cmd_refresh_client_control_client_size",
             log_cstr(
-                ((tc.as_ref().expect("live client").name())
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
+                (tc.as_ref().expect("live client").name())
+                    .as_deref()
+                    .unwrap_or(c"(null)")
             ),
             (w) as u32,
             (x) as u32,
@@ -133,10 +132,9 @@ unsafe fn cmd_refresh_client_control_client_size(
             "{}: client {} window @{}: no size",
             "cmd_refresh_client_control_client_size",
             log_cstr(
-                ((tc.as_ref().expect("live client").name())
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
+                (tc.as_ref().expect("live client").name())
+                    .as_deref()
+                    .unwrap_or(c"(null)")
             ),
             (w) as u32
         ));

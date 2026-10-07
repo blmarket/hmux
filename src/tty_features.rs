@@ -231,7 +231,7 @@ pub unsafe fn tty_parse_features(
     let mut remove: ::core::ffi::c_int = 0;
     log_debug(format_args!(
         "adding terminal features {}",
-        log_cstr((s) as *const _)
+        log_cstr(CStr::from_ptr(s))
     ));
     // strsep and the trailing-@ removal both write into this local copy.
     let mut copy = CStr::from_ptr(s).to_bytes_with_nul().to_vec();
@@ -258,7 +258,7 @@ pub unsafe fn tty_parse_features(
         if i as usize == tty_features.len() {
             log_debug(format_args!(
                 "unknown terminal feature: {}",
-                log_cstr((next) as *const _)
+                log_cstr(CStr::from_ptr(next))
             ));
             break;
         } else if remove != 0 {
@@ -355,7 +355,7 @@ pub unsafe fn tty_apply_features(mut term: *mut tty_term, feat: i32) -> AppliedF
     }
     log_debug(format_args!(
         "applying terminal features: {}",
-        log_cstr(tty_get_features(feat).as_ptr())
+        log_cstr(&tty_get_features(feat))
     ));
     i = 0 as u_int;
     while (i as usize) < tty_features.len() {

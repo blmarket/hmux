@@ -91,7 +91,7 @@ pub(crate) unsafe fn tty_enqueue_bytes(
     );
     log_debug(format_args!(
         "{}: {}",
-        log_cstr(name.map_or(std::ptr::null(), CStr::as_ptr)),
+        log_cstr(name.unwrap_or(c"(null)")),
         log_cstr_n(buf.as_ptr().cast(), len as ::core::ffi::c_int)
     ));
     *written = written.wrapping_add(len);
@@ -355,22 +355,12 @@ pub unsafe fn tty_update_mode(
     if log_get_level() != 0 as ::core::ffi::c_int && changed != 0 as ::core::ffi::c_int {
         log_debug(format_args!(
             "{}: current mode {}",
-            log_cstr(
-                ((client.name())
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            ),
+            log_cstr(client.name().as_deref().unwrap_or(c"(null)")),
             screen_mode_display(terminal_value!(client, mode))
         ));
         log_debug(format_args!(
             "{}: setting mode {}",
-            log_cstr(
-                ((client.name())
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            ),
+            log_cstr(client.name().as_deref().unwrap_or(c"(null)")),
             screen_mode_display(mode)
         ));
     }
@@ -432,12 +422,7 @@ pub unsafe fn tty_sync_start(client: &ClientRef) {
     if tty_term_has(terminal_term(client), TTYC_SYNC) != 0 {
         log_debug(format_args!(
             "{} sync start",
-            log_cstr(
-                ((client.name())
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            )
+            log_cstr(client.name().as_deref().unwrap_or(c"(null)"))
         ));
         tty_putcode_i(client, TTYC_SYNC, 1 as ::core::ffi::c_int);
     }
@@ -454,12 +439,7 @@ pub unsafe fn tty_sync_end(client: &ClientRef) {
     if tty_term_has(terminal_term(client), TTYC_SYNC) != 0 {
         log_debug(format_args!(
             "{} sync end",
-            log_cstr(
-                ((client.name())
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            )
+            log_cstr(client.name().as_deref().unwrap_or(c"(null)"))
         ));
         tty_putcode_i(client, TTYC_SYNC, 2 as ::core::ffi::c_int);
     }

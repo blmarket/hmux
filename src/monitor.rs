@@ -277,8 +277,8 @@ unsafe fn monitor_check_value(
     };
     log_debug(format_args!(
         "monitor_report: {} changed to {}",
-        log_cstr(name.as_ptr()),
-        log_cstr(value.as_ptr())
+        log_cstr(&name),
+        log_cstr(value)
     ));
     let change = monitor_change {
         name: &name,

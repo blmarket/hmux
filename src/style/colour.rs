@@ -3815,8 +3815,8 @@ pub unsafe fn colour_parse_x11_logged(input: &std::ffi::CStr) -> Option<i32> {
     crate::src::log::log_debug(format_args!(
         "{}: {} = {}",
         "colour_parseX11",
-        log_cstr((input.as_ptr()) as *const _),
-        log_cstr((formatted.as_ptr()) as *const _)
+        log_cstr(input),
+        log_cstr(&formatted)
     ));
     value
 }

@@ -472,12 +472,7 @@ pub unsafe fn key_bindings_init() {
         {
             log_debug(format_args!(
                 "{}",
-                log_cstr(
-                    (pr.error
-                        .as_ref()
-                        .map_or(::core::ptr::null(), |cause| cause.as_ptr()))
-                        as *const _
-                )
+                log_cstr(pr.error.as_deref().unwrap_or(c"(null)"))
             ));
             fatalx(|out| {
                 out.write_all(b"bad default key: ")?;

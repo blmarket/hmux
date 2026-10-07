@@ -753,12 +753,7 @@ pub unsafe fn args_make_commands_prepare(
     log_debug(format_args!(
         "{}: {}",
         "args_make_commands_prepare",
-        log_cstr(
-            ((state.cmd)
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                as *const _
-        )
+        log_cstr(state.cmd.as_deref().unwrap_or(c"(null)"))
     ));
     if wait != 0 {
         state.pi.set_item(Some(item_handle));

@@ -1553,7 +1553,7 @@ pub unsafe fn options_push_changes(mut name: *const ::core::ffi::c_char) {
     log_debug(format_args!(
         "{}: {}",
         "options_push_changes",
-        log_cstr((name) as *const _)
+        log_cstr(CStr::from_ptr(name))
     ));
     if strcmp(name, c"theme".as_ptr()) == 0 as ::core::ffi::c_int
         || strncmp(name, c"dark-theme-".as_ptr(), 11 as size_t) == 0 as ::core::ffi::c_int

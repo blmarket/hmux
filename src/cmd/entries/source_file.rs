@@ -240,7 +240,7 @@ unsafe fn cmd_source_file_add(cdata: &mut cmd_source_file_data, path: &CStr) {
     log_debug(format_args!(
         "{}: {}",
         "cmd_source_file_add",
-        log_cstr((path.as_ptr()) as *const _)
+        log_cstr(path)
     ));
     cdata.files.push(path.to_owned());
 }
@@ -350,7 +350,7 @@ unsafe fn cmd_source_file_exec(
             log_debug(format_args!(
                 "{}: {}",
                 "cmd_source_file_exec",
-                log_cstr((pattern.as_ptr()) as *const _)
+                log_cstr(&pattern)
             ));
             let (matches, result) = GlobResult::run(pattern.as_c_str());
             if result != 0 as ::core::ffi::c_int {

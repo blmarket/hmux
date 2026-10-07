@@ -473,8 +473,8 @@ pub unsafe fn input_key_build() {
             "{}: 0x{:x} ({}) is {}",
             "input_key_build",
             entry.key,
-            log_cstr(key_string.as_ptr()),
-            log_cstr(entry.data.as_ptr()),
+            log_cstr(&key_string),
+            log_cstr(&entry.data),
         ));
     }
 }
@@ -493,7 +493,7 @@ unsafe fn input_key_write(
 ) {
     log_debug(format_args!(
         "{}: {}",
-        log_cstr((from) as *const _),
+        log_cstr(CStr::from_ptr(from)),
         log_cstr_n((data) as *const _, size as ::core::ffi::c_int)
     ));
     bufferevent_write(bev, data as *const ::core::ffi::c_void, size);
@@ -801,7 +801,7 @@ pub unsafe fn input_key(
             "{}: found key 0x{:x}: \"{}\"",
             "input_key",
             key,
-            log_cstr((*ike).data.as_ptr())
+            log_cstr(&(*ike).data)
         ));
         if key as ::core::ffi::c_ulonglong & KEYC_MASK_TYPE
             == (KEYC_TYPE_FUNCTION as ::core::ffi::c_int as ::core::ffi::c_ulonglong)

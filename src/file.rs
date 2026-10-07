@@ -974,7 +974,7 @@ pub unsafe fn file_write_open(
     log_debug(format_args!(
         "open write file {} {}",
         { msg.stream },
-        log_cstr((path) as *const _)
+        log_cstr(CStr::from_ptr(path))
     ));
     find.stream = msg.stream;
     if crate::src::client::client_find_file(find.stream).is_some() {
@@ -1184,7 +1184,7 @@ pub unsafe fn file_read_open(
     log_debug(format_args!(
         "open read file {} {}",
         { msg.stream },
-        log_cstr((path) as *const _)
+        log_cstr(CStr::from_ptr(path))
     ));
     find.stream = msg.stream;
     if crate::src::client::client_find_file(find.stream).is_some() {

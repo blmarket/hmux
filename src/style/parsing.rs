@@ -32,6 +32,7 @@ pub use crate::src::shared::window::winlink;
 use crate::src::style::attributes::{attributes_format, attributes_parse_cstr};
 use crate::src::style::colour::{colour_format, colour_parse_cstr};
 use crate::src::text::utf8::utf8_set;
+use std::ffi::CStr;
 
 pub const STYLE_WIDTH_DEFAULT: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
 pub const STYLE_PAD_DEFAULT: ::core::ffi::c_int = -(1 as ::core::ffi::c_int);
@@ -172,7 +173,7 @@ pub unsafe fn style_parse(
     log_debug(format_args!(
         "{}: {}",
         "style_parse",
-        log_cstr((in_0) as *const _)
+        log_cstr(CStr::from_ptr(in_0))
     ));
     loop {
         while *in_0 as ::core::ffi::c_int != '\0' as i32
@@ -204,7 +205,7 @@ pub unsafe fn style_parse(
         log_debug(format_args!(
             "{}: {}",
             "style_parse",
-            log_cstr((&raw mut tmp as *mut ::core::ffi::c_char) as *const _)
+            log_cstr(CStr::from_ptr(&raw mut tmp as *mut ::core::ffi::c_char))
         ));
         if strcasecmp(
             &raw mut tmp as *mut ::core::ffi::c_char,

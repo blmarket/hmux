@@ -1694,7 +1694,7 @@ unsafe fn prompt_complete(pr: &mut prompt, word: &CStr, mut offset: u_int) -> Op
         log_debug(format_args!(
             "complete {}: {}",
             (i) as u32,
-            log_cstr((list[i as usize].as_ptr()) as *const _)
+            log_cstr(&list[i as usize])
         ));
         i = i.wrapping_add(1);
     }

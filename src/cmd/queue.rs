@@ -508,12 +508,7 @@ pub unsafe fn cmdq_append(
             "{} {}: {}",
             "cmdq_append",
             crate::src::log::log_bytes(cmdq_name(owner).as_bytes()),
-            log_cstr(
-                (((*item).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            )
+            log_cstr((*item).name.as_deref().unwrap_or(c"(null)"))
         ));
     }
     last
@@ -557,18 +552,8 @@ pub unsafe fn cmdq_insert_after(
             "{} {}: {} after {}",
             "cmdq_insert_after",
             crate::src::log::log_bytes(cmdq_name(c_owner.as_ref()).as_bytes()),
-            log_cstr(
-                (((*item).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            ),
-            log_cstr(
-                (((*previous).name)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
-            )
+            log_cstr((*item).name.as_deref().unwrap_or(c"(null)")),
+            log_cstr((*previous).name.as_deref().unwrap_or(c"(null)"))
         ));
         previous = item;
     }

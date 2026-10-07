@@ -234,14 +234,9 @@ pub unsafe fn environ_log(
         if !envent.value.is_none() && *envent.name.as_ptr() as ::core::ffi::c_int != '\0' as i32 {
             log_debug(format_args!(
                 "{}{}={}",
-                log_cstr((prefix.as_ptr()) as *const _),
-                log_cstr(((envent.name).as_ptr().cast_mut()) as *const _),
-                log_cstr(
-                    ((envent.value)
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                        as *const _
-                )
+                log_cstr(&prefix),
+                log_cstr(&envent.name),
+                log_cstr(envent.value.as_deref().unwrap_or(c"(null)"))
             ));
         }
     }

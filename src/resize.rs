@@ -19,6 +19,7 @@ use crate::src::tty::tty_update_window_offset;
 use crate::src::window::Window as _;
 use crate::src::window::WindowIndex as _;
 use crate::src::window::{windows, Window as _};
+use std::ffi::CStr;
 
 pub unsafe fn resize_window(window: &WindowRef, sx: u_int, sy: u_int, xpixel: i32, ypixel: i32) {
     use crate::src::window::Window;
@@ -106,10 +107,9 @@ unsafe fn clients_calculate_size(
                     "{}: ignoring {} (1)",
                     "clients_calculate_size",
                     log_cstr(
-                        ((loop_0.as_ref().expect("live client").name())
-                            .as_ref()
-                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                            as *const _
+                        (loop_0.as_ref().expect("live client").name())
+                            .as_deref()
+                            .unwrap_or(c"(null)")
                     )
                 ));
             } else if !crate::src::shared::rc::same(loop_0.as_ref(), c.as_ref())
@@ -119,10 +119,9 @@ unsafe fn clients_calculate_size(
                     "{}: skipping {} (1)",
                     "clients_calculate_size",
                     log_cstr(
-                        ((loop_0.as_ref().expect("live client").name())
-                            .as_ref()
-                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                            as *const _
+                        (loop_0.as_ref().expect("live client").name())
+                            .as_deref()
+                            .unwrap_or(c"(null)")
                     )
                 ));
             } else if type_0 == WINDOW_SIZE_LATEST
@@ -135,10 +134,9 @@ unsafe fn clients_calculate_size(
                     "{}: {} is not latest",
                     "clients_calculate_size",
                     log_cstr(
-                        ((loop_0.as_ref().expect("live client").name())
-                            .as_ref()
-                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                            as *const _
+                        (loop_0.as_ref().expect("live client").name())
+                            .as_deref()
+                            .unwrap_or(c"(null)")
                     )
                 ));
             } else {
@@ -171,10 +169,9 @@ unsafe fn clients_calculate_size(
                     "{}: after {} ({}x{}), size is {}x{}",
                     "clients_calculate_size",
                     log_cstr(
-                        ((loop_0.as_ref().expect("live client").name())
-                            .as_ref()
-                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                            as *const _
+                        (loop_0.as_ref().expect("live client").name())
+                            .as_deref()
+                            .unwrap_or(c"(null)")
                     ),
                     (cx) as u32,
                     (cy) as u32,
@@ -291,10 +288,9 @@ pub unsafe fn default_window_size(
             { *sx },
             { *sy },
             log_cstr(
-                ((c.as_ref().expect("live client").name())
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
+                (c.as_ref().expect("live client").name())
+                    .as_deref()
+                    .unwrap_or(c"(null)")
             )
         ));
     } else {

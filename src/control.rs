@@ -5,7 +5,7 @@ use crate::src::cmd::queue::{
 use crate::src::ffi::libc::{__errno_location, memset, strcmp, strlen};
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::write_cstr;
-use crate::src::log::{fatalx, log_cstr, log_cstr_n, log_debug};
+use crate::src::log::{fatalx, log_bytes, log_cstr, log_cstr_n, log_debug};
 use crate::src::monitor::{monitor_add, monitor_create_client_owned, monitor_remove};
 use crate::src::reactor::BufferEvent;
 use crate::src::reactor::{
@@ -503,9 +503,7 @@ unsafe fn control_write_line(c_owner: &ClientRef, line: CString) {
         return;
     }
     let name_owner = c_owner.name();
-    let name = name_owner
-        .as_ref()
-        .map_or(std::ptr::null(), |name| name.as_ptr());
+    let name = name_owner.as_deref().unwrap_or(c"(null)");
     let (stream, immediate) = {
         let Some(mut cs) = c_owner.borrow_control_mut() else {
             return;
@@ -515,7 +513,7 @@ unsafe fn control_write_line(c_owner: &ClientRef, line: CString) {
             log_debug(format_args!(
                 "control_write_line: {}: writing line: {}",
                 log_cstr(name),
-                log_cstr(line.as_ptr())
+                log_cstr(&line)
             ));
             (stream, Some(line))
         } else {
@@ -529,8 +527,8 @@ unsafe fn control_write_line(c_owner: &ClientRef, line: CString) {
                     cb.try_borrow_mut()
                         .expect("live control block")
                         .line
-                        .as_ref()
-                        .map_or(std::ptr::null(), |line| line.as_ptr())
+                        .as_deref()
+                        .unwrap_or(c"(null)")
                 )
             ));
             (stream, None)
@@ -615,8 +613,8 @@ pub unsafe fn control_notify_write(
         if cs.guard_depth != 0 {
             log_debug(format_args!(
                 "control_notify_write: {}: deferring notification: {}",
-                log_cstr(name.as_ref().map_or(std::ptr::null(), |name| name.as_ptr())),
-                log_cstr(line.as_ptr())
+                log_cstr(name.as_deref().unwrap_or(c"(null)")),
+                log_cstr(&line)
             ));
             cs.deferred.push_back(line);
             return;
@@ -645,7 +643,7 @@ unsafe fn control_check_age(
     let name = client.name();
     log_debug(format_args!(
         "control_check_age: {}: %{} is {} behind",
-        log_cstr(name.as_ref().map_or(std::ptr::null(), |name| name.as_ptr())),
+        log_cstr(name.as_deref().unwrap_or(c"(null)")),
         window_pane.id(),
         age
     ));
@@ -723,14 +721,14 @@ pub unsafe fn control_write_output(client: &ClientRef, wp: &Rc<UnsafeCell<window
             cp.blocks.push_back(block);
             log_debug(format_args!(
                 "control_write_output: {}: new output block of {} for %{}",
-                log_cstr(name.as_ref().map_or(std::ptr::null(), |name| name.as_ptr())),
+                log_cstr(name.as_deref().unwrap_or(c"(null)")),
                 size,
                 pane
             ));
             if cp.pending_flag == 0 {
                 log_debug(format_args!(
                     "control_write_output: {}: %{} now pending",
-                    log_cstr(name.as_ref().map_or(std::ptr::null(), |name| name.as_ptr())),
+                    log_cstr(name.as_deref().unwrap_or(c"(null)")),
                     pane
                 ));
                 cs.pending_panes.push_back(pane);
@@ -744,7 +742,7 @@ pub unsafe fn control_write_output(client: &ClientRef, wp: &Rc<UnsafeCell<window
     let name = client.name();
     log_debug(format_args!(
         "control_write_output: {}: ignoring pane %{}",
-        log_cstr(name.as_ref().map_or(std::ptr::null(), |name| name.as_ptr())),
+        log_cstr(name.as_deref().unwrap_or(c"(null)")),
         pane
     ));
     let (mut offset, mut queued) = {
@@ -804,12 +802,11 @@ unsafe fn control_read_callback(owner: &ClientRef) {
             "{}: {}: {}",
             "control_read_callback",
             log_cstr(
-                ((c.as_ref().expect("live client").name())
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                    as *const _
+                (c.as_ref().expect("live client").name())
+                    .as_deref()
+                    .unwrap_or(c"(null)")
             ),
-            log_cstr((line.as_ptr().cast::<::core::ffi::c_char>()) as *const _)
+            log_bytes(&line)
         ));
         if line[0] == 0 {
             c.as_ref()
@@ -900,8 +897,8 @@ unsafe fn control_flush_all_blocks(client: &ClientRef) {
         let name = client.name();
         log_debug(format_args!(
             "control_flush_all_blocks: {}: flushing line: {}",
-            log_cstr(name.as_ref().map_or(std::ptr::null(), |name| name.as_ptr())),
-            log_cstr(line.as_ptr())
+            log_cstr(name.as_deref().unwrap_or(c"(null)")),
+            log_cstr(&line)
         ));
         let Some(()) = stream.with_ptr(|stream| {
             bufferevent_write(stream, line.as_ptr().cast(), line.as_bytes().len());
@@ -995,10 +992,9 @@ unsafe fn control_write_data(c_owner: &ClientRef, mut message: Box<SegmentedBuf>
         "{}: {}: {}",
         "control_write_data",
         log_cstr(
-            ((c.as_ref().expect("live client").name())
-                .as_ref()
-                .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()))
-                as *const _
+            (c.as_ref().expect("live client").name())
+                .as_deref()
+                .unwrap_or(c"(null)")
         ),
         log_cstr_n(
             (evbuffer_pullup(&mut message, -1)
@@ -1068,7 +1064,7 @@ unsafe fn control_write_pending(client: &ClientRef, pane: u_int, limit: size_t) 
         let name = client.name();
         log_debug(format_args!(
             "control_write_pending: {}: output block {} (age {}) for %{} (used {}/{})",
-            log_cstr(name.as_ref().map_or(std::ptr::null(), |name| name.as_ptr())),
+            log_cstr(name.as_deref().unwrap_or(c"(null)")),
             size,
             age,
             pane,
@@ -1155,7 +1151,7 @@ unsafe fn control_write_callback(owner: &ClientRef) {
         let name = owner.name();
         log_debug(format_args!(
             "control_write_callback: {}: {} bytes available, {} panes",
-            log_cstr(name.as_ref().map_or(std::ptr::null(), |name| name.as_ptr())),
+            log_cstr(name.as_deref().unwrap_or(c"(null)")),
             space,
             pending.len()
         ));

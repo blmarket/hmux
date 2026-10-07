@@ -129,8 +129,8 @@ pub(crate) unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mu
     let mut tmp: [::core::ffi::c_char; 128] = [0; 128];
     log_debug(format_args!(
         "{}: name={}, flags={}",
-        log_cstr((from) as *const _),
-        log_cstr(name.as_ptr()),
+        log_cstr(CStr::from_ptr(from)),
+        log_cstr(name),
         log_hex((((*sc).flags) as u32) as u64)
     ));
     if wl.is_alive() && wp0_owner.is_some() {
@@ -157,9 +157,9 @@ pub(crate) unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mu
     }
     log_debug(format_args!(
         "{}: s=${} {} idx={}",
-        log_cstr((from) as *const _),
+        log_cstr(CStr::from_ptr(from)),
         session_owner.id(),
-        log_cstr((&raw mut tmp as *mut ::core::ffi::c_char) as *const _),
+        log_cstr(CStr::from_ptr(&raw mut tmp as *mut ::core::ffi::c_char)),
         { (*sc).idx }
     ));
 }

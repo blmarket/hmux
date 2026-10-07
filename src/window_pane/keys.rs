@@ -23,7 +23,7 @@ pub(super) unsafe fn write_key(
         log_debug(format_args!(
             "writing key 0x{:x} ({}) to %{}",
             key,
-            log_cstr(key_string.as_ptr()),
+            log_cstr(&key_string),
             id,
         ));
     }

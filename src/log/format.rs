@@ -40,6 +40,11 @@ fn escaped_byte(byte: u8, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     f.write_str(std::str::from_utf8(bytes).expect("vis produces ASCII"))
 }
 
+/// Display a C string using the logger's existing escaping.
+pub fn log_cstr(s: &CStr) -> impl fmt::Display + '_ {
+    LogBytes(s.to_bytes())
+}
+
 /// A deferred read of a C string, optionally bounded like printf's `%.*s`.
 pub struct LogCStr {
     ptr: *const c_char,
@@ -47,20 +52,8 @@ pub struct LogCStr {
     width: c_int,
 }
 
-/// Escape a C string only when the log message is formatted.
-///
-/// # Safety
-/// A non-null pointer must remain a readable NUL-terminated string until the
-/// returned argument has been formatted or dropped. Null prints `(null)`.
-pub unsafe fn log_cstr(ptr: *const c_char) -> LogCStr {
-    LogCStr {
-        ptr,
-        precision: None,
-        width: 0,
-    }
-}
-
-/// Like `log_cstr`, with printf's byte precision (negative means unlimited).
+/// Display a C string pointer with printf's byte precision (negative means
+/// unlimited). Null prints like glibc's `%.*s`.
 ///
 /// # Safety
 /// A non-null pointer must be readable up to the first NUL or `precision` bytes,
@@ -74,11 +67,12 @@ pub unsafe fn log_cstr_n(ptr: *const c_char, precision: c_int) -> LogCStr {
     }
 }
 
-/// Like `log_cstr`, padding to a byte width before escaping.
+/// Display a C string pointer, padding to a byte width before escaping.
 /// Negative widths select left alignment, as with printf's `%*s`.
 ///
 /// # Safety
-/// The pointer must satisfy the same requirements as `log_cstr`.
+/// A non-null pointer must remain a readable NUL-terminated string until the
+/// returned argument has been formatted or dropped. Null prints `(null)`.
 pub unsafe fn log_cstr_width(ptr: *const c_char, width: c_int) -> LogCStr {
     LogCStr {
         ptr,

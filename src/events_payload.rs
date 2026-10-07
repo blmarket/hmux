@@ -442,7 +442,7 @@ pub unsafe fn event_payload_log(
 
     log_debug(format_args!(
         "{}{}",
-        log_cstr((prefix.as_ptr()) as *const _),
+        log_cstr(&prefix),
         log_cstr_n(
             (evbuffer_pullup(&mut evb, -1).map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
                 as *mut ::core::ffi::c_char) as *const _,

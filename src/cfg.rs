@@ -130,7 +130,7 @@ pub unsafe fn load_cfg(
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let state;
 
-    log_debug(format_args!("loading {}", log_cstr((path) as *const _)));
+    log_debug(format_args!("loading {}", log_cstr(CStr::from_ptr(path))));
     f = fopen(path, c"rb".as_ptr()) as *mut FILE;
     if f.is_null() {
         if *__errno_location() == ENOENT && flags & CMD_PARSE_QUIET != 0 {
@@ -223,7 +223,7 @@ pub unsafe fn load_cfg_from_buffer(
     if let Some(new_item) = new_item.as_deref_mut() {
         *new_item = std::rc::Weak::new();
     }
-    log_debug(format_args!("loading {}", log_cstr((path) as *const _)));
+    log_debug(format_args!("loading {}", log_cstr(CStr::from_ptr(path))));
     pi.flags = flags;
     pi.file = Some(CStr::from_ptr(path).to_owned());
     pi.line = 1 as u_int;

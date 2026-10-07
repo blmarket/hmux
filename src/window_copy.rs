@@ -3591,7 +3591,7 @@ unsafe fn window_copy_cmd_search_backward_incremental(
     log_debug(format_args!(
         "{}: {}",
         "window_copy_cmd_search_backward_incremental",
-        log_cstr((arg0) as *const _)
+        log_cstr(CStr::from_ptr(arg0))
     ));
     let fresh3 = arg0;
     arg0 = arg0.offset(1);
@@ -3659,7 +3659,7 @@ unsafe fn window_copy_cmd_search_forward_incremental(
     log_debug(format_args!(
         "{}: {}",
         "window_copy_cmd_search_forward_incremental",
-        log_cstr((arg0) as *const _)
+        log_cstr(CStr::from_ptr(arg0))
     ));
     let fresh2 = arg0;
     arg0 = arg0.offset(1);

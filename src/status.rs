@@ -468,10 +468,7 @@ pub unsafe fn status_message_set(
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let message = format_message_with(write);
-    log_debug(format_args!(
-        "status_message_set: {}",
-        log_cstr(message.as_ptr())
-    ));
+    log_debug(format_args!("status_message_set: {}", log_cstr(&message)));
     if let Some(client) = c_owner {
         client.show_status_message(message, delay, ignore_styles, ignore_keys, no_freeze);
     } else {

@@ -120,8 +120,8 @@ unsafe fn format_job_update(job: &refbox::Weak<job>, entry: &JobEntry) {
         log_debug(format_args!(
             "format_job_update: {} {}: {}",
             log_pointer(std::ptr::from_ref(record).cast()),
-            log_cstr(record.cmd.as_ptr()),
-            log_cstr(record.out.as_ref().unwrap().as_ptr()),
+            log_cstr(&record.cmd),
+            log_cstr(record.out.as_ref().unwrap()),
         ));
         (record.client.clone(), record.status, record.last)
     }) else {
@@ -171,8 +171,8 @@ unsafe fn format_job_complete(completion: JobCompletion, entry: &JobEntry) {
         log_debug(format_args!(
             "format_job_complete: {} {}: {}",
             log_pointer(std::ptr::from_ref(record).cast()),
-            log_cstr(record.cmd.as_ptr()),
-            log_cstr(output.as_ptr()),
+            log_cstr(&record.cmd),
+            log_cstr(&output),
         ));
         if !output.is_empty() || record.updated == 0 {
             format_job_set_out(record, output);
@@ -329,10 +329,7 @@ unsafe fn format_job_tidy_at(cache: &JobCache, force: i32, now: time_t) {
             })
             .flatten();
         let Some(record) = removed else { continue };
-        log_debug(format_args!(
-            "format_job_tidy: {}",
-            log_cstr(record.cmd.as_ptr())
-        ));
+        log_debug(format_args!("format_job_tidy: {}", log_cstr(&record.cmd)));
         if !record.job.is_empty() {
             job_free(&record.job);
         }

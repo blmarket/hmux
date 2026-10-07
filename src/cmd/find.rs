@@ -93,7 +93,7 @@ unsafe fn cmd_find_inside_pane(
         log_debug(format_args!(
             "cmd_find_inside_pane: got pane %{} ({})",
             pane.id(),
-            log_cstr(terminal.as_ptr())
+            log_cstr(&terminal)
         ));
     }
     inside
@@ -234,10 +234,7 @@ fn cmd_find_map_table<'a>(table: &[(&'static CStr, &'static CStr)], target: &'a 
 
 unsafe fn cmd_find_get_session(fs: *mut cmd_find_state, target: *const ::core::ffi::c_char) -> i32 {
     let target = CStr::from_ptr(target);
-    log_debug(format_args!(
-        "cmd_find_get_session: {}",
-        log_cstr(target.as_ptr())
-    ));
+    log_debug(format_args!("cmd_find_get_session: {}", log_cstr(target)));
     if target.to_bytes().first() == Some(&b'$') {
         (*fs).set_s(crate::src::shared::session::SessionRef::find_by_id_str(target).as_ref());
         return if (*fs).session_handle().is_some() {
@@ -293,7 +290,7 @@ unsafe fn cmd_find_get_window(
     log_debug(format_args!(
         "{}: {}",
         "cmd_find_get_window",
-        log_cstr((window) as *const _)
+        log_cstr(CStr::from_ptr(window))
     ));
     if *window as ::core::ffi::c_int == '@' as i32 {
         let window_owner =
@@ -342,7 +339,7 @@ unsafe fn cmd_find_get_window_with_session(
     log_debug(format_args!(
         "{}: {}",
         "cmd_find_get_window_with_session",
-        log_cstr((window) as *const _)
+        log_cstr(CStr::from_ptr(window))
     ));
     exact = (*fs).flags & CMD_FIND_EXACT_WINDOW;
     (*fs).set_wl(
@@ -583,7 +580,7 @@ unsafe fn cmd_find_get_pane(
     log_debug(format_args!(
         "{}: {}",
         "cmd_find_get_pane",
-        log_cstr((pane) as *const _)
+        log_cstr(CStr::from_ptr(pane))
     ));
     if *pane as ::core::ffi::c_int == '%' as i32 {
         let pane_owner =
@@ -622,7 +619,7 @@ unsafe fn cmd_find_get_pane_with_session(
     log_debug(format_args!(
         "{}: {}",
         "cmd_find_get_pane_with_session",
-        log_cstr((pane) as *const _)
+        log_cstr(CStr::from_ptr(pane))
     ));
     if *pane as ::core::ffi::c_int == '%' as i32 {
         let pane_owner =
@@ -657,7 +654,7 @@ unsafe fn cmd_find_get_pane_with_window(
     log_debug(format_args!(
         "{}: {}",
         "cmd_find_get_pane_with_window",
-        log_cstr((pane) as *const _)
+        log_cstr(CStr::from_ptr(pane))
     ));
     if *pane as ::core::ffi::c_int == '%' as i32 {
         let pane_owner =
@@ -819,21 +816,17 @@ unsafe fn cmd_find_log_state(mut prefix: *const ::core::ffi::c_char, mut fs: *mu
     if !(*fs).session_handle().is_none() {
         log_debug(format_args!(
             "{}: s=${} {}",
-            log_cstr((prefix) as *const _),
+            log_cstr(CStr::from_ptr(prefix)),
             { (*fs).session_handle().expect("live session").id() },
-            log_cstr(
-                (((*fs).session_handle().expect("live session").name())
-                    .as_ptr()
-                    .cast_mut()) as *const _
-            )
+            log_cstr(&(*fs).session_handle().expect("live session").name())
         ));
     } else {
-        log_debug(format_args!("{}: s=none", log_cstr((prefix) as *const _)));
+        log_debug(format_args!("{}: s=none", log_cstr(CStr::from_ptr(prefix))));
     }
     if (*fs).winlink_handle().is_alive() {
         log_debug(format_args!(
             "{}: wl={} {} w=@{} {}",
-            log_cstr((prefix) as *const _),
+            log_cstr(CStr::from_ptr(prefix)),
             (*fs).winlink_handle().get_unchecked().idx as u32,
             same(
                 (*fs).winlink_handle().get_unchecked().window_handle(),
@@ -849,25 +842,34 @@ unsafe fn cmd_find_log_state(mut prefix: *const ::core::ffi::c_char, mut fs: *mu
             )
         ));
     } else {
-        log_debug(format_args!("{}: wl=none", log_cstr((prefix) as *const _)));
+        log_debug(format_args!(
+            "{}: wl=none",
+            log_cstr(CStr::from_ptr(prefix))
+        ));
     }
     if !(*fs).pane_handle().is_none() {
         log_debug(format_args!(
             "{}: wp=%{}",
-            log_cstr((prefix) as *const _),
+            log_cstr(CStr::from_ptr(prefix)),
             (*fs).pane_handle().expect("target pane").id()
         ));
     } else {
-        log_debug(format_args!("{}: wp=none", log_cstr((prefix) as *const _)));
+        log_debug(format_args!(
+            "{}: wp=none",
+            log_cstr(CStr::from_ptr(prefix))
+        ));
     }
     if (*fs).idx != -(1 as ::core::ffi::c_int) {
         log_debug(format_args!(
             "{}: idx={}",
-            log_cstr((prefix) as *const _),
+            log_cstr(CStr::from_ptr(prefix)),
             { (*fs).idx }
         ));
     } else {
-        log_debug(format_args!("{}: idx=none", log_cstr((prefix) as *const _)));
+        log_debug(format_args!(
+            "{}: idx=none",
+            log_cstr(CStr::from_ptr(prefix))
+        ));
     };
 }
 pub unsafe fn cmd_find_from_session(
@@ -1218,16 +1220,14 @@ pub unsafe fn cmd_find_target(
     log_debug(format_args!(
         "{}: target {}, type {}, item {}, flags {}",
         "cmd_find_target",
-        log_cstr(
-            (if target.is_null() {
-                c"none".as_ptr()
-            } else {
-                target
-            }) as *const _
-        ),
-        log_cstr((s) as *const _),
+        log_cstr(CStr::from_ptr(if target.is_null() {
+            c"none".as_ptr()
+        } else {
+            target
+        })),
+        log_cstr(CStr::from_ptr(s)),
         log_pointer((item) as *const ::core::ffi::c_void),
-        log_cstr((&raw mut tmp as *mut ::core::ffi::c_char) as *const _)
+        log_cstr(CStr::from_ptr(&raw mut tmp as *mut ::core::ffi::c_char))
     ));
     let queue_current = cmdq_get_state_owned(&*(item)).current_snapshot();
     let mut queue_event = cmdq_get_event(&*(item));
@@ -1482,43 +1482,25 @@ pub unsafe fn cmd_find_target(
                 log_debug(format_args!(
                     "{}: target {} is {}{}{}{}{}{}",
                     "cmd_find_target",
-                    log_cstr((target) as *const _),
-                    log_cstr(
-                        (if session.is_null() {
-                            c"".as_ptr()
-                        } else {
-                            c"session ".as_ptr()
-                        }) as *const _
-                    ),
-                    log_cstr(
-                        (if session.is_null() {
-                            c"".as_ptr()
-                        } else {
-                            session
-                        }) as *const _
-                    ),
-                    log_cstr(
-                        (if window.is_null() {
-                            c"".as_ptr()
-                        } else {
-                            c"window ".as_ptr()
-                        }) as *const _
-                    ),
-                    log_cstr(
-                        (if window.is_null() {
-                            c"".as_ptr()
-                        } else {
-                            window
-                        }) as *const _
-                    ),
-                    log_cstr(
-                        (if pane.is_null() {
-                            c"".as_ptr()
-                        } else {
-                            c"pane ".as_ptr()
-                        }) as *const _
-                    ),
-                    log_cstr((if pane.is_null() { c"".as_ptr() } else { pane }) as *const _)
+                    log_cstr(CStr::from_ptr(target)),
+                    log_cstr(if session.is_null() { c"" } else { c"session " }),
+                    log_cstr(CStr::from_ptr(if session.is_null() {
+                        c"".as_ptr()
+                    } else {
+                        session
+                    })),
+                    log_cstr(if window.is_null() { c"" } else { c"window " }),
+                    log_cstr(CStr::from_ptr(if window.is_null() {
+                        c"".as_ptr()
+                    } else {
+                        window
+                    })),
+                    log_cstr(if pane.is_null() { c"" } else { c"pane " }),
+                    log_cstr(CStr::from_ptr(if pane.is_null() {
+                        c"".as_ptr()
+                    } else {
+                        pane
+                    }))
                 ));
             }
             if !pane.is_null() && flags & CMD_FIND_WINDOW_INDEX != 0 {
@@ -1784,7 +1766,7 @@ pub unsafe fn cmd_find_client(
     }
     log_debug(format_args!(
         "cmd_find_client: target {}, return {}",
-        log_cstr(target),
+        log_cstr(CStr::from_ptr(target)),
         log_pointer(
             found
                 .as_ref()

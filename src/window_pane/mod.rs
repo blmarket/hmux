@@ -47,7 +47,7 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::grid::grid_cells_look_equal;
 use crate::src::grid::view::grid_view_string_cells_bytes;
 use crate::src::input_keys::input_key_pane;
-use crate::src::log::{fatal, fatalx, log_cstr, log_cstr_n, log_debug};
+use crate::src::log::{fatal, fatalx, log_bytes, log_cstr, log_cstr_n, log_debug};
 use crate::src::options::options_owner_ptr;
 use crate::src::options::{options_create, options_free, options_get_number};
 use crate::src::prompt::{
@@ -406,7 +406,7 @@ unsafe fn window_pane_add_ref(
     log_debug(format_args!(
         "retain pane %{} ({})",
         { (*wp).id },
-        log_cstr((from) as *const _)
+        log_cstr(CStr::from_ptr(from))
     ));
     owner
 }
@@ -419,7 +419,7 @@ unsafe fn window_pane_remove_ref(
     log_debug(format_args!(
         "release pane %{} ({})",
         { (*wp).id },
-        log_cstr((from) as *const _)
+        log_cstr(CStr::from_ptr(from))
     ));
     drop(owner);
 }
@@ -1625,7 +1625,7 @@ unsafe fn window_pane_search(
         log_debug(format_args!(
             "{}: {}",
             "window_pane_search",
-            log_cstr((line.as_ptr().cast::<::core::ffi::c_char>()) as *const _)
+            log_bytes(&line)
         ));
         if regex == 0 {
             found = (fnmatch(

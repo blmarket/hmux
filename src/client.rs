@@ -111,7 +111,10 @@ enum ClientLock {
 }
 
 unsafe fn client_get_lock(lockfile: *const ::core::ffi::c_char) -> ClientLock {
-    log_debug(format_args!("lock file is {}", log_cstr(lockfile)));
+    log_debug(format_args!(
+        "lock file is {}",
+        log_cstr(CStr::from_ptr(lockfile))
+    ));
     let lock = match hmux_rt::unix::open(
         CStr::from_ptr(lockfile),
         libc::O_WRONLY | libc::O_CREAT,
@@ -126,7 +129,7 @@ unsafe fn client_get_lock(lockfile: *const ::core::ffi::c_char) -> ClientLock {
     if let Err(error) = hmux_rt::unix::lock(lock.as_fd(), LOCK_EX | LOCK_NB) {
         log_debug(format_args!(
             "flock failed: {}",
-            log_cstr(strerror(*__errno_location()))
+            log_cstr(CStr::from_ptr(strerror(*__errno_location())))
         ));
         if error.raw_os_error() != Some(EAGAIN) {
             return ClientLock::Acquired(lock);
@@ -148,7 +151,7 @@ unsafe fn client_connect(path: *const ::core::ffi::c_char, flags: uint64_t) -> i
     let mut lockfd = None;
     let mut locked = false;
     let mut lockfile = None;
-    log_debug(format_args!("socket is {}", log_cstr(path)));
+    log_debug(format_args!("socket is {}", log_cstr(CStr::from_ptr(path))));
     loop {
         log_debug(format_args!("trying connect"));
         let error = match hmux_rt::unix::connect(std::path::Path::new(connect_path)) {
@@ -636,8 +639,8 @@ unsafe fn client_exec(
 ) -> ! {
     log_debug(format_args!(
         "shell {}, command {}",
-        log_cstr((shell) as *const _),
-        log_cstr((shellcmd) as *const _)
+        log_cstr(CStr::from_ptr(shell)),
+        log_cstr(CStr::from_ptr(shellcmd))
     ));
     let argv0 = shell_argv0_cstring(
         std::ffi::CStr::from_ptr(shell),
@@ -670,7 +673,7 @@ unsafe fn client_signal(sig: ProcessSignal) {
     log_debug(format_args!(
         "{}: {}",
         "client_signal",
-        log_cstr((strsignal(sig.as_raw())) as *const _)
+        log_cstr(CStr::from_ptr(strsignal(sig.as_raw())))
     ));
     if sig == ProcessSignal::Child {
         loop {
@@ -686,7 +689,7 @@ unsafe fn client_signal(sig: ProcessSignal) {
             }
             log_debug(format_args!(
                 "waitpid failed: {}",
-                log_cstr((strerror(*__errno_location())) as *const _)
+                log_cstr(CStr::from_ptr(strerror(*__errno_location())))
             ));
         }
     } else if client_attached == 0 {

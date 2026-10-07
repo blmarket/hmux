@@ -541,8 +541,8 @@ unsafe fn expand_paths(s: &CStr, no_realpath: bool) -> Vec<CString> {
                     log_debug(format_args!(
                         "{}: realpath(\"{}\") failed: {}",
                         "expand_paths",
-                        log_cstr((expanded.as_ptr()) as *const _),
-                        log_cstr((strerror(*__errno_location())) as *const _)
+                        log_cstr(&expanded),
+                        log_cstr(CStr::from_ptr(strerror(*__errno_location())))
                     ));
                     None
                 } else {
@@ -556,7 +556,7 @@ unsafe fn expand_paths(s: &CStr, no_realpath: bool) -> Vec<CString> {
                     log_debug(format_args!(
                         "{}: duplicate path: {}",
                         "expand_paths",
-                        log_cstr((path.as_ptr()) as *const _)
+                        log_cstr(&path)
                     ));
                 } else {
                     paths.push(path);
@@ -566,7 +566,7 @@ unsafe fn expand_paths(s: &CStr, no_realpath: bool) -> Vec<CString> {
             log_debug(format_args!(
                 "{}: invalid path: {}",
                 "expand_paths",
-                log_cstr((next) as *const _)
+                log_cstr(CStr::from_ptr(next))
             ));
         }
     }
