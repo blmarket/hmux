@@ -90,17 +90,6 @@ pub unsafe fn write_cstr(out: &mut dyn Write, value: *const c_char) -> io::Resul
     }
 }
 
-/// Format into an existing C-character buffer without allocating.
-///
-/// The slice includes room for the trailing NUL. Returns the payload byte count,
-/// excluding that terminator. Embedded NUL bytes are preserved and counted.
-/// Empty destinations, insufficient capacity, and formatter failures return an
-/// error. On failure, a nonempty destination contains a NUL-terminated prefix;
-/// bytes beyond the terminator are unspecified. Limits count bytes, not columns.
-pub fn format_cstr_into(dst: &mut [c_char], args: fmt::Arguments<'_>) -> Result<usize, fmt::Error> {
-    format_cstr_with(dst, |out| out.write_fmt(args)).map_err(|_| fmt::Error)
-}
-
 struct CStrWriter<'a> {
     dst: &'a mut [c_char],
     written: usize,
@@ -135,9 +124,14 @@ impl fmt::Write for CStrWriter<'_> {
     }
 }
 
-/// Write raw bytes and formatted text into a bounded C-character slice.
+/// Write raw bytes and formatted text into a bounded C-character slice without
+/// allocating.
 ///
-/// This has the same length and NUL-termination contract as `format_cstr_into`.
+/// The slice includes room for the trailing NUL. Returns the payload byte count,
+/// excluding that terminator. Embedded NUL bytes are preserved and counted.
+/// Empty destinations, insufficient capacity, and formatter failures return an
+/// error. On failure, a nonempty destination contains a NUL-terminated prefix;
+/// bytes beyond the terminator are unspecified. Limits count bytes, not columns.
 /// Use `write_all` for arbitrary C-string bytes and single-byte characters, and
 /// `write!` for Rust formatting. Propagate write errors from the closure.
 pub fn format_cstr_with(
@@ -182,76 +176,6 @@ mod tests {
         let error = format_cstring(format_args!("a\0{}", 7)).unwrap_err();
         assert_eq!(error.nul_position(), 1);
         assert_eq!(error.into_vec(), b"a\x007");
-    }
-
-    #[test]
-    fn bounded_format_reserves_terminator_and_reuses_storage() {
-        let mut dst = [42 as c_char; 32];
-        let text = "x".repeat(31);
-        assert_eq!(format_cstr_into(&mut dst, format_args!("{text}")), Ok(31));
-        assert_eq!(dst[31], 0);
-        assert_eq!(format_cstr_into(&mut dst, format_args!("{}", 12345)), Ok(5));
-        assert_eq!(
-            unsafe { std::ffi::CStr::from_ptr(dst.as_ptr()) }.to_bytes(),
-            b"12345"
-        );
-        assert_eq!(
-            format_cstr_into(&mut dst, format_args!("{}", "x".repeat(32))),
-            Err(fmt::Error)
-        );
-        assert!(dst.contains(&0));
-    }
-
-    #[test]
-    fn bounded_format_handles_empty_and_offset_slices() {
-        assert_eq!(format_cstr_into(&mut [], format_args!("")), Err(fmt::Error));
-        let mut empty = [42 as c_char];
-        assert_eq!(format_cstr_into(&mut empty, format_args!("")), Ok(0));
-        assert_eq!(empty, [0]);
-        assert_eq!(
-            format_cstr_into(&mut empty, format_args!("x")),
-            Err(fmt::Error)
-        );
-        let mut dst = [42 as c_char; 8];
-        let n = format_cstr_into(&mut dst[..4], format_args!("abc")).unwrap();
-        assert_eq!(dst[4], 42);
-        let m = format_cstr_into(&mut dst[n..], format_args!("{}", 1234)).unwrap();
-        assert_eq!(n + m, 7);
-        assert_eq!(
-            unsafe { std::ffi::CStr::from_ptr(dst.as_ptr()) }.to_bytes(),
-            b"abc1234"
-        );
-    }
-
-    #[test]
-    fn bounded_format_counts_utf8_and_embedded_nul_bytes() {
-        let mut dst = [0 as c_char; 6];
-        assert_eq!(format_cstr_into(&mut dst, format_args!("é\0{}", 42)), Ok(5));
-        assert_eq!(dst.map(|c| c as u8), *b"\xc3\xa9\x0042\0");
-        assert_eq!(
-            format_cstr_into(&mut dst[..2], format_args!("é")),
-            Err(fmt::Error)
-        );
-    }
-
-    #[test]
-    fn bounded_format_propagates_formatter_errors() {
-        struct Broken;
-        impl fmt::Display for Broken {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str("partial")?;
-                Err(fmt::Error)
-            }
-        }
-        let mut dst = [42 as c_char; 16];
-        assert_eq!(
-            format_cstr_into(&mut dst, format_args!("{Broken}")),
-            Err(fmt::Error)
-        );
-        assert_eq!(
-            unsafe { std::ffi::CStr::from_ptr(dst.as_ptr()) }.to_bytes(),
-            b"partial"
-        );
     }
 
     #[test]
