@@ -485,7 +485,7 @@ pub unsafe fn event_payload_get_identity(
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     use std::ffi::CString;
 
     #[test]

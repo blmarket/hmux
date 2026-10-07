@@ -1,9 +1,7 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string, args_strtonum_result};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::cmd_find_best_client;
-use crate::src::cmd::queue::{
-    cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_print,
-};
+use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_print};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_create_with_client, format_defaults, format_each, format_expand_time_cstring,

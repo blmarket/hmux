@@ -16,9 +16,7 @@ use crate::src::paste::{
     paste_buffer_data, paste_buffer_name, paste_buffer_order, paste_free, paste_get_name,
     paste_is_empty, paste_replace_owned,
 };
-use crate::src::screen_write::{
-    screen_write_cursormove, screen_write_nputs,
-};
+use crate::src::screen_write::{screen_write_cursormove, screen_write_nputs};
 use crate::src::shared::abi::ssize_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
@@ -28,9 +26,7 @@ use crate::src::shared::format::format_tree;
 use crate::src::shared::format::FORMAT_NONE;
 use crate::src::shared::key::*;
 use crate::src::shared::mode_tree::ModeTreeItemSnapshot;
-use crate::src::shared::mode_tree::{
-    mode_tree_data, mode_tree_help_info, ModeTreeItemData,
-};
+use crate::src::shared::mode_tree::{mode_tree_data, mode_tree_help_info, ModeTreeItemData};
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::paste::PasteBufferRef;

@@ -37,10 +37,7 @@ use crate::src::status::{
 };
 use crate::src::style::style_apply_with_options;
 use crate::src::text::utf8::utf8_set;
-use crate::src::tty::{
-    tty_cell, tty_cursor, tty_puts, tty_reset, tty_sync_start,
-    tty_update_mode,
-};
+use crate::src::tty::{tty_cell, tty_cursor, tty_puts, tty_reset, tty_sync_start, tty_update_mode};
 use crate::src::tty_term::tty_term_has;
 use crate::src::tty_term::tty_term_owner_ptr;
 use crate::src::window::windows;

@@ -30,8 +30,8 @@ use crate::src::shared::client::{
     CLIENT_CONTROL, CLIENT_CONTROLCONTROL, CLIENT_CONTROL_WAITEXIT, CLIENT_LOGIN,
     CLIENT_NOSTARTSERVER, CLIENT_STARTSERVER, CLIENT_WRITE_ACK,
 };
-use crate::src::shared::command::*;
 use crate::src::shared::command::cmd_parse_result;
+use crate::src::shared::command::*;
 use crate::src::shared::errno::{EAGAIN, ECHILD, ENAMETOOLONG, ENOENT};
 use crate::src::shared::posix_io::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, WAIT_ANY, WNOHANG};
 use crate::src::shared::posix_terminal::{ICRNL, ONLCR, OPOST, TCSANOW, VMIN, VTIME};
@@ -194,7 +194,7 @@ unsafe fn client_connect(path: *const ::core::ffi::c_char, flags: uint64_t) -> i
     }
 }
 unsafe fn client_exit_message() -> *const ::core::ffi::c_char {
-    static mut msg: [::core::ffi::c_char; 256] = [0; 256];
+    static mut msg: [u8; 256] = [0; 256];
     match client_exitreason as ::core::ffi::c_uint {
         1 => {
             if let Some(session) = client_exitsession.as_ref() {

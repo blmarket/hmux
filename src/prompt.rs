@@ -9,9 +9,7 @@ use crate::src::format_draw::{format_draw, format_width};
 use crate::src::grid::grid_default_cell;
 use crate::src::key_string::key_string_format;
 use crate::src::log::{log_cstr, log_debug};
-use crate::src::options::{
-    options_get_number, options_get_string,
-};
+use crate::src::options::{options_get_number, options_get_string};
 use crate::src::paste::{paste_buffer_data, paste_get_top};
 use crate::src::prompt_history::{prompt_add_history, prompt_down_history, prompt_up_history};
 use crate::src::screen::screen_set_cursor_style;
@@ -30,8 +28,9 @@ use crate::src::shared::prompt::prompt;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{prompt_create_data, prompt_draw_data};
 use crate::src::shared::prompt::{
-    PROMPT_ACCEPT, PROMPT_BSPACE_EXIT, PROMPT_CLOSE, PROMPT_COMMANDMODE, PROMPT_EDITARROWS, PROMPT_INCREMENTAL, PROMPT_ISMODE, PROMPT_ISPANE,
-    PROMPT_KEY, PROMPT_NOFORMAT, PROMPT_NOFREEZE, PROMPT_NUMERIC, PROMPT_QUOTENEXT, PROMPT_SINGLE,
+    PROMPT_ACCEPT, PROMPT_BSPACE_EXIT, PROMPT_CLOSE, PROMPT_COMMANDMODE, PROMPT_EDITARROWS,
+    PROMPT_INCREMENTAL, PROMPT_ISMODE, PROMPT_ISPANE, PROMPT_KEY, PROMPT_NOFORMAT, PROMPT_NOFREEZE,
+    PROMPT_NUMERIC, PROMPT_QUOTENEXT, PROMPT_SINGLE,
 };
 use crate::src::shared::screen::screen;
 use crate::src::shared::screen_write::screen_write_ctx;

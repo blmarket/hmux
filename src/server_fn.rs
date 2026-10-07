@@ -12,15 +12,13 @@ use crate::src::shared::session::session_group;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::window::Window as _;
-use crate::src::window::{
-    winlink_find_by_index, winlink_find_by_window,
-};
+use crate::src::window::{winlink_find_by_index, winlink_find_by_window};
 use crate::src::window_pane::WindowPane as _;
 
 use crate::src::shared::abi::*;
 use crate::src::shared::client::{
-    CLIENT_ALLREDRAWFLAGS, CLIENT_CONTROL, CLIENT_NO_DETACH_ON_DESTROY,
-    CLIENT_REDRAWBORDERS, CLIENT_REDRAWSTATUS, CLIENT_SUSPENDED,
+    CLIENT_ALLREDRAWFLAGS, CLIENT_CONTROL, CLIENT_NO_DETACH_ON_DESTROY, CLIENT_REDRAWBORDERS,
+    CLIENT_REDRAWSTATUS, CLIENT_SUSPENDED,
 };
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::sort::sort_criteria;

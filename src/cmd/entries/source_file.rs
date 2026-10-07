@@ -1,8 +1,7 @@
 use crate::src::arguments::{args_count, args_has, args_string};
 use crate::src::cfg::{cfg_finished, cfg_print_causes, load_cfg_from_buffer};
 use crate::src::cmd::queue::{
-    cmdq_continue, cmdq_error, cmdq_get_callback_owned, cmdq_get_client,
-    cmdq_insert_after,
+    cmdq_continue, cmdq_error, cmdq_get_callback_owned, cmdq_get_client, cmdq_insert_after,
 };
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_parse_flags};
 use crate::src::compat::glob::GlobResult;
@@ -14,12 +13,12 @@ use crate::src::log::{log_cstr, log_debug};
 use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
 use crate::src::server_client::Client as _;
 
-use crate::src::shared::abi::*;
 use crate::src::shared::abi::__size_t;
+use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
+use crate::src::shared::client::client_file_cb;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_CONTROL;
-use crate::src::shared::client::client_file_cb;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::command::{

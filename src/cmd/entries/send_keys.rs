@@ -18,8 +18,8 @@ use crate::src::shared::command::{
     CMD_AFTERHOOK, CMD_CLIENT_CANFAIL, CMD_CLIENT_CFLAG, CMD_READONLY,
 };
 use crate::src::shared::grid::*;
-use crate::src::shared::key::*;
 use crate::src::shared::key::key_event;
+use crate::src::shared::key::*;
 use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::session::SessionRef;

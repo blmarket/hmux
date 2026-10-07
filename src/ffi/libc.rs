@@ -1,8 +1,8 @@
 //! Foreign declarations supplied by libc.
 
 use crate::src::shared::abi::{
-    __gid_t, __int32_t, __mode_t, __off_t, __pid_t, __uid_t, clockid_t, size_t,
-    speed_t, ssize_t, time_t,
+    __gid_t, __int32_t, __mode_t, __off_t, __pid_t, __uid_t, clockid_t, size_t, speed_t, ssize_t,
+    time_t,
 };
 use crate::src::shared::account::{group, passwd};
 use crate::src::shared::posix_io::{glob_t, stat};

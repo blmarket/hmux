@@ -3,7 +3,8 @@ use crate::src::arguments::{
     args_make_commands_prepare,
 };
 use crate::src::cmd::queue::{
-    cmdq_append, cmdq_continue, cmdq_error, cmdq_get_command, cmdq_get_error, cmdq_get_target_client, cmdq_insert_after,
+    cmdq_append, cmdq_continue, cmdq_error, cmdq_get_command, cmdq_get_error,
+    cmdq_get_target_client, cmdq_insert_after,
 };
 use crate::src::cmd::{cmd_append_argv, cmd_get_args_mut};
 use crate::src::format::bytes::write_cstr;
@@ -16,9 +17,7 @@ use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_CLIENT_TFLAG;
 use crate::src::shared::command::*;
-use crate::src::shared::command::{
-    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item,
-};
+use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::prompt::*;
 use crate::src::shared::prompt::{
@@ -399,12 +398,6 @@ impl Drop for cmd_command_prompt_cdata {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
-    
-    
-    
-    
-    
 
     #[test]
     fn expired_wait_closes_prompt_without_resuming_queue() {

@@ -1,7 +1,7 @@
 use crate::src::compat::getpeereid::getpeereid;
+use crate::src::compat::imsg::imsg;
 use crate::src::compat::imsg::PROTOCOL_VERSION;
 use crate::src::compat::imsg::*;
-use crate::src::compat::imsg::imsg;
 use crate::src::compat::imsg::{
     imsg_compose, imsgbuf_clear, imsgbuf_get, imsgbuf_init, imsgbuf_output, imsgbuf_queuelen,
     imsgbuf_receive, imsgbuf_written,

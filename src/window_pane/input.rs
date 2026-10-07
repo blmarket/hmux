@@ -5740,7 +5740,7 @@ unsafe fn input_add_request(
     let mut c: Option<ClientRef> = None;
     let mut loop_0: Option<ClientRef> = None;
     let mut ir: *mut input_request = ::core::ptr::null_mut::<input_request>();
-    let mut s: [::core::ffi::c_char; 64] = [0; 64];
+    let mut s: [u8; 64] = [0; 64];
     if wp.is_null() {
         return -(1 as ::core::ffi::c_int);
     }
@@ -5797,9 +5797,11 @@ unsafe fn input_add_request(
     match type_0 as ::core::ffi::c_uint {
         0 => {
             xformat(&mut s, format_args!("\x1B]4;{};?\x1B\\", { idx }));
-            c.as_ref()
-                .expect("live client")
-                .write_terminal(std::ffi::CStr::from_ptr(s.as_ptr()).to_bytes());
+            c.as_ref().expect("live client").write_terminal(
+                std::ffi::CStr::from_bytes_until_nul(&s)
+                    .expect("xformat output is terminated")
+                    .to_bytes(),
+            );
         }
         1 => {
             let client = c.as_ref().expect("live client");

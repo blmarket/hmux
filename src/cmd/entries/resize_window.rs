@@ -12,9 +12,7 @@ use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state
 use crate::src::shared::limits::INT_MAX;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::winlink;
-use crate::src::shared::window::{
-    WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_SIZE_LARGEST,
-};
+use crate::src::shared::window::{WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_SIZE_LARGEST};
 use crate::src::window::Window as _;
 
 pub const WINDOW_SIZE_SMALLEST: ::core::ffi::c_int = 1 as ::core::ffi::c_int;

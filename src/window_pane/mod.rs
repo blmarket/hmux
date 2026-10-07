@@ -34,9 +34,7 @@ use crate::src::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_string,
     event_payload_set_target, event_payload_set_uint, event_payload_set_window,
 };
-use crate::src::ffi::libc::{
-    __ctype_b_loc, fnmatch, gethostname, getpid, kill, memcpy, memset,
-};
+use crate::src::ffi::libc::{__ctype_b_loc, fnmatch, gethostname, getpid, kill, memcpy, memset};
 use crate::src::ffi::regex::RegexStorage;
 use crate::src::ffi::utempter::utempter_remove_record;
 use crate::src::file::{file_cancel, file_read_with_cmdq_wait_init};
@@ -45,8 +43,8 @@ use crate::src::grid::grid_cells_look_equal;
 use crate::src::grid::view::grid_view_string_cells_bytes;
 use crate::src::input_keys::input_key_pane;
 use crate::src::log::{fatal, fatalx, log_bytes, log_cstr, log_cstr_n, log_debug};
-use crate::src::options::options_owner_ptr;
 use crate::src::options::options_get_number;
+use crate::src::options::options_owner_ptr;
 use crate::src::prompt::{
     prompt_closed, prompt_create, prompt_free, prompt_incremental_start, prompt_key, prompt_mouse,
     prompt_set_options, prompt_type_string, prompt_update,
@@ -65,7 +63,8 @@ use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked};
 use crate::src::server_client::Client;
 use crate::src::server_fn::{
-    server_destroy_pane, server_kill_pane, server_redraw_window, server_redraw_window_borders, server_status_window,
+    server_destroy_pane, server_kill_pane, server_redraw_window, server_redraw_window_borders,
+    server_status_window,
 };
 use crate::src::shared::pane::window_pane_tree;
 use crate::src::shared::prompt::prompt_create_data;
@@ -76,8 +75,7 @@ use crate::src::style::colour::{
     colour_totheme,
 };
 use crate::src::style::{
-    style_ranges_free, style_ranges_init,
-    style_set_scrollbar_style_from_option,
+    style_ranges_free, style_ranges_init, style_set_scrollbar_style_from_option,
 };
 use crate::src::tmux::setblocking;
 use crate::src::tty::tty_default_colours;
@@ -90,9 +88,7 @@ use std::rc::{Rc, Weak};
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
 use crate::src::shared::client::{client_file, client_file_cb};
-use crate::src::shared::client::{
-    CLIENT_DEAD, CLIENT_EXITED, CLIENT_UNATTACHEDFLAGS,
-};
+use crate::src::shared::client::{CLIENT_DEAD, CLIENT_EXITED, CLIENT_UNATTACHEDFLAGS};
 use crate::src::shared::colour::*;
 use crate::src::shared::command::{cmd_find_state, cmdq_item};
 use crate::src::shared::ctype::_ISspace;
@@ -130,9 +126,7 @@ pub use crate::src::shared::window::{
     window, window_mode, window_mode_entry, window_winlinks, windows, winlink, winlink_stack,
     winlinks,
 };
-use crate::src::shared::window::{
-    WINDOW_MODE_NO_STACK, WINDOW_PANE_NO_MODE,
-};
+use crate::src::shared::window::{WINDOW_MODE_NO_STACK, WINDOW_PANE_NO_MODE};
 use libc::{REG_EXTENDED, REG_ICASE};
 
 struct window_pane_input_data {
@@ -2194,7 +2188,7 @@ impl Drop for window_pane {
 #[cfg(test)]
 mod pane_prompt_data_tests {
     use super::*;
-    
+
     use crate::src::text::utf8::utf8_fromcstr_vec;
     use std::cell::Cell;
 

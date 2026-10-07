@@ -727,7 +727,7 @@ pub unsafe fn style_tostring(mut sy: *mut style) -> *const ::core::ffi::c_char {
     let mut off: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut comma: *const ::core::ffi::c_char = c"".as_ptr();
     let mut tmp: *const ::core::ffi::c_char = c"".as_ptr();
-    static mut s: [::core::ffi::c_char; 2048] = [0; 2048];
+    static mut s: [u8; 2048] = [0; 2048];
     let mut b: [::core::ffi::c_char; 21] = [0; 21];
     *(&raw mut s as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
     if (*sy).list as ::core::ffi::c_uint

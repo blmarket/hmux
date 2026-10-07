@@ -3,8 +3,7 @@ use crate::src::cfg::{cfg_finished, cfg_show_causes};
 use crate::src::cmd::entries::attach_session::cmd_attach_session;
 use crate::src::cmd::find::cmd_find_from_session;
 use crate::src::cmd::queue::{
-    cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned,
-    cmdq_insert_hook, cmdq_print,
+    cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned, cmdq_insert_hook, cmdq_print,
 };
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::compat::strtonum::strtonum;
@@ -13,9 +12,7 @@ use crate::src::events::events_fire_session;
 use crate::src::ffi::libc::{sscanf, strcmp};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
-use crate::src::options::{
-    options_get_number, options_get_string, options_set_string,
-};
+use crate::src::options::{options_get_number, options_get_string, options_set_string};
 use crate::src::server_client::Client as _;
 
 use crate::src::session::Session;

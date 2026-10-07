@@ -7,8 +7,8 @@ use crate::src::shared::session::SessionRef;
 // and job-cache lookup.
 use super::bytes::format_cstring;
 use super::*;
-use crate::src::format::bytes::xformat;
 use crate::src::format::bytes::write_cstr;
+use crate::src::format::bytes::xformat;
 use crate::src::server_client::Client;
 use crate::src::session::Session;
 use crate::src::window::{Window, WindowPane};
@@ -145,7 +145,7 @@ pub(super) unsafe fn format_relative_time(mut t: time_t) -> Option<CString> {
     let mut h: u_int = 0;
     let mut m: u_int = 0;
     let mut s: u_int = 0;
-    let mut out: [::core::ffi::c_char; 32] = [0; 32];
+    let mut out: [u8; 32] = [0; 32];
     time(&raw mut now);
     if t > now {
         return None;
@@ -179,7 +179,11 @@ pub(super) unsafe fn format_relative_time(mut t: time_t) -> Option<CString> {
     } else {
         xformat(&mut out, format_args!("{}s", s as u32));
     }
-    Some(CStr::from_ptr(out.as_ptr()).to_owned())
+    Some(
+        CStr::from_bytes_until_nul(&out)
+            .expect("xformat output is terminated")
+            .to_owned(),
+    )
 }
 unsafe fn format_time_difference(t: time_t) -> CString {
     CString::new((time(std::ptr::null_mut()) - t).to_string())

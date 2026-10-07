@@ -4,8 +4,7 @@ use crate::src::cmd::{cmd_mouse_at, cmd_mouse_pane};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::events_fire_pane;
 use crate::src::ffi::libc::{
-    __ctype_tolower_loc, abs, llabs, memcmp, memcpy, strcasecmp, strchr, strcmp, strcspn,
-    strncmp,
+    __ctype_tolower_loc, abs, llabs, memcmp, memcpy, strcasecmp, strchr, strcmp, strcspn, strncmp,
 };
 use crate::src::ffi::regex::{CompiledRegex, RegexMatch, RegexStorage};
 use crate::src::format::bytes::format_message_with;

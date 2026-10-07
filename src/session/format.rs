@@ -165,7 +165,7 @@ unsafe fn format_cb_session_alerts(mut ft: *mut format_tree) -> Option<CString> 
     let mut s: *mut session = format_session;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     let mut alerts: [::core::ffi::c_char; 1024] = [0; 1024];
-    let mut tmp: [::core::ffi::c_char; 16] = [0; 16];
+    let mut tmp: [u8; 16] = [0; 16];
     if s.is_null() {
         return None;
     }
@@ -223,8 +223,8 @@ unsafe fn format_cb_session_stack(mut ft: *mut format_tree) -> Option<CString> {
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut s: *mut session = format_session;
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
-    let mut result: [::core::ffi::c_char; 1024] = [0; 1024];
-    let mut tmp: [::core::ffi::c_char; 16] = [0; 16];
+    let mut result: [u8; 1024] = [0; 1024];
+    let mut tmp: [u8; 16] = [0; 16];
     if s.is_null() {
         return None;
     }
@@ -252,7 +252,11 @@ unsafe fn format_cb_session_stack(mut ft: *mut format_tree) -> Option<CString> {
         );
         wl = crate::src::window::winlink_stack_next(&(*s).lastw, wl.clone());
     }
-    Some(CStr::from_ptr(&raw mut result as *mut ::core::ffi::c_char).to_owned())
+    Some(
+        CStr::from_bytes_until_nul(&result)
+            .expect("stack list is terminated")
+            .to_owned(),
+    )
 }
 
 unsafe fn format_cb_session_group_list(mut ft: *mut format_tree) -> Option<CString> {
@@ -716,8 +720,8 @@ unsafe fn format_cb_window_stack_index(mut ft: *mut format_tree) -> Option<CStri
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::src::options::options_free;
     use crate::src::format::{format_create, format_free};
+    use crate::src::options::options_free;
 
     #[test]
     fn session_formats_observe_context_session_without_retaining_it() {

@@ -30,9 +30,7 @@ use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::mode_tree::ModeTreeItemSnapshot;
-use crate::src::shared::mode_tree::{
-    mode_tree_data, mode_tree_help_info, ModeTreeItemData,
-};
+use crate::src::shared::mode_tree::{mode_tree_data, mode_tree_help_info, ModeTreeItemData};
 use crate::src::shared::mouse::mouse_event;
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::screen::screen;

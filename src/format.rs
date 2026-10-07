@@ -1,15 +1,15 @@
 use crate::src::arguments::args_escape_cstring;
 use crate::src::cfg::cfg_files;
-use crate::src::cmd::queue::{
-    cmdq_get_client, cmdq_get_event, cmdq_get_target_client, cmdq_merge_formats,
-    cmdq_print,
-};
 use crate::src::cmd::cmd_mouse_pane;
+use crate::src::cmd::queue::{
+    cmdq_get_client, cmdq_get_event, cmdq_get_target_client, cmdq_merge_formats, cmdq_print,
+};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::environ::{environ_find, environ_iter};
 use crate::src::ffi::libc::{
     __ctype_b_loc, __xpg_basename, ctime_r, dirname, fnmatch, gethostname, getpid, getpwuid,
-    getuid, localtime_r, memcmp, memcpy, memset, strcasecmp, strchr, strcmp, strcspn, strftime, strlen, strstr, strtod, time,
+    getuid, localtime_r, memcmp, memcpy, memset, strcasecmp, strchr, strcmp, strcspn, strftime,
+    strlen, strstr, strtod, time,
 };
 use crate::src::ffi::libm::{fabs, fmod};
 use crate::src::ffi::regex::RegexStorage;
@@ -22,16 +22,14 @@ use crate::src::hyperlinks::hyperlinks_get;
 use crate::src::job::{job_free, job_get_event, job_run};
 use crate::src::log::{log_cstr, log_debug, log_get_level};
 use crate::src::options::{
-    options_get_number, options_get_string, options_is_array,
-    options_parse_owned, options_to_cstring,
+    options_get_number, options_get_string, options_is_array, options_parse_owned,
+    options_to_cstring,
 };
 use crate::src::paste::{
     paste_buffer_created, paste_buffer_data, paste_buffer_name, paste_get_top,
     paste_make_sample_cstring,
 };
-use crate::src::reactor::{
-    evbuffer_add, evbuffer_new, evbuffer_pullup, evbuffer_readline,
-};
+use crate::src::reactor::{evbuffer_add, evbuffer_new, evbuffer_pullup, evbuffer_readline};
 use crate::src::regsub::regsub_cstring;
 use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked};
@@ -40,10 +38,8 @@ use crate::src::window::Window as _;
 
 use crate::src::server_client::Client as _;
 use crate::src::server_fn::server_status_client;
-use crate::src::session::{
-    session_groups_minmax, session_groups_next,
-};
 use crate::src::session::{session_groups, sessions, Session};
+use crate::src::session::{session_groups_minmax, session_groups_next};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::session_group;
 use crate::src::shared::session::SessionRef;
@@ -57,7 +53,8 @@ use crate::src::style::colour::{
 };
 use crate::src::text::utf8::{utf8_cstrhas, utf8_pad_cstring, utf8_set, utf8_tocstr_cstring};
 use crate::src::tmux::{
-    get_timer, getversion, global_environ, global_options, global_s_options, global_w_options, socket_path, start_time,
+    get_timer, getversion, global_environ, global_options, global_s_options, global_w_options,
+    socket_path, start_time,
 };
 use crate::src::tty_features::tty_feature_present;
 use crate::src::tty_term::tty_term_has_name;
@@ -107,8 +104,7 @@ use crate::src::shared::time::tm;
 use crate::src::shared::tree::{RB_INF, RB_NEGINF};
 use crate::src::shared::window::winlink;
 use crate::src::shared::window::{
-    WINDOW_SIZE_MANUAL, WINLINK_ACTIVITY, WINLINK_BELL,
-    WINLINK_SILENCE,
+    WINDOW_SIZE_MANUAL, WINLINK_ACTIVITY, WINLINK_BELL, WINLINK_SILENCE,
 };
 use libc::{REG_EXTENDED, REG_ICASE};
 
@@ -157,8 +153,7 @@ pub(crate) use expression::format_pretty_time_cstring;
 pub(crate) use expression::format_quote_shell_single;
 use expression::*;
 pub(crate) use expression::{
-    format_expand_time_cstring, format_single_cstring,
-    format_single_from_target_cstring,
+    format_expand_time_cstring, format_single_cstring, format_single_from_target_cstring,
 };
 pub use expression::{format_skip, format_true};
 

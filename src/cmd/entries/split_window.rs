@@ -1,12 +1,11 @@
 use crate::src::arguments::{
     args_count, args_flag_values, args_get, args_has, args_string, args_to_vector,
 };
+use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::{cmd_find_from_pane, cmd_find_from_winlink_pane};
 use crate::src::cmd::queue::{
-    cmdq_error, cmdq_get_state_owned, cmdq_get_target_client, cmdq_insert_hook,
-    cmdq_print,
+    cmdq_error, cmdq_get_state_owned, cmdq_get_target_client, cmdq_insert_hook, cmdq_print,
 };
-use crate::src::cmd::cmd_get_args_mut;
 use crate::src::environ::{environ_create, environ_put};
 use crate::src::events::events_fire;
 use crate::src::events_payload::{

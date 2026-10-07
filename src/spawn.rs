@@ -1,9 +1,6 @@
 use crate::src::compat::stdio::CFile;
 use crate::src::environ::environ_create;
-use crate::src::ffi::libc::{
-    __errno_location, fdopen, fwrite, mkstemp,
-    unlink,
-};
+use crate::src::ffi::libc::{__errno_location, fdopen, fwrite, mkstemp, unlink};
 use crate::src::format::bytes::xformat;
 use crate::src::log::{log_cstr, log_debug, log_hex};
 use crate::src::names::default_window_name_cstring;
@@ -34,8 +31,8 @@ pub(crate) fn set_spawn_cause(cause: Option<&mut Option<CString>>, parts: &[&[u8
 use crate::src::shared::abi::__off_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::pane::window_pane;
-use crate::src::shared::spawn::{spawn_editor_state, spawn_finish_edit_cb};
 use crate::src::shared::spawn::SPAWN_KILL;
+use crate::src::shared::spawn::{spawn_editor_state, spawn_finish_edit_cb};
 use crate::src::shared::stdio::FILE;
 use crate::src::shared::window::winlink;
 
@@ -75,7 +72,7 @@ pub(crate) unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mu
     let mut wl: refbox::Weak<winlink> = (*sc).winlink_handle();
     let wp0_owner = (*sc).wp0.upgrade();
     let name = (*sc).name.as_deref().unwrap_or(c"none");
-    let mut tmp: [::core::ffi::c_char; 128] = [0; 128];
+    let mut tmp: [u8; 128] = [0; 128];
     log_debug(format_args!(
         "{}: name={}, flags={}",
         log_cstr(CStr::from_ptr(from)),
@@ -108,7 +105,7 @@ pub(crate) unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mu
         "{}: s=${} {} idx={}",
         log_cstr(CStr::from_ptr(from)),
         session_owner.id(),
-        log_cstr(CStr::from_ptr(&raw mut tmp as *mut ::core::ffi::c_char)),
+        log_cstr(CStr::from_bytes_until_nul(&tmp).expect("xformat output is terminated")),
         { (*sc).idx }
     ));
 }

@@ -10,7 +10,6 @@ use crate::src::key_bindings::key_bindings_get_table;
 use crate::src::session::SessionIndex as _;
 use crate::src::window::Window as _;
 
-
 use crate::src::shared::abi::uid_t;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};

@@ -2,8 +2,7 @@ use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::cmd_find_from_session;
 use crate::src::cmd::queue::{
-    cmdq_error, cmdq_get_state_owned, cmdq_get_target_client,
-    cmdq_print,
+    cmdq_error, cmdq_get_state_owned, cmdq_get_target_client, cmdq_print,
 };
 use crate::src::events::events_fire_window;
 use crate::src::format::bytes::write_cstr;

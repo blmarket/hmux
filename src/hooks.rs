@@ -6,7 +6,8 @@ use crate::src::cmd::find::{
 };
 use crate::src::cmd::parse::cmd_parse_from_string;
 use crate::src::cmd::queue::{
-    cmdq_add_formats, cmdq_append, cmdq_error, cmdq_get_command, cmdq_get_event, cmdq_get_flags, cmdq_insert_after, cmdq_new_state, cmdq_running,
+    cmdq_add_formats, cmdq_append, cmdq_error, cmdq_get_command, cmdq_get_event, cmdq_get_flags,
+    cmdq_insert_after, cmdq_new_state, cmdq_running,
 };
 use crate::src::events::{events_add_sink, events_fire, events_remove_sink};
 use crate::src::events_payload::{
@@ -26,8 +27,7 @@ use crate::src::monitor::{
     monitor_add, monitor_create_session_owned, monitor_get_fire_count, monitor_get_fire_time,
 };
 use crate::src::options::{
-    options_get_monitor_data,
-    options_hook_fired, options_name, options_search, options_set_string,
+    options_get_monitor_data, options_hook_fired, options_name, options_search, options_set_string,
     OptionsScope,
 };
 use crate::src::options_table::options_table;
@@ -42,9 +42,7 @@ use crate::src::shared::format::{FORMAT_NOJOBS, FORMAT_NONE};
 use crate::src::shared::monitor::monitor_type;
 use crate::src::shared::monitor::{monitor_callback, monitor_change, monitor_set};
 use crate::src::shared::options::OPTIONS_TABLE_IS_HOOK;
-use crate::src::shared::options::{
-    options_entry, options_table_entry,
-};
+use crate::src::shared::options::{options_entry, options_table_entry};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::SessionRef;
 use crate::src::window::WindowPane;

@@ -5,7 +5,8 @@ use crate::src::arguments::{
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::parse::cmd_parse_error_uppercase_first;
 use crate::src::cmd::queue::{
-    cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_target_client, cmdq_insert_after,
+    cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command,
+    cmdq_get_target_client, cmdq_insert_after,
 };
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
@@ -19,9 +20,7 @@ use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_FIND_CANFAIL;
 use crate::src::shared::command::*;
-use crate::src::shared::command::{
-    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item,
-};
+use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::job::{JobCompletion, JobExitStatus};
 use crate::src::shared::session::SessionRef;
 use crate::src::status::status_message_set;

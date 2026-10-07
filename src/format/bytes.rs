@@ -1,4 +1,4 @@
-//! Rust formatting into owned bytes and bounded C-character slices
+//! Rust formatting into owned bytes and bounded C-string byte slices
 //!
 //! ```
 //! use hmux::src::format::bytes::format_bytes;
@@ -91,7 +91,7 @@ pub unsafe fn write_cstr(out: &mut dyn Write, value: *const c_char) -> io::Resul
 }
 
 struct CStrWriter<'a> {
-    dst: &'a mut [c_char],
+    dst: &'a mut [u8],
     written: usize,
 }
 
@@ -101,9 +101,7 @@ impl Write for CStrWriter<'_> {
             return Err(io::ErrorKind::WriteZero.into());
         }
         let end = self.written + bytes.len();
-        for (slot, &byte) in self.dst[self.written..end].iter_mut().zip(bytes) {
-            *slot = byte as c_char;
-        }
+        self.dst[self.written..end].copy_from_slice(bytes);
         self.written = end;
         self.dst[end] = 0;
         Ok(bytes.len())
@@ -124,7 +122,7 @@ impl fmt::Write for CStrWriter<'_> {
     }
 }
 
-/// Write raw bytes and formatted text into a bounded C-character slice without
+/// Write raw bytes and formatted text into a bounded C-string byte slice without
 /// allocating.
 ///
 /// The slice includes room for the trailing NUL. Returns the payload byte count,
@@ -135,7 +133,7 @@ impl fmt::Write for CStrWriter<'_> {
 /// Use `write_all` for arbitrary C-string bytes and single-byte characters, and
 /// `write!` for Rust formatting. Propagate write errors from the closure.
 pub fn format_cstr_with(
-    dst: &mut [c_char],
+    dst: &mut [u8],
     write: impl FnOnce(&mut dyn Write) -> io::Result<()>,
 ) -> io::Result<usize> {
     *dst.first_mut().ok_or(io::ErrorKind::WriteZero)? = 0;
@@ -144,17 +142,14 @@ pub fn format_cstr_with(
     Ok(writer.written)
 }
 
-/// Format into a bounded C-character slice, exiting on overflow or format errors.
-pub fn xformat(dst: &mut [c_char], args: fmt::Arguments<'_>) -> c_int {
+/// Format into a bounded C-string byte slice, exiting on overflow or format errors.
+pub fn xformat(dst: &mut [u8], args: fmt::Arguments<'_>) -> c_int {
     xformat_with(dst, |out| out.write_fmt(args))
 }
 
 /// Write bytes and formatted text, exiting on overflow or write errors.
 /// Returns the payload byte count, excluding the trailing NUL.
-pub fn xformat_with(
-    dst: &mut [c_char],
-    write: impl FnOnce(&mut dyn Write) -> io::Result<()>,
-) -> c_int {
+pub fn xformat_with(dst: &mut [u8], write: impl FnOnce(&mut dyn Write) -> io::Result<()>) -> c_int {
     if dst.len() > c_int::MAX as usize {
         unsafe { crate::src::log::fatalx(|out| out.write_all(b"xformat: len > INT_MAX")) };
     }
@@ -182,10 +177,10 @@ mod tests {
     fn mixed_output_matches_c_bytes_characters_and_widths() {
         let value = CString::new(b"name\xff".as_slice()).unwrap();
         for byte in [0u8, b'M', 0x80, 0xff] {
-            let mut expected = [0 as c_char; 64];
+            let mut expected = [0u8; 64];
             let count = unsafe {
                 crate::src::ffi::libc::snprintf(
-                    expected.as_mut_ptr(),
+                    expected.as_mut_ptr().cast(),
                     expected.len(),
                     c"%4u: %s:%c:%u".as_ptr(),
                     7u32,
@@ -194,7 +189,7 @@ mod tests {
                     u32::MAX,
                 )
             };
-            let mut actual = [42 as c_char; 64];
+            let mut actual = [42u8; 64];
             let written = xformat_with(&mut actual, |out| {
                 write!(out, "{:4}: ", 7u32)?;
                 out.write_all(value.as_bytes())?;
@@ -208,7 +203,7 @@ mod tests {
 
     #[test]
     fn mixed_output_checks_capacity_and_propagates_write_errors() {
-        let mut dst = [42 as c_char; 6];
+        let mut dst = [42u8; 6];
         let n = format_cstr_with(&mut dst[..3], |out| out.write_all(b"\xffx")).unwrap();
         assert_eq!(n, 2);
         assert_eq!(dst[2], 0);
@@ -219,7 +214,7 @@ mod tests {
         })
         .unwrap();
         assert_eq!(n, 3);
-        assert_eq!(dst.map(|c| c as u8), *b"\xffx\x0012\0");
+        assert_eq!(dst, *b"\xffx\x0012\0");
 
         let error = format_cstr_with(&mut dst[..3], |out| {
             out.write_all(b"a")?;
@@ -227,7 +222,7 @@ mod tests {
         })
         .unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::WriteZero);
-        assert_eq!(&dst[..2], &[b'a' as c_char, 0]);
+        assert_eq!(&dst[..2], b"a\0");
         let error = format_cstr_with(&mut dst, |out| {
             out.write_all(b"ok")?;
             Err(io::ErrorKind::InvalidData.into())

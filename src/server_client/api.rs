@@ -1405,8 +1405,6 @@ mod tests {
     }
     use super::*;
     use crate::src::shared::screen::screen;
-    
-    
 
     #[test]
     fn source_file_reservations_preserve_limit_and_explicit_completion() {

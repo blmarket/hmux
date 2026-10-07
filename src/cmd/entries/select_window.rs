@@ -1,8 +1,6 @@
 use crate::src::arguments::args_has;
 use crate::src::cmd::find::cmd_find_from_session;
-use crate::src::cmd::queue::{
-    cmdq_error, cmdq_get_client, cmdq_get_state_owned, cmdq_insert_hook,
-};
+use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_state_owned, cmdq_insert_hook};
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::resize::recalculate_sizes;
 use crate::src::server_client::Client as _;

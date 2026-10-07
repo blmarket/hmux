@@ -18,9 +18,7 @@ use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::ClientRef;
-use crate::src::shared::client::{
-    CLIENT_CONTROL, CLIENT_STATUSFORCE, CLIENT_WINDOWSIZECHANGED,
-};
+use crate::src::shared::client::{CLIENT_CONTROL, CLIENT_STATUSFORCE, CLIENT_WINDOWSIZECHANGED};
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::command::{CMD_AFTERHOOK, CMD_CLIENT_TFLAG};

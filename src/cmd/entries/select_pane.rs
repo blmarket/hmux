@@ -2,9 +2,7 @@ use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::find::{
     cmd_find_from_pane, cmd_find_from_winlink, cmd_find_from_winlink_pane,
 };
-use crate::src::cmd::queue::{
-    cmdq_error, cmdq_get_state_owned, cmdq_insert_hook, cmdq_print,
-};
+use crate::src::cmd::queue::{cmdq_error, cmdq_get_state_owned, cmdq_insert_hook, cmdq_print};
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::events::events_fire;
 use crate::src::events_payload::{

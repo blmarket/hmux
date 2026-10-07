@@ -1,9 +1,7 @@
 use crate::src::compat::strtonum::strtonum;
 use crate::src::compat::unvis::strunvis;
 use crate::src::compat::vis::strnvis;
-use crate::src::ffi::libc::{
-    fnmatch, strchr, strcmp, strcspn, strlen, strncmp,
-};
+use crate::src::ffi::libc::{fnmatch, strchr, strcmp, strcspn, strlen, strncmp};
 use crate::src::ffi::ncurses::{
     cur_term, del_curterm, setupterm, tigetflag, tigetnum, tigetstr, tiparm_s,
 };
@@ -1519,7 +1517,7 @@ pub(crate) unsafe fn tty_term_read_list(name: &CStr) -> Result<Vec<CString>, CSt
     let mut n: ::core::ffi::c_int = 0;
     let mut i: u_int = 0;
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut tmp: [::core::ffi::c_char; 11] = [0; 11];
+    let mut tmp: [u8; 11] = [0; 11];
     let mut caps = Vec::new();
     if setupterm(name.as_ptr().cast_mut(), fd, &raw mut error) != OK {
         let (message, with_name): (&[u8], bool) = match error {

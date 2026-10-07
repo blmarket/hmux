@@ -54,9 +54,7 @@ unsafe fn server_clear_messages() {
 pub use crate::src::server_client::clients;
 use crate::src::shared::abi::__mode_t;
 use crate::src::shared::abi::*;
-use crate::src::shared::client::{
-    CLIENT_DEFAULTSOCKET, CLIENT_IDENTIFIED, CLIENT_NOFORK,
-};
+use crate::src::shared::client::{CLIENT_DEFAULTSOCKET, CLIENT_IDENTIFIED, CLIENT_NOFORK};
 use crate::src::shared::command::cmd_find_state;
 use crate::src::shared::errno::{EAGAIN, ECHILD, EINTR, ENAMETOOLONG};
 use crate::src::shared::event::*;

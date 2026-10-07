@@ -24,7 +24,7 @@ pub(super) unsafe fn draw_editor_waiting(owner: &Rc<UnsafeCell<window_pane>>, pi
     };
     let mut s: *mut screen = (*owner.get()).screen_ptr();
     let mut gc = grid_default_cell;
-    let mut text: [::core::ffi::c_char; 128] = [0; 128];
+    let mut text: [u8; 128] = [0; 128];
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     let mut box_w: u_int = 0;

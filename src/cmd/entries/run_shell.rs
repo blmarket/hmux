@@ -5,7 +5,8 @@ use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::find::cmd_find_from_nothing;
 use crate::src::cmd::parse::cmd_parse_error_uppercase_first;
 use crate::src::cmd::queue::{
-    cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command, cmdq_get_target_client, cmdq_insert_after, cmdq_print,
+    cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command,
+    cmdq_get_target_client, cmdq_insert_after, cmdq_print,
 };
 use crate::src::ffi::libc::strtod;
 use crate::src::format::bytes::write_cstr;
@@ -28,9 +29,7 @@ use crate::src::shared::arguments::{args, args_parse};
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::command::CMD_FIND_CANFAIL;
 use crate::src::shared::command::*;
-use crate::src::shared::command::{
-    cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item,
-};
+use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmd_find_state, cmdq_item};
 use crate::src::shared::event::*;
 use crate::src::shared::format::format_tree;
 use crate::src::shared::job::{JobCompletion, JobExitStatus, JOB_NOWAIT, JOB_SHOWSTDERR};
@@ -165,7 +164,7 @@ unsafe fn cmd_run_shell_exec(
     let mut d: ::core::ffi::c_double = 0.;
     let mut tv = Duration::ZERO;
     let mut end: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut key: [::core::ffi::c_char; 16] = [0; 16];
+    let mut key: [u8; 16] = [0; 16];
     let mut i: u_int = 0;
     let mut wait: ::core::ffi::c_int =
         (args_has(args, 'b' as i32 as u_char) == 0) as ::core::ffi::c_int;
@@ -208,13 +207,17 @@ unsafe fn cmd_run_shell_exec(
             i = 1 as u_int;
             while i < args_count(args) {
                 xformat(&mut key, format_args!("{}", i as u32));
-                format_add(ft, CStr::from_ptr(key.as_ptr()), |out| {
-                    write_cstr(
-                        out,
-                        args_string(&mut *(args), i)
-                            .map_or(std::ptr::null(), |value| value.as_ptr()),
-                    )
-                });
+                format_add(
+                    ft,
+                    CStr::from_bytes_until_nul(&key).expect("xformat output is terminated"),
+                    |out| {
+                        write_cstr(
+                            out,
+                            args_string(&mut *(args), i)
+                                .map_or(std::ptr::null(), |value| value.as_ptr()),
+                        )
+                    },
+                );
                 i = i.wrapping_add(1);
             }
             cdata.cmd = Some(format_expand_cstring(ft, cmd));

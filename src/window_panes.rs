@@ -516,25 +516,8 @@ unsafe fn window_panes_draw_number(
     };
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut buf: [::core::ffi::c_char; 16] = [0; 16];
-    let mut lbuf: [::core::ffi::c_char; 16] = [
-        0 as ::core::ffi::c_int as ::core::ffi::c_char,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-    ];
+    let mut buf: [u8; 16] = [0; 16];
+    let mut lbuf: [u8; 16] = [0; 16];
     let mut ptr: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut len: size_t = 0;
     let mut llen: size_t = 0 as size_t;

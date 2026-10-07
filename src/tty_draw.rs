@@ -7,9 +7,9 @@ use crate::src::shared::abi::*;
 use crate::src::shared::client::{ClientRef, CLIENT_UTF8};
 use crate::src::shared::grid::*;
 use crate::src::shared::screen::screen;
+use crate::src::shared::tty::tty_style_ctx;
 use crate::src::shared::tty::TTY_NOCURSOR;
 use crate::src::shared::tty::*;
-use crate::src::shared::tty::tty_style_ctx;
 use crate::src::tty::{
     terminal_set, terminal_term, terminal_value, tty_attributes, tty_check_codeset, tty_cursor,
     tty_default_attributes, tty_fake_bce, tty_margin_off, tty_putc, tty_putcode, tty_putcode_i,

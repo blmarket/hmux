@@ -16,8 +16,8 @@ use crate::src::shared::command::cmd_find_state;
 use crate::src::shared::events::{event_payload, events_cb, events_sink, EventSinkId};
 use crate::src::shared::pane::window_pane;
 use crate::src::shared::session::SessionRef;
-use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::winlink;
+use crate::src::shared::window::WindowRef;
 use crate::src::window_pane::WindowPane as _;
 use std::ffi::CStr;
 

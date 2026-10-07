@@ -280,9 +280,9 @@ pub unsafe fn format_add_owned_cb(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{Duration, UNIX_EPOCH};
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;
+    use std::time::{Duration, UNIX_EPOCH};
 
     unsafe fn tree() -> Box<format_tree> {
         format_create(None, None, 0, 0)

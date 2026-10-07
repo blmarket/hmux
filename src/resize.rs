@@ -10,14 +10,13 @@ use crate::src::shared::limits::UINT_MAX;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::window::WindowRef;
 use crate::src::shared::window::{
-    WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_SIZE_LARGEST, WINDOW_SIZE_LATEST,
-    WINDOW_SIZE_MANUAL,
+    WINDOW_MAXIMUM, WINDOW_MINIMUM, WINDOW_SIZE_LARGEST, WINDOW_SIZE_LATEST, WINDOW_SIZE_MANUAL,
 };
 use crate::src::tmux::global_w_options;
 use crate::src::tty::tty_update_window_offset;
+use crate::src::window::windows;
 use crate::src::window::Window as _;
 use crate::src::window::WindowIndex as _;
-use crate::src::window::windows;
 
 pub unsafe fn resize_window(window: &WindowRef, sx: u_int, sy: u_int, xpixel: i32, ypixel: i32) {
     use crate::src::window::Window;

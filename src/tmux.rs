@@ -707,7 +707,7 @@ pub fn check_name(name: &CStr) -> bool {
     utf8_isvalid(name)
 }
 pub unsafe fn sig2name(mut signo: ::core::ffi::c_int) -> *const ::core::ffi::c_char {
-    static mut s: [::core::ffi::c_char; 11] = [0; 11];
+    static mut s: [u8; 11] = [0; 11];
     xformat(&mut s, format_args!("{}", { signo }));
     &raw mut s as *mut ::core::ffi::c_char
 }

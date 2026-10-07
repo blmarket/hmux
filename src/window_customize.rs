@@ -33,8 +33,8 @@ use crate::src::hooks::{
     hooks_monitor_to_cstring,
 };
 use crate::src::key_bindings::{
-    key_bindings_add, key_bindings_get, key_bindings_get_default,
-    key_bindings_remove, key_bindings_reset, key_bindings_set_note, key_bindings_tables,
+    key_bindings_add, key_bindings_get, key_bindings_get_default, key_bindings_remove,
+    key_bindings_reset, key_bindings_set_note, key_bindings_tables,
 };
 use crate::src::key_string::{key_string_format, key_string_parse_cstr};
 use crate::src::mode_tree::{
@@ -616,7 +616,7 @@ unsafe fn window_customize_draw_waiting(mode_owner: &Rc<UnsafeCell<window_custom
         us: 0,
         link: 0,
     };
-    let mut text: [::core::ffi::c_char; 128] = [0; 128];
+    let mut text: [u8; 128] = [0; 128];
     let mut sx: u_int = 0;
     let mut sy: u_int = 0;
     let mut box_w: u_int = 0;
@@ -1780,7 +1780,7 @@ unsafe fn window_customize_draw_option(
     let mut unit: *const ::core::ffi::c_char = c"".as_ptr();
     let mut value: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut value_owner: Option<CString> = None;
-    let mut label: [::core::ffi::c_char; 64] = [0; 64];
+    let mut label: [u8; 64] = [0; 64];
     let mut default_value: Option<CString> = None;
     let mut choices: [::core::ffi::c_char; 256] = ::core::mem::transmute::<
         [u8; 256],
@@ -4733,8 +4733,6 @@ mod tag_tests {
 mod item_owner_tests {
     use super::*;
     use crate::src::spawn::spawn_cancel_editor;
-    
-    
 
     #[test]
     fn detached_copy_owns_byte_preserving_strings() {

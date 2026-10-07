@@ -499,7 +499,7 @@ unsafe fn input_key_write(
     bufferevent_write(bev, data as *const ::core::ffi::c_void, size);
 }
 unsafe fn input_key_extended(mut bev: *mut bufferevent, mut key: key_code) -> ::core::ffi::c_int {
-    let mut tmp: [::core::ffi::c_char; 64] = [0; 64];
+    let mut tmp: [u8; 64] = [0; 64];
     let mut modifier: ::core::ffi::c_char = 0;
     let mut ud: utf8_data = utf8_data {
         data: [0; 32],
@@ -862,7 +862,7 @@ pub unsafe fn input_key_get_mouse(
     mut m: *const mouse_event,
     mut x: u_int,
     mut y: u_int,
-    buf: &mut [::core::ffi::c_char; 40],
+    buf: &mut [u8; 40],
 ) -> Option<size_t> {
     let mut len: size_t = 0;
     if (*m).b & MOUSE_MASK_DRAG as u_int != 0
@@ -908,15 +908,15 @@ pub unsafe fn input_key_get_mouse(
         len = xformat(buf, format_args!("\x1B[M")) as size_t;
         len = len.wrapping_add(input_key_split2(
             (*m).b.wrapping_add(MOUSE_PARAM_BTN_OFF as u_int),
-            buf.as_mut_ptr().add(len) as *mut ::core::ffi::c_char as *mut u_char,
+            buf.as_mut_ptr().add(len),
         ));
         len = len.wrapping_add(input_key_split2(
             x.wrapping_add(MOUSE_PARAM_POS_OFF as u_int),
-            buf.as_mut_ptr().add(len) as *mut ::core::ffi::c_char as *mut u_char,
+            buf.as_mut_ptr().add(len),
         ));
         len = len.wrapping_add(input_key_split2(
             y.wrapping_add(MOUSE_PARAM_POS_OFF as u_int),
-            buf.as_mut_ptr().add(len) as *mut ::core::ffi::c_char as *mut u_char,
+            buf.as_mut_ptr().add(len),
         ));
     } else {
         if (*m).b.wrapping_add(MOUSE_PARAM_BTN_OFF as u_int) > MOUSE_PARAM_MAX as u_int {
@@ -925,27 +925,24 @@ pub unsafe fn input_key_get_mouse(
         len = xformat(buf, format_args!("\x1B[M")) as size_t;
         let fresh0 = len;
         len = len.wrapping_add(1);
-        buf[fresh0 as usize] =
-            (*m).b.wrapping_add(MOUSE_PARAM_BTN_OFF as u_int) as ::core::ffi::c_char;
+        buf[fresh0 as usize] = (*m).b.wrapping_add(MOUSE_PARAM_BTN_OFF as u_int) as u8;
         if x.wrapping_add(MOUSE_PARAM_POS_OFF as u_int) > MOUSE_PARAM_MAX as u_int {
             let fresh1 = len;
             len = len.wrapping_add(1);
-            buf[fresh1 as usize] = MOUSE_PARAM_MAX as ::core::ffi::c_char;
+            buf[fresh1 as usize] = MOUSE_PARAM_MAX as u8;
         } else {
             let fresh2 = len;
             len = len.wrapping_add(1);
-            buf[fresh2 as usize] =
-                x.wrapping_add(MOUSE_PARAM_POS_OFF as u_int) as ::core::ffi::c_char;
+            buf[fresh2 as usize] = x.wrapping_add(MOUSE_PARAM_POS_OFF as u_int) as u8;
         }
         if y.wrapping_add(MOUSE_PARAM_POS_OFF as u_int) > MOUSE_PARAM_MAX as u_int {
             let fresh3 = len;
             len = len.wrapping_add(1);
-            buf[fresh3 as usize] = MOUSE_PARAM_MAX as ::core::ffi::c_char;
+            buf[fresh3 as usize] = MOUSE_PARAM_MAX as u8;
         } else {
             let fresh4 = len;
             len = len.wrapping_add(1);
-            buf[fresh4 as usize] =
-                y.wrapping_add(MOUSE_PARAM_POS_OFF as u_int) as ::core::ffi::c_char;
+            buf[fresh4 as usize] = y.wrapping_add(MOUSE_PARAM_POS_OFF as u_int) as u8;
         }
     }
     Some(len)

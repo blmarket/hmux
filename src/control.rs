@@ -7,16 +7,16 @@ use crate::src::format::bytes::write_cstr;
 use crate::src::log::{fatalx, log_bytes, log_cstr, log_cstr_n, log_debug};
 use crate::src::monitor::{monitor_add, monitor_create_client_owned, monitor_remove};
 use crate::src::reactor::{
-    bufferevent_disable, bufferevent_enable, bufferevent_get_input, bufferevent_write, bufferevent_write_buffer, evbuffer_add,
-    evbuffer_add_formatted, evbuffer_get_length, evbuffer_new, evbuffer_pullup, evbuffer_readln,
+    bufferevent_disable, bufferevent_enable, bufferevent_get_input, bufferevent_write,
+    bufferevent_write_buffer, evbuffer_add, evbuffer_add_formatted, evbuffer_get_length,
+    evbuffer_new, evbuffer_pullup, evbuffer_readln,
 };
 use crate::src::server_client::Client as _;
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::{
-    CLIENT_CONTROL_NOOUTPUT,
-    CLIENT_CONTROL_PAUSEAFTER, CLIENT_EXIT, CLIENT_UNATTACHEDFLAGS,
+    CLIENT_CONTROL_NOOUTPUT, CLIENT_CONTROL_PAUSEAFTER, CLIENT_EXIT, CLIENT_UNATTACHEDFLAGS,
 };
 use crate::src::shared::command::CMDQ_STATE_CONTROL;
 use crate::src::shared::command::*;

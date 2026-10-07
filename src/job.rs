@@ -606,9 +606,9 @@ pub unsafe fn job_print_summary(
 #[cfg(test)]
 mod job_stream_tests {
     use super::*;
-    use std::os::unix::net::UnixStream;
     use crate::src::shared::job::job_update_callback;
     use std::cell::Cell;
+    use std::os::unix::net::UnixStream;
     use std::rc::Rc;
 
     fn idle_job() -> job {

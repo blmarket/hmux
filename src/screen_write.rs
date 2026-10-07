@@ -42,7 +42,8 @@ use crate::src::shared::tty::{
     tty_command_data, tty_ctx, tty_ctx_redraw_cb, tty_ctx_set_client_cb,
 };
 use crate::src::shared::tty::{
-    TTY_CTX_CELL_INVALIDATE, TTY_CTX_INVISIBLE_PANES, TTY_CTX_PANE_OBSCURED, TTY_CTX_SYNC, TTY_CTX_WRAPPED,
+    TTY_CTX_CELL_INVALIDATE, TTY_CTX_INVISIBLE_PANES, TTY_CTX_PANE_OBSCURED, TTY_CTX_SYNC,
+    TTY_CTX_WRAPPED,
 };
 use crate::src::shared::utf8::*;
 use crate::src::text::utf8::{utf8_append, utf8_copy, utf8_fromcstr_vec, utf8_open, utf8_set};

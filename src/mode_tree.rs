@@ -4,9 +4,7 @@ use crate::src::cmd::queue::{
     cmdq_append, cmdq_get_callback_owned, cmdq_get_client, cmdq_new_state,
 };
 use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
-use crate::src::ffi::libc::{
-    __ctype_tolower_loc, memcpy, strcasestr, strstr,
-};
+use crate::src::ffi::libc::{__ctype_tolower_loc, memcpy, strcasestr, strstr};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_add, format_create_defaults, format_expand_cstring, format_free};
 use crate::src::format_draw::{format_draw, format_width};
@@ -31,16 +29,17 @@ use crate::src::shared::abi::*;
 use crate::src::shared::arguments::args;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::colour::{COLOUR_FLAG_THEME, COLOUR_THEME_CYAN};
-use crate::src::shared::command::*;
 use crate::src::shared::command::cmd_find_state;
+use crate::src::shared::command::*;
 use crate::src::shared::format::format_tree;
 use crate::src::shared::grid::*;
 use crate::src::shared::key::*;
 use crate::src::shared::layout::*;
 use crate::src::shared::mode_tree::{
-    mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_height_cb, mode_tree_help_cb, mode_tree_item, mode_tree_key_cb, mode_tree_line, mode_tree_list,
-    mode_tree_prompt, mode_tree_prompt_input_cb, mode_tree_search_cb, mode_tree_search_dir,
-    mode_tree_sort_cb, mode_tree_swap_cb, ModeTreeItemData, ModeTreeItemRef,
+    mode_tree_build_cb, mode_tree_data, mode_tree_draw_cb, mode_tree_height_cb, mode_tree_help_cb,
+    mode_tree_item, mode_tree_key_cb, mode_tree_line, mode_tree_list, mode_tree_prompt,
+    mode_tree_prompt_input_cb, mode_tree_search_cb, mode_tree_search_dir, mode_tree_sort_cb,
+    mode_tree_swap_cb, ModeTreeItemData, ModeTreeItemRef,
 };
 use crate::src::shared::mouse::{mouse_event, MOUSE_BUTTON_1, MOUSE_MASK_BUTTONS, MOUSE_MASK_DRAG};
 use crate::src::shared::pane::window_pane;
@@ -2267,7 +2266,6 @@ unsafe fn mode_tree_test_row(mtd: *mut mode_tree_data) -> ModeTreeItemRef {
 #[cfg(test)]
 mod mode_tree_tests {
     use super::*;
-    
 
     #[test]
     fn child_owners_preserve_search_order_and_survive_removal() {
@@ -2602,9 +2600,6 @@ mod mode_prompt_data_tests {
 #[cfg(test)]
 mod queued_prompt_accept_tests {
     use super::*;
-
-    
-    
 
     #[test]
     fn observed_prompt_callbacks_retain_only_during_live_dispatch() {

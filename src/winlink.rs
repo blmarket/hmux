@@ -16,9 +16,7 @@ pub use crate::src::shared::window::{
     window, window_mode, window_mode_entry, window_winlinks, windows, winlink, winlink_stack,
     winlinks,
 };
-use crate::src::shared::window::{
-    WINLINK_ALERTFLAGS, WINLINK_VISITED,
-};
+use crate::src::shared::window::{WINLINK_ALERTFLAGS, WINLINK_VISITED};
 
 pub fn winlinks_find(head: &winlinks, elm: &winlink) -> refbox::Weak<winlink> {
     let owner = head;

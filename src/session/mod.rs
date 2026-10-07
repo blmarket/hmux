@@ -23,13 +23,12 @@ use crate::src::compat::strtonum::strtonum;
 use crate::src::events::{events_fire, events_fire_session, events_fire_winlink};
 use crate::src::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_session,
-    event_payload_set_string, event_payload_set_target,
-    event_payload_set_window,
+    event_payload_set_string, event_payload_set_target, event_payload_set_window,
 };
 use crate::src::ffi::libc::strcmp;
 use crate::src::log::{log_bytes, log_cstr, log_debug};
-use crate::src::options::options_owner_ptr;
 use crate::src::options::options_get_number;
+use crate::src::options::options_owner_ptr;
 use crate::src::resize::recalculate_sizes;
 use crate::src::server::{marked_pane, server_clear_marked};
 use crate::src::server_fn::server_lock_session;

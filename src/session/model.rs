@@ -82,7 +82,6 @@ impl session {
 mod retained_session_tests {
     use super::*;
     use crate::src::shared::session::session_group;
-    
 
     #[test]
     fn group_membership_is_weak_but_traversal_retains_live_sessions() {

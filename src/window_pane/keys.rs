@@ -65,14 +65,13 @@ unsafe fn write_mouse(pane: &Rc<UnsafeCell<window_pane>>, mouse: &mouse_event) {
     };
     log_debug(format_args!(
         "writing mouse {} to %{}",
-        log_cstr_n(bytes.as_ptr(), count as i32),
+        log_cstr_n(bytes.as_ptr().cast(), count as i32),
         pane.id(),
     ));
     log_debug(format_args!(
         "input_key_mouse: {}",
-        log_cstr_n(bytes.as_ptr(), count as i32),
+        log_cstr_n(bytes.as_ptr().cast(), count as i32),
     ));
     // All screen/pane reads finish before queueing the encoded report.
-    let bytes = std::slice::from_raw_parts(bytes.as_ptr().cast::<u8>(), count);
-    let _ = stream.write(bytes);
+    let _ = stream.write(&bytes[..count]);
 }

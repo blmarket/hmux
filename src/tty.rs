@@ -23,9 +23,7 @@ pub use input::TerminalInput;
 mod output;
 pub use output::*;
 
-use crate::src::ffi::libc::{
-    abs, getpid, strcmp, strncmp, time,
-};
+use crate::src::ffi::libc::{abs, getpid, strcmp, strncmp, time};
 use crate::src::ffi::resolv::__b64_ntop;
 use crate::src::format::bytes::{format_cstring, xformat};
 use crate::src::grid::{grid_cells_equal, grid_default_cell};
@@ -46,9 +44,7 @@ use crate::src::shared::client::{
     CLIENT_TERMINAL, CLIENT_UTF8,
 };
 use crate::src::shared::colour::*;
-use crate::src::shared::colour::{
-    COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME,
-};
+use crate::src::shared::colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME};
 use crate::src::shared::display::*;
 use crate::src::shared::grid::*;
 use crate::src::shared::limits::UINT_MAX;
@@ -141,7 +137,7 @@ static mut tty_default_style_ctx: tty_style_ctx = {
     }
 };
 pub unsafe fn tty_create_log() {
-    let mut name: [::core::ffi::c_char; 64] = [0; 64];
+    let mut name: [u8; 64] = [0; 64];
     xformat(
         &mut name,
         format_args!("tmux-out-{}.log", getpid() as ::core::ffi::c_long),
@@ -149,7 +145,7 @@ pub unsafe fn tty_create_log() {
     use hmux_rt::Runtime as _;
     tty_log = (|| -> std::io::Result<_> {
         let file = hmux_rt::unix::open(
-            CStr::from_ptr(name.as_ptr()),
+            CStr::from_bytes_until_nul(&name).expect("xformat output is terminated"),
             O_WRONLY | O_CREAT | O_TRUNC,
             0o644,
         )?;
@@ -1432,7 +1428,7 @@ unsafe fn tty_clear_area(
     }
     let defaults = &ctx.style_ctx.defaults;
     let complete = (|tty: &ClientRef| {
-        let mut tmp: [::core::ffi::c_char; 64] = [0; 64];
+        let mut tmp: [u8; 64] = [0; 64];
         if tty_fake_bce(tty.borrow_terminal(), defaults, bg) == 0 {
             if px == 0 as u_int
                 && px.wrapping_add(nx) >= terminal_value!(tty, sx)
@@ -1456,7 +1452,11 @@ unsafe fn tty_clear_area(
                         { px.wrapping_add(nx) }
                     ),
                 );
-                tty_puts(tty, std::ffi::CStr::from_ptr(tmp.as_ptr()));
+                tty_puts(
+                    tty,
+                    std::ffi::CStr::from_bytes_until_nul(&tmp)
+                        .expect("xformat output is terminated"),
+                );
                 return true;
             }
             if px == 0 as u_int

@@ -6,9 +6,7 @@ use crate::src::server_client::Client;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::colour::*;
-use crate::src::shared::colour::{
-    COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME,
-};
+use crate::src::shared::colour::{COLOUR_FLAG_256, COLOUR_FLAG_RGB, COLOUR_FLAG_THEME};
 use crate::src::shared::ctype::_ISxdigit;
 use crate::src::shared::options::options;
 use crate::src::shared::tty::{TERM_256COLOURS, TERM_RGBCOLOURS};

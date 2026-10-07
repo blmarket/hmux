@@ -12,10 +12,10 @@ use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::client::CLIENT_READONLY;
+use crate::src::shared::command::CMDQ_STATE_REPEAT;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd_find_state, cmd_list, cmdq_item};
 use crate::src::shared::command::{cmd_parse_input, cmd_parse_result};
-use crate::src::shared::command::CMDQ_STATE_REPEAT;
 use crate::src::shared::key::KEY_BINDING_REPEAT;
 use crate::src::shared::key::*;
 use crate::src::shared::key::{key_binding, key_event, key_table};
@@ -631,7 +631,7 @@ pub fn key_tables_next(elm: &key_table) -> Option<std::rc::Rc<std::cell::RefCell
 mod ownership_tests {
     use super::*;
     use crate::src::cmd::cmd_list_new;
-    
+
     use std::rc::Rc;
 
     unsafe fn binding(key: key_code) -> Box<key_binding> {

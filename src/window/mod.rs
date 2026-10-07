@@ -25,9 +25,7 @@ use crate::src::ffi::libc::strcasecmp;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::options::options_owner_ptr;
-use crate::src::options::{
-    options_get_number, options_get_number_ref,
-};
+use crate::src::options::{options_get_number, options_get_number_ref};
 
 use crate::src::server::clients;
 use crate::src::server::{marked_pane, server_check_marked, server_clear_marked};
@@ -51,15 +49,12 @@ use crate::src::shared::options::options;
 use crate::src::shared::pane::{
     pane_history_first, pane_history_push, pane_history_remove, window_pane_history, window_panes,
 };
-use crate::src::shared::pane::{
-    PANE_STATUS_BOTTOM, PANE_STATUS_TOP,
-};
+use crate::src::shared::pane::{PANE_STATUS_BOTTOM, PANE_STATUS_TOP};
 pub use crate::src::shared::window::{
     window_mode, window_mode_entry, window_winlinks, windows, winlink, winlink_stack, winlinks,
 };
 use crate::src::shared::window::{
-    WINDOW_ACTIVITY,
-    WINLINK_ACTIVITY, WINLINK_BELL, WINLINK_SILENCE,
+    WINDOW_ACTIVITY, WINLINK_ACTIVITY, WINLINK_BELL, WINLINK_SILENCE,
 };
 
 pub const DEFAULT_XPIXEL: ::core::ffi::c_int = 16 as ::core::ffi::c_int;

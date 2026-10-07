@@ -32,9 +32,7 @@ use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::SessionRef;
 use crate::src::status::status_timer_start_all;
 use crate::src::style::colour::{colour_format, colour_parse_cstr};
-use crate::src::style::{
-    style_parse, style_parse_colour,
-};
+use crate::src::style::{style_parse, style_parse_colour};
 use crate::src::text::utf8::utf8_update_width_cache;
 use crate::src::tmux::{checkshell, global_options, global_s_options, global_w_options};
 use crate::src::tty::tty_invalidate;
@@ -312,7 +310,7 @@ pub unsafe fn options_default(
 ) -> *mut options_entry {
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
-    let mut key: [::core::ffi::c_char; 32] = [0; 32];
+    let mut key: [u8; 32] = [0; 32];
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
     o = options_empty(
         oo,
@@ -692,7 +690,7 @@ pub unsafe fn options_array_assign(
 ) -> ::core::ffi::c_int {
     let mut separator: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut key: [::core::ffi::c_char; 32] = [0; 32];
+    let mut key: [u8; 32] = [0; 32];
     let mut i: u_int = 0;
     separator = (*(*o).tableentry_ptr().map_or(std::ptr::null(), |entry| {
         entry as *const crate::src::shared::options::options_table_entry

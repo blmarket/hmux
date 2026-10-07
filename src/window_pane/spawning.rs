@@ -1,7 +1,7 @@
 //! Pane process creation and editor completion keep storage inside its owner.
 use super::{
-    window_pane_create, window_pane_index, window_pane_reset_mode_all,
-    window_pane_set_cwd, window_pane_set_event, window_pane_set_shell,
+    window_pane_create, window_pane_index, window_pane_reset_mode_all, window_pane_set_cwd,
+    window_pane_set_event, window_pane_set_shell,
 };
 use crate::src::cmd::find::cmd_find_from_winlink_pane;
 use crate::src::cmd::queue::cmdq_get_client;
@@ -11,8 +11,7 @@ use crate::src::compat::stdio::CFile;
 use crate::src::compat::systemd::systemd_move_to_new_cgroup;
 use crate::src::control::control_reset_pane;
 use crate::src::environ::{
-    environ_copy, environ_for_session, environ_log, environ_push,
-    environ_set,
+    environ_copy, environ_for_session, environ_log, environ_push, environ_set,
 };
 use crate::src::events::{events_fire, events_fire_window};
 use crate::src::events_payload::{
@@ -20,8 +19,8 @@ use crate::src::events_payload::{
     event_payload_set_string, event_payload_set_target, event_payload_set_window,
 };
 use crate::src::ffi::libc::{
-    __errno_location, _exit, chdir, execl, execvp, fopen, fread, fseeko, ftello,
-    getcwd, getpid, kill, memset, sigfillset, sigprocmask, strerror, strrchr,
+    __errno_location, _exit, chdir, execl, execvp, fopen, fread, fseeko, ftello, getcwd, getpid,
+    kill, memset, sigfillset, sigprocmask, strerror, strrchr,
 };
 use crate::src::ffi::utempter::utempter_add_record;
 use crate::src::format::bytes::write_cstr;
@@ -69,8 +68,7 @@ use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 
 use crate::src::shared::spawn::EditorHandle;
 use crate::src::spawn::{
-    off_t, set_spawn_cause, spawn_log,
-    uintmax_t, _PATH_DEFPATH, IUTF8, SEEK_END, SEEK_SET,
+    off_t, set_spawn_cause, spawn_log, uintmax_t, _PATH_DEFPATH, IUTF8, SEEK_END, SEEK_SET,
 };
 unsafe fn spawn_fire_pane_created(
     mut sc: *mut spawn_context,
@@ -812,11 +810,11 @@ pub(super) unsafe fn install_editor(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::src::ffi::libc::fclose;
     use crate::src::ffi::libc::{fwrite, mkstemp};
     use crate::src::shared::spawn::spawn_finish_edit_cb;
-    use crate::src::spawn::{spawn_editor_fdopen, spawn_editor_finish};
-    use crate::src::ffi::libc::fclose;
     use crate::src::shared::spawn::EditorHandle;
+    use crate::src::spawn::{spawn_editor_fdopen, spawn_editor_finish};
     use std::ffi::CStr;
     use std::fs;
     use std::process::{Command, Stdio};

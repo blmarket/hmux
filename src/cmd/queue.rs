@@ -565,7 +565,7 @@ pub unsafe fn cmdq_insert_hook(
     let mut cmd: refbox::Weak<cmd> = (*item).command_handle();
     let mut args_0: *mut args =
         cmd_get_args_mut(cmd.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
-    let mut tmp: [::core::ffi::c_char; 32] = [0; 32];
+    let mut tmp: [u8; 32] = [0; 32];
     let mut i: u_int = 0;
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if cmdq_get_state(&*item).expect("command queue state").flags & CMDQ_STATE_NOHOOKS != 0 {

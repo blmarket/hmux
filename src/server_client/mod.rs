@@ -36,14 +36,12 @@ use crate::src::events_payload::{
     event_payload_set_session, event_payload_set_target, event_payload_set_uint,
     event_payload_set_window,
 };
-use crate::src::ffi::libc::{
-    access, memcpy, sscanf, strchr, strcmp, strlcat, strlen, strsep,
-};
+use crate::src::ffi::libc::{access, memcpy, sscanf, strchr, strcmp, strlcat, strlen, strsep};
 use crate::src::file::{
     file_print, file_read_data, file_read_done, file_write_done, file_write_ready,
 };
-use crate::src::format::bytes::xformat;
 use crate::src::format::bytes::write_cstr;
+use crate::src::format::bytes::xformat;
 use crate::src::format::{
     format_create, format_defaults, format_expand_cstring, format_expand_time_cstring, format_free,
     format_lost_client,
@@ -52,22 +50,18 @@ use crate::src::key_bindings::{key_bindings_dispatch, key_bindings_get, key_bind
 use crate::src::key_string::key_string_format;
 use crate::src::log::{fatal, log_cstr, log_debug, log_get_level, log_hex, log_pointer};
 use crate::src::names::check_window_name;
-use crate::src::options::{
-    options_get_command, options_get_number, options_get_string,
-};
+use crate::src::options::{options_get_command, options_get_number, options_get_string};
 use crate::src::proc::{proc_add_peer, proc_kill_peer, proc_remove_peer, proc_send};
 use crate::src::prompt::prompt_free;
 use crate::src::reactor::{
-    bufferevent_enable, evbuffer_add,
-    evbuffer_get_length, evbuffer_pullup, evbuffer_readln,
+    bufferevent_enable, evbuffer_add, evbuffer_get_length, evbuffer_pullup, evbuffer_readln,
 };
 use crate::src::resize::{recalculate_size, recalculate_sizes};
 use crate::src::screen::screen_mode_display;
 use crate::src::screen_redraw::{redraw_pane, redraw_pane_scrollbar, redraw_screen};
 use crate::src::server::{current_time, server_add_accept, server_proc, server_update_socket};
 use crate::src::server_fn::{
-    server_check_unattached,
-    server_redraw_window_borders, server_status_window,
+    server_check_unattached, server_redraw_window_borders, server_status_window,
 };
 
 use crate::src::shared::command::unpack_argv;
@@ -97,8 +91,8 @@ use crate::src::window_visible::{window_position_is_visible, window_visible_rang
 use hmux_buffer::SegmentedBuf;
 use std::ffi::{CStr, CString};
 
-use crate::src::shared::abi::*;
 use crate::src::shared::abi::ssize_t;
+use crate::src::shared::abi::*;
 pub use crate::src::shared::client::client_file;
 use crate::src::shared::client::*;
 
@@ -666,15 +660,15 @@ use crate::src::shared::posix_io::{
 };
 use crate::src::shared::process::tmuxpeer;
 use crate::src::shared::screen::{
-    ScreenMode, ALL_MOUSE_MODES, CURSOR_MODES, MODE_BRACKETPASTE, MODE_CURSOR,
-    MODE_MOUSE_ALL, MODE_MOUSE_BUTTON, MODE_SYNC,
+    ScreenMode, ALL_MOUSE_MODES, CURSOR_MODES, MODE_BRACKETPASTE, MODE_CURSOR, MODE_MOUSE_ALL,
+    MODE_MOUSE_BUTTON, MODE_SYNC,
 };
 use crate::src::shared::tty::tty;
 use crate::src::shared::tty::*;
 use crate::src::shared::tty::{TTY_BLOCK, TTY_FREEZE, TTY_NOCURSOR, TTY_OPENED};
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NOSLASH, VIS_OCTAL};
-use crate::src::shared::window::{window_mode_entry, winlink};
 use crate::src::shared::window::WINDOW_SIZE_LATEST;
+use crate::src::shared::window::{window_mode_entry, winlink};
 
 pub const _PATH_TTY: &std::ffi::CStr = c"/dev/tty";
 unsafe fn server_client_how_many() -> u_int {
@@ -3921,7 +3915,7 @@ unsafe fn server_client_set_flags(c_owner: &ClientRef, mut flags: *const ::core:
 }
 unsafe fn server_client_get_flags(c: &client) -> *const ::core::ffi::c_char {
     static mut s: [::core::ffi::c_char; 256] = [0; 256];
-    let mut tmp: [::core::ffi::c_char; 32] = [0; 32];
+    let mut tmp: [u8; 32] = [0; 32];
     *(&raw mut s as *mut ::core::ffi::c_char) = '\0' as i32 as ::core::ffi::c_char;
     if c.flags & CLIENT_ATTACHED as uint64_t != 0 {
         strlcat(

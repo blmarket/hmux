@@ -2,9 +2,7 @@
 use super::{window_pane_destroy_ready, window_pane_exited};
 use crate::src::arguments::{args_count, args_has, args_string};
 use crate::src::cmd::cmd_get_args_mut;
-use crate::src::cmd::queue::{
-    cmdq_error, cmdq_get_client, cmdq_get_target_client,
-};
+use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client};
 use crate::src::ffi::libc::{
     __errno_location, _exit, execl, fork, memcpy, setpgid, sigfillset, sigprocmask, strerror,
 };
