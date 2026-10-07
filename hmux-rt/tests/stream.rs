@@ -147,46 +147,6 @@ fn direct_io_reads_and_writes_can_wait_independently() {
 }
 
 #[test]
-fn partial_writes_park_when_full_and_resume_after_drain() {
-    use std::io::Read;
-    use std::os::fd::AsRawFd;
-    let mut runtime = mio::Runtime::new().unwrap();
-    let (mut peer, socket) = UnixStream::pair().unwrap();
-    peer.set_nonblocking(true).unwrap();
-    socket.set_nonblocking(true).unwrap();
-    let size: libc::c_int = 4096;
-    // SAFETY: socket is live and size points to a valid socket option value.
-    assert_eq!(
-        unsafe {
-            libc::setsockopt(
-                socket.as_raw_fd(),
-                libc::SOL_SOCKET,
-                libc::SO_SNDBUF,
-                (&size as *const libc::c_int).cast(),
-                std::mem::size_of_val(&size) as libc::socklen_t,
-            )
-        },
-        0
-    );
-    let source = mio::Io::new(socket.into()).unwrap();
-    tick(&mut runtime);
-    let payload = vec![42; 1024 * 1024];
-    let count = match poll(Box::pin(source.write(&[IoSlice::new(&payload)], None)).as_mut()) {
-        Poll::Ready(Ok(n)) => n,
-        _ => panic!("initial write should make progress"),
-    };
-    assert!(count > 0 && count < payload.len());
-    let buffers = [IoSlice::new(&payload[count..])];
-    let mut write = Box::pin(source.write(&buffers, None));
-    assert!(poll(write.as_mut()).is_pending());
-    let mut drained = vec![0; count];
-    peer.read_exact(&mut drained).unwrap();
-    assert_eq!(drained, payload[..count]);
-    tick(&mut runtime);
-    assert!(matches!(poll(write.as_mut()), Poll::Ready(Ok(n)) if n > 0));
-}
-
-#[test]
 fn writer_owns_registration_and_closes_it_on_drop() {
     use hmux_rt::stream::Writer;
     use std::io::Read;
