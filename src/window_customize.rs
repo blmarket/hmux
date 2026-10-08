@@ -1107,7 +1107,7 @@ unsafe fn window_customize_build_options(
     scope2: window_customize_scope,
     oo2: Option<OptionsScope>,
     ft: *mut format_tree,
-    filter: &CStr,
+    filter: Option<&CStr>,
     fs: *mut cmd_find_state,
     type_0: window_customize_option_type,
 ) {
@@ -1160,7 +1160,7 @@ unsafe fn window_customize_build_options(
             &owner,
             option,
             ft,
-            Some(filter),
+            filter,
             fs,
             type_0,
         ));
@@ -1188,7 +1188,7 @@ unsafe fn window_customize_build_options(
             &owner,
             option,
             ft,
-            Some(filter),
+            filter,
             fs,
             type_0,
         ));
@@ -1492,7 +1492,7 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_NONE,
         None,
         ft,
-        filter.expect("string argument"),
+        filter,
         &raw mut fs,
         WINDOW_CUSTOMIZE_OPTIONS,
     );
@@ -1507,7 +1507,7 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_NONE,
         None,
         ft,
-        filter.expect("string argument"),
+        filter,
         &raw mut fs,
         WINDOW_CUSTOMIZE_OPTIONS,
     );
@@ -1522,7 +1522,7 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_PANE,
         window_customize_get_tree(WINDOW_CUSTOMIZE_PANE, &fs),
         ft,
-        filter.expect("string argument"),
+        filter,
         &raw mut fs,
         WINDOW_CUSTOMIZE_OPTIONS,
     );
@@ -1537,7 +1537,7 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_NONE,
         None,
         ft,
-        filter.expect("string argument"),
+        filter,
         &raw mut fs,
         WINDOW_CUSTOMIZE_HOOKS,
     );
@@ -1552,7 +1552,7 @@ unsafe fn window_customize_build(
         WINDOW_CUSTOMIZE_PANE,
         window_customize_get_tree(WINDOW_CUSTOMIZE_PANE, &fs),
         ft,
-        filter.expect("string argument"),
+        filter,
         &raw mut fs,
         WINDOW_CUSTOMIZE_HOOKS,
     );

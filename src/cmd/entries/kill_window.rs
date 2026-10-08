@@ -106,7 +106,8 @@ unsafe fn cmd_kill_window_exec(
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'a' as i32 as u_char) != 0 {
-        return cmd_kill_window_all(item_handle, CStr::from_ptr(filter));
+        let filter = (!filter.is_null()).then(|| CStr::from_ptr(filter));
+        return cmd_kill_window_all(item_handle, filter);
     }
     server_kill_window(
         wl.get_unchecked()
@@ -120,7 +121,7 @@ unsafe fn cmd_kill_window_exec(
 }
 unsafe fn cmd_kill_window_all(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    filter: &CStr,
+    filter: Option<&CStr>,
 ) -> cmd_retval {
     let item = item_handle.get();
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
@@ -148,7 +149,7 @@ unsafe fn cmd_kill_window_all(
                 item_handle,
                 s.as_ref().expect("live session"),
                 (loop_0).clone(),
-                Some(filter),
+                filter,
             ) != 0
             {
                 server_kill_window(
@@ -186,7 +187,7 @@ unsafe fn cmd_kill_window_all(
                 item_handle,
                 s.as_ref().expect("live session"),
                 (loop_0).clone(),
-                Some(filter),
+                filter,
             ) != 0
             {
                 kill_current = 1 as u_int;

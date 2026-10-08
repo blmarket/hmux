@@ -79,7 +79,8 @@ unsafe fn cmd_kill_session_exec(
         }
         server_redraw_session(&source);
     } else if args_has(args, 'a' as i32 as u_char) != 0 {
-        return cmd_kill_session_all(item_handle, CStr::from_ptr(filter));
+        let filter = (!filter.is_null()).then(|| CStr::from_ptr(filter));
+        return cmd_kill_session_all(item_handle, filter);
     } else if args_has(args, 'g' as i32 as u_char) != 0 && {
         sg = crate::src::session::session_group_for(&std::rc::Rc::downgrade(&source));
         !sg.is_null()
@@ -102,7 +103,7 @@ unsafe fn cmd_kill_session_exec(
 }
 unsafe fn cmd_kill_session_all(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    filter: &CStr,
+    filter: Option<&CStr>,
 ) -> cmd_retval {
     let item = item_handle.get();
     let mut s: Option<SessionRef> =
@@ -116,7 +117,7 @@ unsafe fn cmd_kill_session_all(
             && !(cmd_kill_session_filter(
                 item_handle,
                 sloop.as_ref().expect("live session"),
-                Some(filter),
+                filter,
             ) == 0)
         {
             server_destroy_session(sloop_owner.as_ref().expect("registered session"));

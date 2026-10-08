@@ -61,7 +61,8 @@ unsafe fn cmd_kill_pane_exec(
         return CMD_RETURN_ERROR;
     }
     if args_has(args, 'a' as i32 as u_char) != 0 {
-        return cmd_kill_pane_all(item_handle, CStr::from_ptr(filter));
+        let filter = (!filter.is_null()).then(|| CStr::from_ptr(filter));
+        return cmd_kill_pane_all(item_handle, filter);
     }
     let Some(pane_owner) = pane_owner else {
         cmdq_error(item_handle, |out| out.write_all(b"no active pane to kill"));
@@ -72,7 +73,7 @@ unsafe fn cmd_kill_pane_exec(
 }
 unsafe fn cmd_kill_pane_all(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    filter: &CStr,
+    filter: Option<&CStr>,
 ) -> cmd_retval {
     let item = item_handle.get();
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
@@ -95,7 +96,7 @@ unsafe fn cmd_kill_pane_all(
                 s.as_ref().expect("live session"),
                 wl.clone(),
                 &pane_owner,
-                Some(filter),
+                filter,
             ) != 0
         {
             ClientRef::forget_pane(&pane_owner);
