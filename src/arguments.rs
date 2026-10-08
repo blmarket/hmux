@@ -661,6 +661,12 @@ mod ownership_tests {
                 args_percentage_result(&mut args, b'y', 0, 100, 80),
                 Err(ArgumentValueError::Missing)
             );
+            // A string value is converted, as a percentage of the current
+            // value or as a plain number.
+            args_set_value(&mut args, b'p', Some(args_value::string(c"25%".into())), 0);
+            args_set_value(&mut args, b'n', Some(args_value::string(c"7".into())), 0);
+            assert_eq!(args_percentage_result(&mut args, b'p', 0, 100, 80), Ok(20));
+            assert_eq!(args_percentage_result(&mut args, b'n', 0, 100, 80), Ok(7));
         }
         assert_eq!(args.tree[&b'z'].flags, ARGS_ENTRY_OPTIONAL_VALUE);
     }

@@ -1638,4 +1638,24 @@ mod array_string_owner_tests {
         let message = options_string_cause(c"value is %s: %s", &[c"invalid", c"\xff"]);
         assert_eq!(message.to_bytes(), b"value is invalid: \xff");
     }
+
+    #[test]
+    fn array_item_text_is_read_by_key() {
+        unsafe {
+            let mut oo = options_create(None);
+            let definition = options_table
+                .iter()
+                .find(|oe| oe.name == Some(c"update-environment"))
+                .unwrap();
+            let array = options_empty(&mut *oo, definition);
+            assert_eq!(
+                options_array_set(array, c"2", Some(c"DISPLAY"), 0, std::ptr::null_mut()),
+                0
+            );
+            assert_eq!(options_to_string(array, c"2").as_bytes(), b"DISPLAY");
+            assert_eq!(options_to_string(array, c"002").as_bytes(), b"DISPLAY");
+            assert_eq!(options_to_string(array, c"3").as_bytes(), b"");
+            options_free(oo);
+        }
+    }
 }

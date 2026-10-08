@@ -163,6 +163,35 @@ fn trailing_assignment_keeps_accumulated_commands() {
 }
 
 #[test]
+fn semicolon_lists_under_a_false_condition_are_discarded() {
+    use Token::*;
+    let commands = run(
+        &mut Host::default(),
+        vec![
+            If,
+            word("0"),
+            Newline,
+            word("one"),
+            Semicolon,
+            word("two"),
+            Semicolon,
+            word("three"),
+            Newline,
+            Endif,
+            Newline,
+            word("after"),
+            Semicolon,
+            word("last"),
+            Newline,
+        ],
+    );
+    assert_eq!(
+        commands.iter().map(name).collect::<Vec<_>>(),
+        [b"after".as_slice(), b"last"]
+    );
+}
+
+#[test]
 fn errors_and_empty_input() {
     assert!(run(&mut Host::default(), vec![]).is_empty());
     for tokens in [

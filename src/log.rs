@@ -321,4 +321,51 @@ mod tests {
             assert!(lines[2].is_empty());
         }
     }
+
+    /// Run `die` in a forked child logging to a temporary file, and return the
+    /// child's exit status and what it logged.
+    unsafe fn logged_before_exit(die: fn() -> !) -> (i32, Vec<u8>) {
+        let file = libc::tmpfile();
+        assert!(!file.is_null());
+        let fd = libc::dup(libc::fileno(file));
+        assert!(fd >= 0);
+        let mut reader = std::fs::File::from_raw_fd(fd);
+        let pid = libc::fork();
+        assert!(pid >= 0);
+        if pid == 0 {
+            log_file = CFile::from_raw(file.cast());
+            die();
+        }
+        libc::fclose(file);
+        let mut status = 0;
+        assert_eq!(libc::waitpid(pid, &mut status, 0), pid);
+        assert!(libc::WIFEXITED(status));
+        reader.seek(SeekFrom::Start(0)).unwrap();
+        let mut output = Vec::new();
+        reader.read_to_end(&mut output).unwrap();
+        (libc::WEXITSTATUS(status), output)
+    }
+
+    #[test]
+    fn fatal_logs_the_errno_and_escaped_message_then_exits() {
+        unsafe {
+            let (status, output) = logged_before_exit(|| {
+                *__errno_location() = libc::ENOENT;
+                fatal(|out| out.write_all(b"bad\nthing"))
+            });
+            assert_eq!(status, 1);
+            assert!(
+                output.ends_with(b" fatal: No such file or directory: bad\\nthing\n"),
+                "{:?}",
+                String::from_utf8_lossy(&output)
+            );
+            let (status, output) = logged_before_exit(|| fatalx(|out| out.write_all(b"bad\tsize")));
+            assert_eq!(status, 1);
+            assert!(
+                output.ends_with(b" fatal: bad\\tsize\n"),
+                "{:?}",
+                String::from_utf8_lossy(&output)
+            );
+        }
+    }
 }

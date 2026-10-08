@@ -523,3 +523,167 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
         options_free(oo_owner);
     }
 }
+
+/// Run `body` with `global_options` pointing at a fresh, empty table so command
+/// parsing (which consults `command-alias`) and parent fallback have a server
+/// table to read, restoring the previous pointer afterwards.
+unsafe fn with_global_options(body: impl FnOnce(*mut hmux::src::shared::options::options)) {
+    let mut global_owner = options_create(None);
+    let global = &raw mut *global_owner;
+    let saved = hmux::src::tmux::global_options;
+    hmux::src::tmux::global_options = global;
+    body(global);
+    hmux::src::tmux::global_options = saved;
+    options_free(global_owner);
+}
+
+fn table_entry(name: &CStr) -> &'static hmux::src::shared::options::options_table_entry {
+    hmux::src::options_table::options_table
+        .iter()
+        .find(|oe| oe.name == Some(name))
+        .unwrap()
+}
+
+#[test]
+fn command_arrays_parse_items_and_assign_unseparated_values() {
+    unsafe {
+        with_global_options(|_| {
+            let mut oo_owner = options_create(None);
+            let oo = &raw mut *oo_owner;
+            // Hooks are command arrays with an empty separator.
+            let hook = options_empty(oo, table_entry(c"after-new-window"));
+
+            // A new key publishes a parsed command list; the same key again
+            // replaces it in place.
+            assert_eq!(
+                options_array_set(hook, c"3", Some(c"display-message first"), 0, null_mut()),
+                0
+            );
+            assert_eq!(
+                options_to_cstring(hook, Some(c"3"), 0).as_bytes(),
+                b"display-message first"
+            );
+            assert_eq!(
+                options_array_set(hook, c"3", Some(c"display-message second"), 0, null_mut()),
+                0
+            );
+            assert_eq!(
+                options_to_cstring(hook, Some(c"3"), 0).as_bytes(),
+                b"display-message second"
+            );
+            assert_eq!(options_array_iter(&*hook).count(), 1);
+
+            // A command that does not parse leaves no item and reports why.
+            let mut cause: Option<CString> = None;
+            assert_eq!(
+                options_array_set(hook, c"4", Some(c"no-such-command"), 0, &mut cause),
+                -1
+            );
+            assert_eq!(
+                cause.as_deref().unwrap().to_bytes(),
+                b"unknown command: no-such-command"
+            );
+            assert!(options_array_get(&*hook, c"4").is_none());
+
+            // With no separator the whole value becomes one item at the first
+            // free index, so a command list containing spaces is not split.
+            assert_eq!(
+                options_array_assign(hook, c"display-message a ; display-message b", null_mut()),
+                0
+            );
+            assert_eq!(
+                options_to_cstring(hook, Some(c"0"), 0).as_bytes(),
+                b"display-message a ; display-message b"
+            );
+            assert_eq!(options_array_iter(&*hook).count(), 2);
+            // An empty value assigns nothing.
+            assert_eq!(options_array_assign(hook, c"", null_mut()), 0);
+            assert_eq!(options_array_iter(&*hook).count(), 2);
+            options_free(oo_owner);
+        });
+    }
+}
+
+#[test]
+fn set_command_publishes_a_local_default_before_replacing_it() {
+    unsafe {
+        with_global_options(|global| {
+            let definition = table_entry(c"default-client-command");
+            let inherited = options_default(global, definition);
+            assert_eq!(
+                options_to_cstring(inherited, None, 0).as_bytes(),
+                b"new-session"
+            );
+            let mut child_owner = options_create(Some(OptionsScope::GlobalServer));
+            let child = &raw mut *child_owner;
+            assert!(options_get_only(&*child, c"default-client-command").is_none());
+
+            let mut parsed =
+                hmux::src::cmd::parse::cmd_parse_from_string(c"list-sessions -F x", null_mut());
+            let local =
+                options_set_command(child, c"default-client-command", parsed.take_cmdlist());
+            assert!(!local.is_null());
+            assert_ne!(local, inherited);
+            assert_eq!(
+                options_get_only(&*child, c"default-client-command").map(|entry| entry.id()),
+                Some((*local).id())
+            );
+            assert_eq!(
+                options_to_cstring(local, None, 0).as_bytes(),
+                b"list-sessions -F x"
+            );
+            // The parent keeps its own default.
+            assert_eq!(
+                options_to_cstring(inherited, None, 0).as_bytes(),
+                b"new-session"
+            );
+            options_free(child_owner);
+        });
+    }
+}
+
+#[test]
+fn remove_or_default_resets_global_tables_and_removes_array_items() {
+    unsafe {
+        with_global_options(|global| {
+            // In a global table a built-in is reset to its default rather than
+            // removed, so lookups keep finding it.
+            let definition = table_entry(c"status-left");
+            let entry = options_default(global, definition);
+            options_set_string(global, c"status-left", 0, |out| out.write_all(b"changed"));
+            assert_eq!(
+                options_get_string(global, c"status-left").as_bytes(),
+                b"changed"
+            );
+            assert_eq!(options_remove_or_default(entry, None, null_mut()), 0);
+            assert_eq!(
+                options_get_string(global, c"status-left").as_c_str(),
+                definition.default_str.unwrap()
+            );
+
+            // A key removes only that item of an array.
+            let array = options_empty(global, table_entry(c"update-environment"));
+            for (key, value) in [(c"0", c"FIRST"), (c"1", c"SECOND")] {
+                assert_eq!(options_array_set(array, key, Some(value), 0, null_mut()), 0);
+            }
+            assert_eq!(options_remove_or_default(array, Some(c"1"), null_mut()), 0);
+            assert!(options_array_get(&*array, c"1").is_none());
+            assert_eq!(
+                options_to_cstring(array, Some(c"0"), 0).as_bytes(),
+                b"FIRST"
+            );
+
+            // An unusable key is reported and leaves the array alone.
+            let mut cause: Option<CString> = None;
+            assert_eq!(
+                options_remove_or_default(array, Some(c"4294967296"), &mut cause),
+                -1
+            );
+            assert_eq!(
+                cause.as_deref().unwrap().to_bytes(),
+                b"bad array key: 4294967296"
+            );
+            assert_eq!(options_array_iter(&*array).count(), 1);
+        });
+    }
+}

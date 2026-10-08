@@ -405,4 +405,22 @@ mod sequence_tests {
             assert_eq!(criteria.order, SORT_SIZE);
         }
     }
+
+    #[test]
+    fn sort_order_names_round_trip_and_end_has_no_name() {
+        for order in [
+            SORT_ACTIVITY,
+            SORT_CREATION,
+            SORT_INDEX,
+            SORT_MODIFIER,
+            SORT_NAME,
+            SORT_ORDER,
+            SORT_SIZE,
+        ] {
+            let name = sort_order_to_string(order).expect("sort order has a name");
+            assert_eq!(unsafe { sort_order_from_string(Some(name)) }, order);
+        }
+        assert_eq!(sort_order_to_string(SORT_END), None);
+        assert_eq!(unsafe { sort_order_from_string(None) }, SORT_END);
+    }
 }
