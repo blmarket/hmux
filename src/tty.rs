@@ -94,9 +94,10 @@ use std::ffi::CStr;
 /// Output retains its client holder and cannot run callbacks or replace
 /// terminfo. The existing terminfo owner therefore stays alive after this
 /// immediate component borrow has ended.
-pub(crate) unsafe fn terminal_term(owner: &ClientRef) -> *const tty_term {
+pub(crate) unsafe fn terminal_term(owner: &ClientRef) -> &tty_term {
     let terminal = owner.borrow_terminal();
-    tty_term_owner_ptr(&terminal.term).map_or(std::ptr::null(), |term| term)
+    let term = tty_term_owner_ptr(&terminal.term).expect("client has a terminal");
+    std::ptr::NonNull::from(term).as_ref()
 }
 
 pub const TIOCGWINSZ: ::core::ffi::c_int = 0x5413 as ::core::ffi::c_int;
@@ -628,7 +629,7 @@ pub unsafe fn tty_start_tty(owner: &ClientRef) {
         if tty_term_has(terminal_term(tty), TTYC_ENBP) != 0 {
             tty_putcode(tty, TTYC_ENBP);
         }
-        if (*terminal_term(tty)).flags & TERM_VT100LIKE != 0 {
+        if terminal_term(tty).flags & TERM_VT100LIKE != 0 {
             tty_puts(tty, c"\x1B[?2031h\x1B[?996n");
         }
         tty_start_start_timer(tty);
@@ -648,7 +649,7 @@ pub unsafe fn tty_send_requests(tty: &ClientRef) {
     if !terminal_value!(tty, flags) & TTY_STARTED != 0 {
         return;
     }
-    if (*terminal_term(tty)).flags & TERM_VT100LIKE != 0 {
+    if terminal_term(tty).flags & TERM_VT100LIKE != 0 {
         if !terminal_value!(tty, flags) & TTY_HAVEDA != 0 {
             tty_puts(tty, c"\x1B[c");
         }
@@ -689,7 +690,7 @@ pub unsafe fn tty_repeat_requests(tty: &ClientRef, mut force: ::core::ffi::c_int
         (n) as u32
     ));
     terminal_set!(tty, last_requests, =, t);
-    if (*terminal_term(tty)).flags & TERM_VT100LIKE != 0 {
+    if terminal_term(tty).flags & TERM_VT100LIKE != 0 {
         tty_puts(tty, c"\x1B]10;?\x1B\\\x1B]11;?\x1B\\");
         terminal_set!(tty, flags, |=, TTY_WAITBG | TTY_WAITFG);
     }
@@ -727,13 +728,15 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
         }
         tty_raw(
             fd,
-            tty_term_string_ii(
-                terminal_term(tty),
-                TTYC_CSR,
-                0 as ::core::ffi::c_int,
-                ws.ws_row as ::core::ffi::c_int - 1 as ::core::ffi::c_int,
-            )
-            .as_ptr(),
+            CStr::from_ptr(
+                tty_term_string_ii(
+                    terminal_term(tty),
+                    TTYC_CSR,
+                    0 as ::core::ffi::c_int,
+                    ws.ws_row as ::core::ffi::c_int - 1 as ::core::ffi::c_int,
+                )
+                .as_ptr(),
+            ),
         );
         if {
             let utf8 = tty.flags() & CLIENT_UTF8 as u64 != 0;
@@ -742,21 +745,21 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
         {
             tty_raw(
                 fd,
-                tty_term_string(&*(terminal_term(tty)), TTYC_RMACS).as_ptr(),
+                CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_RMACS).as_ptr()),
             );
         }
         tty_raw(
             fd,
-            tty_term_string(&*(terminal_term(tty)), TTYC_SGR0).as_ptr(),
+            CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_SGR0).as_ptr()),
         );
         tty_raw(
             fd,
-            tty_term_string(&*(terminal_term(tty)), TTYC_RMKX).as_ptr(),
+            CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_RMKX).as_ptr()),
         );
         if options_get_number(global_options, c"clear-on-attach") != 0 {
             tty_raw(
                 fd,
-                tty_term_string(&*(terminal_term(tty)), TTYC_CLEAR).as_ptr(),
+                CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_CLEAR).as_ptr()),
             );
         }
         if terminal_value!(tty, cstyle) as ::core::ffi::c_uint
@@ -765,66 +768,68 @@ pub unsafe fn tty_stop_tty(owner: &ClientRef) {
             if tty_term_has(terminal_term(tty), TTYC_SE) != 0 {
                 tty_raw(
                     fd,
-                    tty_term_string(&*(terminal_term(tty)), TTYC_SE).as_ptr(),
+                    CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_SE).as_ptr()),
                 );
             } else if tty_term_has(terminal_term(tty), TTYC_SS) != 0 {
                 tty_raw(
                     fd,
-                    tty_term_string_i(terminal_term(tty), TTYC_SS, 0 as ::core::ffi::c_int)
-                        .as_ptr(),
+                    CStr::from_ptr(
+                        tty_term_string_i(terminal_term(tty), TTYC_SS, 0 as ::core::ffi::c_int)
+                            .as_ptr(),
+                    ),
                 );
             }
         }
         if terminal_value!(tty, ccolour) != -(1 as ::core::ffi::c_int) {
             tty_raw(
                 fd,
-                tty_term_string(&*(terminal_term(tty)), TTYC_CR).as_ptr(),
+                CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_CR).as_ptr()),
             );
         }
         tty_raw(
             fd,
-            tty_term_string(&*(terminal_term(tty)), TTYC_CNORM).as_ptr(),
+            CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_CNORM).as_ptr()),
         );
         if tty_term_has(terminal_term(tty), TTYC_KMOUS) != 0 {
-            tty_raw(fd, c"\x1B[?1000l\x1B[?1002l\x1B[?1003l".as_ptr());
-            tty_raw(fd, c"\x1B[?1006l\x1B[?1005l".as_ptr());
+            tty_raw(fd, c"\x1B[?1000l\x1B[?1002l\x1B[?1003l");
+            tty_raw(fd, c"\x1B[?1006l\x1B[?1005l");
         }
         if tty_term_has(terminal_term(tty), TTYC_DSBP) != 0 {
             tty_raw(
                 fd,
-                tty_term_string(&*(terminal_term(tty)), TTYC_DSBP).as_ptr(),
+                CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_DSBP).as_ptr()),
             );
         }
-        if (*terminal_term(tty)).flags & TERM_VT100LIKE != 0 {
-            tty_raw(fd, c"\x1B[?7727l".as_ptr());
+        if terminal_term(tty).flags & TERM_VT100LIKE != 0 {
+            tty_raw(fd, c"\x1B[?7727l");
         }
         tty_raw(
             fd,
-            tty_term_string(&*(terminal_term(tty)), TTYC_DSFCS).as_ptr(),
+            CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_DSFCS).as_ptr()),
         );
         tty_raw(
             fd,
-            tty_term_string(&*(terminal_term(tty)), TTYC_DSEKS).as_ptr(),
+            CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_DSEKS).as_ptr()),
         );
-        if (*terminal_term(tty)).flags & TERM_DECSLRM != 0 {
+        if terminal_term(tty).flags & TERM_DECSLRM != 0 {
             tty_raw(
                 fd,
-                tty_term_string(&*(terminal_term(tty)), TTYC_DSMG).as_ptr(),
+                CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_DSMG).as_ptr()),
             );
         }
         if options_get_number(global_options, c"clear-on-attach") != 0 {
             tty_raw(
                 fd,
-                tty_term_string(&*(terminal_term(tty)), TTYC_RMCUP).as_ptr(),
+                CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_RMCUP).as_ptr()),
             );
         } else {
             tty_raw(
                 fd,
-                tty_term_string(&*(terminal_term(tty)), TTYC_CLEAR).as_ptr(),
+                CStr::from_ptr(tty_term_string(terminal_term(tty), TTYC_CLEAR).as_ptr()),
             );
         }
-        if (*terminal_term(tty)).flags & TERM_VT100LIKE != 0 {
-            tty_raw(fd, c"\x1B[?2031l".as_ptr());
+        if terminal_term(tty).flags & TERM_VT100LIKE != 0 {
+            tty_raw(fd, c"\x1B[?2031l");
         }
         setblocking(fd, 1 as ::core::ffi::c_int);
     })(owner);
@@ -881,23 +886,23 @@ pub unsafe fn tty_update_features(owner: &ClientRef) {
                     .expect("open terminal"),
             );
         }
-        if (*terminal_term(tty)).flags & TERM_DECSLRM != 0 {
+        if terminal_term(tty).flags & TERM_DECSLRM != 0 {
             tty_putcode(tty, TTYC_ENMG);
         }
         if options_get_number(global_options, c"extended-keys") != 0 {
-            tty_puts(tty, tty_term_string(&*(terminal_term(tty)), TTYC_ENEKS));
+            tty_puts(tty, tty_term_string(terminal_term(tty), TTYC_ENEKS));
         }
         if options_get_number(global_options, c"focus-events") != 0 {
-            tty_puts(tty, tty_term_string(&*(terminal_term(tty)), TTYC_ENFCS));
+            tty_puts(tty, tty_term_string(terminal_term(tty), TTYC_ENFCS));
         }
-        if (*terminal_term(tty)).flags & TERM_VT100LIKE != 0 {
+        if terminal_term(tty).flags & TERM_VT100LIKE != 0 {
             tty_puts(tty, c"\x1B[?7727h");
         }
     };
     server_redraw_client(owner);
     tty_invalidate(owner);
 }
-pub(crate) unsafe fn tty_raw(fd: i32, text: *const ::core::ffi::c_char) {
+pub(crate) unsafe fn tty_raw(fd: i32, text: &CStr) {
     use hmux_rt::Runtime as _;
     use std::future::{poll_fn, Future};
     use std::pin::pin;
@@ -905,7 +910,7 @@ pub(crate) unsafe fn tty_raw(fd: i32, text: *const ::core::ffi::c_char) {
     if fd < 0 {
         return;
     }
-    let bytes = CStr::from_ptr(text).to_bytes();
+    let bytes = text.to_bytes();
     let borrowed = std::os::fd::BorrowedFd::borrow_raw(fd);
     let Ok(was_nonblocking) = hmux_rt::unix::set_nonblocking(borrowed, true) else {
         return;
@@ -1162,7 +1167,7 @@ fn tty_large_region(ctx: &tty_ctx) -> ::core::ffi::c_int {
 }
 pub unsafe fn tty_fake_bce(tty: &tty, gc: &grid_cell, mut bg: u_int) -> ::core::ffi::c_int {
     if tty_term_flag(
-        tty_term_owner_ptr(&tty.term).map_or(std::ptr::null(), |term| term),
+        tty_term_owner_ptr(&tty.term).expect("client has a terminal"),
         TTYC_BCE,
     ) != 0
     {
@@ -1439,7 +1444,7 @@ unsafe fn tty_clear_area(
                 tty_putcode(tty, TTYC_ED);
                 return true;
             }
-            if (*terminal_term(tty)).flags & TERM_DECFRA != 0
+            if terminal_term(tty).flags & TERM_DECFRA != 0
                 && !(bg == 8 as u_int || bg == 9 as u_int)
             {
                 xformat(
@@ -1473,7 +1478,7 @@ unsafe fn tty_clear_area(
             if nx > 2 as u_int
                 && ny > 2 as u_int
                 && tty_term_has(terminal_term(tty), TTYC_CSR) != 0
-                && (*terminal_term(tty)).flags & TERM_DECSLRM != 0
+                && terminal_term(tty).flags & TERM_DECSLRM != 0
                 && tty_term_has(terminal_term(tty), TTYC_INDN) != 0
             {
                 tty_region(tty, py, py.wrapping_add(ny).wrapping_sub(1 as u_int));
@@ -1727,7 +1732,7 @@ pub unsafe fn tty_cmd_reverseindex(owner: &ClientRef, ctx: &tty_ctx, s: &screen)
         }
         if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
             || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= terminal_value!(tty, sx))
-                && (*terminal_term(tty)).flags & TERM_DECSLRM == 0
+                && terminal_term(tty).flags & TERM_DECSLRM == 0
             || tty_fake_bce(tty.borrow_terminal(), &ctx.style_ctx.defaults, 8 as u_int) != 0
             || tty_term_has(terminal_term(tty), TTYC_CSR) == 0
             || tty_term_has(terminal_term(tty), TTYC_RI) == 0
@@ -1758,7 +1763,7 @@ pub unsafe fn tty_cmd_scrollup(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
         let mut i: u_int = 0;
         if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
             || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= terminal_value!(tty, sx))
-                && (*terminal_term(tty)).flags & TERM_DECSLRM == 0
+                && terminal_term(tty).flags & TERM_DECSLRM == 0
             || tty_fake_bce(tty.borrow_terminal(), &ctx.style_ctx.defaults, 8 as u_int) != 0
             || tty_term_has(terminal_term(tty), TTYC_CSR) == 0
             || ctx.sx == 1 as u_int
@@ -1770,7 +1775,7 @@ pub unsafe fn tty_cmd_scrollup(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
         tty_region_pane(tty, ctx, ctx.orupper, ctx.orlower);
         tty_margin_pane(tty, ctx);
         if ctx.data.count() == 1 as u_int || tty_term_has(terminal_term(tty), TTYC_INDN) == 0 {
-            if (*terminal_term(tty)).flags & TERM_DECSLRM == 0 {
+            if terminal_term(tty).flags & TERM_DECSLRM == 0 {
                 tty_cursor(tty, 0 as u_int, terminal_value!(tty, rlower));
             } else {
                 tty_cursor(
@@ -1804,7 +1809,7 @@ pub unsafe fn tty_cmd_scrolldown(owner: &ClientRef, ctx: &tty_ctx, s: &screen) {
         let mut i: u_int = 0;
         if ctx.flags & TTY_CTX_WINDOW_BIGGER != 0
             || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= terminal_value!(tty, sx))
-                && (*terminal_term(tty)).flags & TERM_DECSLRM == 0
+                && terminal_term(tty).flags & TERM_DECSLRM == 0
             || tty_fake_bce(tty.borrow_terminal(), &ctx.style_ctx.defaults, 8 as u_int) != 0
             || tty_term_has(terminal_term(tty), TTYC_CSR) == 0
             || tty_term_has(terminal_term(tty), TTYC_RI) == 0
@@ -2020,7 +2025,7 @@ unsafe fn tty_selection_sequence(
     if terminal.flags & TTY_STARTED == 0 {
         return None;
     }
-    let term = tty_term_owner_ptr(&terminal.term).map_or(std::ptr::null(), |term| term);
+    let term = tty_term_owner_ptr(&terminal.term).expect("client has a terminal");
     if tty_term_has(term, TTYC_MS) == 0 {
         return None;
     }
@@ -2033,8 +2038,8 @@ unsafe fn tty_selection_sequence(
     Some(tty_term_string_ss(
         term,
         TTYC_MS,
-        clip.as_ptr(),
-        encoded.as_ptr().cast(),
+        &*clip,
+        CStr::from_ptr(encoded.as_ptr().cast()),
     ))
 }
 pub unsafe fn tty_cmd_rawstring(owner: &ClientRef, ctx: &tty_ctx) {
@@ -2105,8 +2110,8 @@ pub unsafe fn tty_clipboard_query(owner: &ClientRef) {
         tty_term_string_ss(
             tty.term.as_deref().expect("open terminal"),
             TTYC_MS,
-            c"".as_ptr(),
-            c"?".as_ptr(),
+            c"",
+            c"?",
         )
     };
     if !query.is_empty() {

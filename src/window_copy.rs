@@ -4,10 +4,11 @@ use crate::src::cmd::{cmd_mouse_at, cmd_mouse_pane};
 use crate::src::compat::strtonum::strtonum;
 use crate::src::events::events_fire_pane;
 use crate::src::ffi::libc::{
-    __ctype_tolower_loc, abs, llabs, memcmp, memcpy, strcasecmp, strchr, strcmp, strcspn, strncmp,
+    __ctype_tolower_loc, abs, llabs, memcmp, strcasecmp, strchr, strcmp, strcspn, strncmp,
 };
 use crate::src::ffi::regex::{CompiledRegex, RegexMatch, RegexStorage};
 use crate::src::format::bytes::format_message_with;
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_add_owned_cb, format_create_defaults, format_expand_cstring, format_free,
@@ -232,16 +233,12 @@ impl Default for window_copy_mode_data {
     }
 }
 
-fn window_copy_searchstr(data: &window_copy_mode_data) -> *const ::core::ffi::c_char {
-    data.searchstr
-        .as_ref()
-        .map_or(::core::ptr::null(), |value| value.as_ptr())
+fn window_copy_searchstr(data: &window_copy_mode_data) -> Option<&CStr> {
+    data.searchstr.as_deref()
 }
 
-fn window_copy_separators(data: &window_copy_mode_data) -> *const ::core::ffi::c_char {
-    data.separators
-        .as_ref()
-        .map_or(::core::ptr::null(), |value| value.as_ptr())
+fn window_copy_separators(data: &window_copy_mode_data) -> Option<&CStr> {
+    data.separators.as_deref()
 }
 
 unsafe fn window_copy_snapshot_separators(so: *mut options) -> Option<CString> {
@@ -270,7 +267,7 @@ mod separator_snapshot_tests {
             options_set_string(so, c"word-separators", 0, |out| {
                 out.write_all(b"replacement")
             });
-            assert_eq!(CStr::from_ptr(window_copy_separators(&data)), c"original");
+            assert_eq!(window_copy_separators(&data), Some(c"original"));
         }
     }
 }
@@ -398,8 +395,7 @@ pub static window_copy_mode: window_mode = {
         ),
         key: None,
         key_table: Some(
-            window_copy_key_table
-                as unsafe fn(refbox::Weak<window_mode_entry>) -> *const ::core::ffi::c_char,
+            window_copy_key_table as unsafe fn(refbox::Weak<window_mode_entry>) -> &'static CStr,
         ),
         command: Some(
             window_copy_command
@@ -446,8 +442,7 @@ pub static window_view_mode: window_mode = {
         ),
         key: None,
         key_table: Some(
-            window_copy_key_table
-                as unsafe fn(refbox::Weak<window_mode_entry>) -> *const ::core::ffi::c_char,
+            window_copy_key_table as unsafe fn(refbox::Weak<window_mode_entry>) -> &'static CStr,
         ),
         command: Some(
             window_copy_command
@@ -581,9 +576,8 @@ pub(crate) unsafe fn window_copy_sync_screen(
     target: &mut screen,
     sync: (u_int, u_int, u_int),
 ) -> bool {
-    let src: *const screen = source;
     let dst: *mut screen = target;
-    let sg: *const grid = (*src).grid();
+    let sg: *const grid = source.grid();
     let mut dg: *mut grid = (*dst).grid_mut();
     let mut sy: u_int = (*sg).sy;
     let mut old_hsize: u_int = (*dg).hsize;
@@ -623,12 +617,12 @@ pub(crate) unsafe fn window_copy_sync_screen(
         grid_duplicate_lines(&mut *dg, new_hsize, &*sg, new_hsize, sy);
     }
     (*dg).hscrolled = (*sg).hscrolled;
-    if (*src).cy > (*dg).sy.wrapping_sub(1 as u_int) {
+    if source.cy > (*dg).sy.wrapping_sub(1 as u_int) {
         (*dst).cx = 0 as u_int;
         (*dst).cy = (*dg).sy.wrapping_sub(1 as u_int);
     } else {
-        (*dst).cx = (*src).cx;
-        (*dst).cy = (*src).cy;
+        (*dst).cx = source.cx;
+        (*dst).cy = source.cy;
     }
     true
 }
@@ -869,15 +863,10 @@ pub unsafe fn window_copy_add(
                 .map_or(std::ptr::null_mut(), |ictx| ictx),
             backing,
             Some(Box::new(|_| {})),
-            text.as_ptr() as *const u_char,
-            text.as_bytes().len(),
+            text.as_bytes(),
         );
     } else {
-        memcpy(
-            &raw mut gc as *mut ::core::ffi::c_void,
-            &raw const grid_default_cell as *const ::core::ffi::c_void,
-            ::core::mem::size_of::<grid_cell>() as size_t,
-        );
+        gc = grid_default_cell;
         screen_write_nputs(&mut backing_ctx, 0 as ssize_t, &gc, write);
     }
     screen_write_stop(&mut backing_ctx);
@@ -1498,9 +1487,7 @@ unsafe fn window_copy_resize(
     window_copy_size_changed(wme.clone());
     window_copy_redraw_screen(wme.clone());
 }
-unsafe fn window_copy_key_table(
-    mut wme: refbox::Weak<window_mode_entry>,
-) -> *const ::core::ffi::c_char {
+unsafe fn window_copy_key_table(mut wme: refbox::Weak<window_mode_entry>) -> &'static CStr {
     let mode_pane_owner = wme
         .get_unchecked()
         .wp
@@ -1513,9 +1500,9 @@ unsafe fn window_copy_key_table(
         .with_options_mut(|options| options_get_number(options, c"mode-keys"))
         == MODEKEY_VI as ::core::ffi::c_longlong
     {
-        return c"copy-mode-vi".as_ptr();
+        return c"copy-mode-vi";
     }
-    c"copy-mode".as_ptr()
+    c"copy-mode"
 }
 unsafe fn window_copy_expand_search_string(
     mut cs: *mut window_copy_cmd_state,
@@ -1702,24 +1689,13 @@ unsafe fn window_copy_do_copy_end_of_line(
             window_copy_copy_pipe(
                 wme.clone(),
                 s.as_ref(),
-                prefix
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
-                command
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
+                prefix.as_deref(),
+                command.as_deref(),
                 set_paste,
                 set_clip,
             );
         } else {
-            window_copy_copy_selection(
-                wme.clone(),
-                prefix
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
-                set_paste,
-                set_clip,
-            );
+            window_copy_copy_selection(wme.clone(), prefix.as_deref(), set_paste, set_clip);
         }
         if cancel != 0 {
             return WINDOW_COPY_CMD_CANCEL;
@@ -1828,24 +1804,13 @@ unsafe fn window_copy_do_copy_line(
             window_copy_copy_pipe(
                 wme.clone(),
                 s.as_ref(),
-                prefix
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
-                command
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
+                prefix.as_deref(),
+                command.as_deref(),
                 set_paste,
                 set_clip,
             );
         } else {
-            window_copy_copy_selection(
-                wme.clone(),
-                prefix
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
-                set_paste,
-                set_clip,
-            );
+            window_copy_copy_selection(wme.clone(), prefix.as_deref(), set_paste, set_clip);
         }
         if cancel != 0 {
             return WINDOW_COPY_CMD_CANCEL;
@@ -1905,14 +1870,7 @@ unsafe fn window_copy_cmd_copy_selection_no_clear(
         ));
     }
     if !s.is_none() {
-        window_copy_copy_selection(
-            wme.clone(),
-            prefix
-                .as_ref()
-                .map_or(::core::ptr::null(), |value| value.as_ptr()),
-            set_paste,
-            set_clip,
-        );
+        window_copy_copy_selection(wme.clone(), prefix.as_deref(), set_paste, set_clip);
     }
     WINDOW_COPY_CMD_NOTHING
 }
@@ -3172,7 +3130,7 @@ unsafe fn window_copy_cmd_select_word(
         .with_options_mut(|options| window_copy_snapshot_separators(options));
     window_copy_cursor_previous_word(
         wme.clone(),
-        window_copy_separators(&*data),
+        window_copy_separators(&*data).map_or(std::ptr::null(), std::ffi::CStr::as_ptr),
         0 as ::core::ffi::c_int,
     );
     px = (*data).cx;
@@ -3200,7 +3158,7 @@ unsafe fn window_copy_cmd_select_word(
     {
         window_copy_cursor_next_word_end(
             wme.clone(),
-            window_copy_separators(&*data),
+            window_copy_separators(&*data).map_or(std::ptr::null(), std::ffi::CStr::as_ptr),
             1 as ::core::ffi::c_int,
         );
     } else {
@@ -3305,12 +3263,8 @@ unsafe fn window_copy_cmd_copy_pipe_no_clear(
     window_copy_copy_pipe(
         wme.clone(),
         s.as_ref(),
-        prefix
-            .as_ref()
-            .map_or(::core::ptr::null(), |value| value.as_ptr()),
-        command
-            .as_ref()
-            .map_or(::core::ptr::null(), |value| value.as_ptr()),
+        prefix.as_deref(),
+        command.as_deref(),
         set_paste,
         set_clip,
     );
@@ -3355,13 +3309,7 @@ unsafe fn window_copy_cmd_pipe_no_clear(
             Some(&mode_pane_owner),
         ));
     }
-    window_copy_pipe(
-        wme.clone(),
-        s.as_ref(),
-        command
-            .as_ref()
-            .map_or(::core::ptr::null(), |value| value.as_ptr()),
-    );
+    window_copy_pipe(wme.clone(), s.as_ref(), command.as_deref());
     WINDOW_COPY_CMD_MOVE
 }
 unsafe fn window_copy_cmd_pipe(mut cs: *mut window_copy_cmd_state) -> window_copy_cmd_action {
@@ -3383,7 +3331,7 @@ unsafe fn window_copy_cmd_goto_line(mut cs: *mut window_copy_cmd_state) -> windo
     let mut arg0: *const ::core::ffi::c_char = args_string(&mut *((*cs).parsed_args()), 0 as u_int)
         .map_or(std::ptr::null(), |value| value.as_ptr());
     if *arg0 as ::core::ffi::c_int != '\0' as i32 {
-        window_copy_goto_line(wme.clone(), arg0);
+        window_copy_goto_line(wme.clone(), CStr::from_ptr(arg0));
     }
     WINDOW_COPY_CMD_MOVE
 }
@@ -3575,7 +3523,8 @@ unsafe fn window_copy_cmd_search_backward_incremental(
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
     let mut arg0: *const ::core::ffi::c_char = args_string(&mut *((*cs).parsed_args()), 0 as u_int)
         .map_or(std::ptr::null(), |value| value.as_ptr());
-    let mut ss: *const ::core::ffi::c_char = window_copy_searchstr(&*data);
+    let mut ss: *const ::core::ffi::c_char =
+        window_copy_searchstr(&*data).map_or(std::ptr::null(), std::ffi::CStr::as_ptr);
     let mut prefix: ::core::ffi::c_char = 0;
     let mut action: window_copy_cmd_action = WINDOW_COPY_CMD_MOVE;
     (*data).timeout = 0 as ::core::ffi::c_int;
@@ -3643,7 +3592,8 @@ unsafe fn window_copy_cmd_search_forward_incremental(
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
     let mut arg0: *const ::core::ffi::c_char = args_string(&mut *((*cs).parsed_args()), 0 as u_int)
         .map_or(std::ptr::null(), |value| value.as_ptr());
-    let mut ss: *const ::core::ffi::c_char = window_copy_searchstr(&*data);
+    let mut ss: *const ::core::ffi::c_char =
+        window_copy_searchstr(&*data).map_or(std::ptr::null(), std::ffi::CStr::as_ptr);
     let mut prefix: ::core::ffi::c_char = 0;
     let mut action: window_copy_cmd_action = WINDOW_COPY_CMD_MOVE;
     (*data).timeout = 0 as ::core::ffi::c_int;
@@ -5374,30 +5324,28 @@ unsafe fn window_copy_search_compare(
         us: 0,
         link: 0,
     };
-    let mut ud: *const utf8_data = ::core::ptr::null::<utf8_data>();
-    let mut sud: *const utf8_data = ::core::ptr::null::<utf8_data>();
     grid_get_cell(&*gd, px, py, &mut gc);
-    ud = &raw mut gc.data;
+    let ud = &gc.data;
     grid_get_cell(&*sgd, spx, 0 as u_int, &mut sgc);
-    sud = &raw mut sgc.data;
-    if *(&raw const (*sud).data as *const u_char) as ::core::ffi::c_int == '\t' as i32
-        && (*sud).size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
+    let sud = &sgc.data;
+    if *(&raw const sud.data as *const u_char) as ::core::ffi::c_int == '\t' as i32
+        && sud.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int
         && gc.flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0
     {
         return 1 as ::core::ffi::c_int;
     }
-    if (*ud).size as ::core::ffi::c_int != (*sud).size as ::core::ffi::c_int
-        || (*ud).width as ::core::ffi::c_int != (*sud).width as ::core::ffi::c_int
+    if ud.size as ::core::ffi::c_int != sud.size as ::core::ffi::c_int
+        || ud.width as ::core::ffi::c_int != sud.width as ::core::ffi::c_int
     {
         return 0 as ::core::ffi::c_int;
     }
-    if cis != 0 && (*ud).size as ::core::ffi::c_int == 1 as ::core::ffi::c_int {
+    if cis != 0 && ud.size as ::core::ffi::c_int == 1 as ::core::ffi::c_int {
         return (({
             let mut __res: ::core::ffi::c_int = 0;
             if ::core::mem::size_of::<u_char>() as usize > 1_usize {
                 if 0 != 0 {
                     let mut __c: ::core::ffi::c_int =
-                        (*ud).data[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int;
+                        ud.data[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int;
                     __res =
                         (if __c < -(128 as ::core::ffi::c_int) || __c > 255 as ::core::ffi::c_int {
                             __c as __int32_t
@@ -5406,21 +5354,21 @@ unsafe fn window_copy_search_compare(
                         }) as ::core::ffi::c_int;
                 } else {
                     __res =
-                        tolower((*ud).data[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int);
+                        tolower(ud.data[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int);
                 }
             } else {
                 __res = *(*__ctype_tolower_loc()).offset(
-                    (*ud).data[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int as isize,
+                    ud.data[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int as isize,
                 ) as ::core::ffi::c_int;
             }
             __res
-        }) == (*sud).data[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int)
+        }) == sud.data[0 as ::core::ffi::c_int as usize] as ::core::ffi::c_int)
             as ::core::ffi::c_int;
     }
     (memcmp(
-        &raw const (*ud).data as *const u_char as *const ::core::ffi::c_void,
-        &raw const (*sud).data as *const u_char as *const ::core::ffi::c_void,
-        (*ud).size as size_t,
+        &raw const ud.data as *const u_char as *const ::core::ffi::c_void,
+        &raw const sud.data as *const u_char as *const ::core::ffi::c_void,
+        ud.size as size_t,
     ) == 0 as ::core::ffi::c_int) as ::core::ffi::c_int
 }
 unsafe fn window_copy_search_lr(
@@ -6206,7 +6154,8 @@ unsafe fn window_copy_search(
         bg: 0,
     };
     let mut gd: *mut grid = (*s).grid_mut();
-    let mut str: *const ::core::ffi::c_char = window_copy_searchstr(&*data);
+    let mut str: *const ::core::ffi::c_char =
+        window_copy_searchstr(&*data).map_or(std::ptr::null(), std::ffi::CStr::as_ptr);
     let mut at: u_int = 0;
     let mut endline: u_int = 0;
     let mut fx: u_int = 0;
@@ -6261,7 +6210,7 @@ unsafe fn window_copy_search(
         &mut ctx,
         -(1 as ::core::ffi::c_int) as ssize_t,
         &grid_default_cell,
-        |out| write_cstr(out, str),
+        |out| write_cstr(out, nullable_cstr(str)),
     );
     screen_write_stop(&mut ctx);
     wrapflag = mode_pane_owner
@@ -6565,7 +6514,9 @@ unsafe fn window_copy_search_marks(
     } else {
         width = (*ssp).grid().sx;
     }
-    cis = window_copy_is_lowercase(window_copy_searchstr(&*data));
+    cis = window_copy_is_lowercase(
+        window_copy_searchstr(&*data).map_or(std::ptr::null(), std::ffi::CStr::as_ptr),
+    );
     let regex_owner = if regex != 0 {
         let mut sbuf = vec![0u8];
         window_copy_stringify(
@@ -6704,22 +6655,18 @@ unsafe fn window_copy_search_down(
 ) -> ::core::ffi::c_int {
     window_copy_search(wme.clone(), 1 as ::core::ffi::c_int, regex)
 }
-unsafe fn window_copy_goto_line(
-    mut wme: refbox::Weak<window_mode_entry>,
-    mut linestr: *const ::core::ffi::c_char,
-) {
+unsafe fn window_copy_goto_line(mut wme: refbox::Weak<window_mode_entry>, linestr: &CStr) {
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
-    let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut hsize: u_int = (*data).backing().grid().hsize;
     let mut line: u_int = 0;
     let mut lineno: ::core::ffi::c_int = 0;
-    lineno = strtonum(
-        linestr,
+    let parsed = strtonum(
+        &linestr,
         -(1 as ::core::ffi::c_int) as ::core::ffi::c_longlong,
         INT_MAX as ::core::ffi::c_longlong,
-        &raw mut errstr,
-    ) as ::core::ffi::c_int;
-    if !errstr.is_null() {
+    );
+    lineno = parsed.unwrap_or(0) as ::core::ffi::c_int;
+    if parsed.is_err() {
         return;
     }
     if window_copy_line_number_is_absolute(wme.clone()) != 0 {
@@ -6859,10 +6806,10 @@ unsafe fn window_copy_update_style(
     mut fx: u_int,
     mut fy: u_int,
     mut gc: *mut grid_cell,
-    mut mgc: *const grid_cell,
-    mut cgc: *const grid_cell,
-    mut mkgc: *const grid_cell,
-    mut clgc: *const grid_cell,
+    mgc: &grid_cell,
+    cgc: &grid_cell,
+    mkgc: &grid_cell,
+    clgc: &grid_cell,
 ) {
     let mode_pane_owner = wme
         .get_unchecked()
@@ -6886,26 +6833,26 @@ unsafe fn window_copy_update_style(
         .wrapping_sub((*data).oy)
         .wrapping_add((*data).cy);
     if fy == cy {
-        if (*clgc).fg != 8 as ::core::ffi::c_int {
-            (*gc).fg = (*clgc).fg;
+        if clgc.fg != 8 as ::core::ffi::c_int {
+            (*gc).fg = clgc.fg;
         }
-        if (*clgc).bg != 8 as ::core::ffi::c_int {
-            (*gc).bg = (*clgc).bg;
+        if clgc.bg != 8 as ::core::ffi::c_int {
+            (*gc).bg = clgc.bg;
         }
         (*gc).attr =
-            ((*gc).attr as ::core::ffi::c_int | (*clgc).attr as ::core::ffi::c_int) as u_short;
+            ((*gc).attr as ::core::ffi::c_int | clgc.attr as ::core::ffi::c_int) as u_short;
     }
     if (*data).showmark != 0 && fy == (*data).my {
-        (*gc).attr = (*mkgc).attr;
+        (*gc).attr = mkgc.attr;
         if fx == (*data).mx {
             inv = 1 as ::core::ffi::c_int;
         }
         if inv != 0 {
-            (*gc).fg = (*mkgc).bg;
-            (*gc).bg = (*mkgc).fg;
+            (*gc).fg = mkgc.bg;
+            (*gc).bg = mkgc.fg;
         } else {
-            (*gc).fg = (*mkgc).fg;
-            (*gc).bg = (*mkgc).bg;
+            (*gc).fg = mkgc.fg;
+            (*gc).bg = mkgc.bg;
         }
     }
     if (*data).searchmark.is_empty() {
@@ -6937,25 +6884,25 @@ unsafe fn window_copy_update_style(
         if found != 0 {
             window_copy_match_start_end(data, cursor, &raw mut start, &raw mut end);
             if current >= start && current <= end {
-                (*gc).attr = (*cgc).attr;
+                (*gc).attr = cgc.attr;
                 if inv != 0 {
-                    (*gc).fg = (*cgc).bg;
-                    (*gc).bg = (*cgc).fg;
+                    (*gc).fg = cgc.bg;
+                    (*gc).bg = cgc.fg;
                 } else {
-                    (*gc).fg = (*cgc).fg;
-                    (*gc).bg = (*cgc).bg;
+                    (*gc).fg = cgc.fg;
+                    (*gc).bg = cgc.bg;
                 }
                 return;
             }
         }
     }
-    (*gc).attr = (*mgc).attr;
+    (*gc).attr = mgc.attr;
     if inv != 0 {
-        (*gc).fg = (*mgc).bg;
-        (*gc).bg = (*mgc).fg;
+        (*gc).fg = mgc.bg;
+        (*gc).bg = mgc.fg;
     } else {
-        (*gc).fg = (*mgc).fg;
-        (*gc).bg = (*mgc).bg;
+        (*gc).fg = mgc.fg;
+        (*gc).bg = mgc.bg;
     };
 }
 unsafe fn window_copy_write_one(
@@ -6965,10 +6912,10 @@ unsafe fn window_copy_write_one(
     mut py: u_int,
     mut fy: u_int,
     mut nx: u_int,
-    mut mgc: *const grid_cell,
-    mut cgc: *const grid_cell,
-    mut mkgc: *const grid_cell,
-    mut clgc: *const grid_cell,
+    mgc: &grid_cell,
+    cgc: &grid_cell,
+    mkgc: &grid_cell,
+    clgc: &grid_cell,
 ) {
     let mut data: *mut window_copy_mode_data = window_copy_data(wme.clone());
     let mut gd: *mut grid = (*data).backing_mut().grid_mut();
@@ -7512,10 +7459,10 @@ unsafe fn window_copy_write_line(
         py,
         hsize.wrapping_sub((*data).oy).wrapping_add(py),
         content_sx,
-        &raw mut mgc,
-        &raw mut cgc,
-        &raw mut mkgc,
-        &raw mut clgc,
+        &mgc,
+        &cgc,
+        &mkgc,
+        &clgc,
     );
     if py == 0 as u_int && (*s).rupper < (*s).rlower && (*data).hide_position == 0 {
         let position_format = options_window
@@ -7534,7 +7481,7 @@ unsafe fn window_copy_write_line(
                 );
                 format_draw(
                     ctx,
-                    &raw mut gc,
+                    &gc,
                     content_sx,
                     expanded.as_ptr(),
                     ::core::ptr::null_mut::<style_ranges>(),
@@ -7698,7 +7645,8 @@ unsafe fn window_copy_synchronize_cursor_end(
                 if (*data).dy > yy || (*data).dy == yy && (*data).dx > xx {
                     window_copy_cursor_previous_word_pos(
                         wme.clone(),
-                        window_copy_separators(&*data),
+                        window_copy_separators(&*data)
+                            .map_or(std::ptr::null(), std::ffi::CStr::as_ptr),
                         &raw mut xx,
                         &raw mut yy,
                     );
@@ -7716,7 +7664,8 @@ unsafe fn window_copy_synchronize_cursor_end(
                     {
                         window_copy_cursor_next_word_end_pos(
                             wme.clone(),
-                            window_copy_separators(&*data),
+                            window_copy_separators(&*data)
+                                .map_or(std::ptr::null(), std::ffi::CStr::as_ptr),
                             &raw mut xx,
                             &raw mut yy,
                         );
@@ -8290,11 +8239,12 @@ unsafe fn window_copy_get_selection(mut wme: refbox::Weak<window_mode_entry>) ->
 }
 unsafe fn window_copy_copy_buffer(
     mut wme: refbox::Weak<window_mode_entry>,
-    prefix: *const ::core::ffi::c_char,
+    prefix: Option<&CStr>,
     buf: Vec<u8>,
     mut set_paste: ::core::ffi::c_int,
     mut set_clip: ::core::ffi::c_int,
 ) {
+    let mut prefix: *const ::core::ffi::c_char = prefix.map_or(std::ptr::null(), CStr::as_ptr);
     let mode_pane_owner = wme
         .get_unchecked()
         .wp
@@ -8333,7 +8283,7 @@ unsafe fn window_copy_copy_buffer(
         if redraw != 0 {
             mode_pane_owner.request_redraw(false);
         }
-        events_fire_pane(c"pane-set-clipboard".as_ptr(), mode_pane_owner.clone());
+        events_fire_pane(c"pane-set-clipboard", mode_pane_owner.clone());
     }
     if set_paste != 0 {
         paste_add_owned(prefix, buf.into_boxed_slice());
@@ -8342,8 +8292,9 @@ unsafe fn window_copy_copy_buffer(
 unsafe fn window_copy_pipe_run(
     mut wme: refbox::Weak<window_mode_entry>,
     s_owner: Option<&SessionRef>,
-    mut cmd: *const ::core::ffi::c_char,
+    cmd: Option<&CStr>,
 ) -> Option<Vec<u8>> {
+    let mut cmd: *const ::core::ffi::c_char = cmd.map_or(std::ptr::null(), CStr::as_ptr);
     let mut job = refbox::Weak::new();
     let buf = window_copy_get_selection(wme.clone());
     let command_value;
@@ -8369,13 +8320,7 @@ unsafe fn window_copy_pipe_run(
             -(1 as ::core::ffi::c_int),
         );
         if !job.is_empty() {
-            bufferevent_write(
-                job_get_event(&job),
-                buf.as_ref()
-                    .map_or(::core::ptr::null(), |buf| buf.as_ptr())
-                    .cast(),
-                buf.as_ref().map_or(0, Vec::len),
-            );
+            bufferevent_write(job_get_event(&job), buf.as_deref().unwrap_or_default());
         }
     }
     buf
@@ -8383,15 +8328,15 @@ unsafe fn window_copy_pipe_run(
 unsafe fn window_copy_pipe(
     mut wme: refbox::Weak<window_mode_entry>,
     s_owner: Option<&SessionRef>,
-    mut cmd: *const ::core::ffi::c_char,
+    cmd: Option<&CStr>,
 ) {
     let _ = window_copy_pipe_run(wme.clone(), s_owner, cmd);
 }
 unsafe fn window_copy_copy_pipe(
     mut wme: refbox::Weak<window_mode_entry>,
     s_owner: Option<&SessionRef>,
-    mut prefix: *const ::core::ffi::c_char,
-    mut cmd: *const ::core::ffi::c_char,
+    prefix: Option<&CStr>,
+    cmd: Option<&CStr>,
     mut set_paste: ::core::ffi::c_int,
     mut set_clip: ::core::ffi::c_int,
 ) {
@@ -8401,7 +8346,7 @@ unsafe fn window_copy_copy_pipe(
 }
 unsafe fn window_copy_copy_selection(
     mut wme: refbox::Weak<window_mode_entry>,
-    mut prefix: *const ::core::ffi::c_char,
+    prefix: Option<&CStr>,
     mut set_paste: ::core::ffi::c_int,
     mut set_clip: ::core::ffi::c_int,
 ) {
@@ -8438,7 +8383,7 @@ unsafe fn window_copy_append_selection(mut wme: refbox::Weak<window_mode_entry>)
         );
         screen_write_setselection(&mut ctx, c"", &buf);
         screen_write_stop(&mut ctx);
-        events_fire_pane(c"pane-set-clipboard".as_ptr(), mode_pane_owner.clone());
+        events_fire_pane(c"pane-set-clipboard", mode_pane_owner.clone());
     }
     if let Some(pb) = paste_get_top(Some(&mut bufname)) {
         let buffer = pb.borrow();
@@ -9788,7 +9733,7 @@ pub unsafe fn window_copy_start_drag(client_owner: Option<&ClientRef>, mut m: *m
                 window_copy_update_cursor(wme.clone(), x, y);
                 window_copy_cursor_previous_word_pos(
                     wme.clone(),
-                    window_copy_separators(&*data),
+                    window_copy_separators(&*data).map_or(std::ptr::null(), std::ffi::CStr::as_ptr),
                     &raw mut x,
                     &raw mut y,
                 );

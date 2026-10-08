@@ -1,4 +1,3 @@
-use crate::src::ffi::libc::{memcpy, snprintf};
 use crate::src::grid::view::{grid_view_clear, grid_view_delete_lines};
 use crate::src::grid::{
     grid_adjust_lines, grid_check_is_clear, grid_clear_lines, grid_create, grid_duplicate_lines,
@@ -23,9 +22,8 @@ pub use crate::src::shared::screen::{
     MODE_ORIGIN, MODE_SYNC, MODE_THEME_UPDATES, MODE_WRAP,
 };
 use crate::src::style::style_apply;
-use crate::src::text::utf8::{utf8_copy, utf8_to_data};
+use crate::src::text::utf8::utf8_copy;
 use crate::src::tmux::{clean_name_cstring, global_options};
-use crate::src::tty_acs::tty_acs_get;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 
@@ -148,7 +146,7 @@ pub unsafe fn screen_set_default_cursor(s: &mut screen, mut oo: *mut options) {
     style_apply(
         &raw mut gc,
         oo,
-        c"cursor-colour".as_ptr(),
+        c"cursor-colour",
         ::core::ptr::null_mut::<format_tree>(),
     );
     s.default_ccolour = gc.fg;
@@ -714,119 +712,4 @@ impl std::fmt::Display for ScreenModeNames {
 
 pub fn screen_mode_display(mode: i32) -> impl std::fmt::Display {
     ScreenModeNames(mode)
-}
-pub unsafe fn screen_print(
-    mut s: *mut screen,
-    mut line: ::core::ffi::c_int,
-) -> *const ::core::ffi::c_char {
-    // The exported result remains valid until the next call, as before.
-    static mut PRINT_BUFFER: [::core::ffi::c_char; 16384] = [0; 16384];
-    let buf = (&raw mut PRINT_BUFFER).cast::<::core::ffi::c_char>();
-    let len: size_t = 16384;
-    let mut acs: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut x: u_int = 0;
-    let mut y: u_int = 0;
-    let mut n: ::core::ffi::c_int = 0;
-    let mut last: size_t = 0 as size_t;
-    let mut ud: utf8_data = utf8_data {
-        data: [0; 32],
-        have: 0,
-        size: 0,
-        width: 0,
-    };
-    let mut gl: *mut grid_line = ::core::ptr::null_mut::<grid_line>();
-    let mut gce: *mut grid_cell_entry = ::core::ptr::null_mut::<grid_cell_entry>();
-    y = 0 as u_int;
-    's_28: while y < (*s).grid().hsize.wrapping_add((*s).grid().sy) {
-        if !(line >= 0 as ::core::ffi::c_int && y != line as u_int) {
-            n = snprintf(
-                buf.add(last),
-                len.wrapping_sub(last),
-                c"%.4d \"".as_ptr(),
-                y,
-            );
-            if n <= 0 as ::core::ffi::c_int || n as u_int as size_t >= len.wrapping_sub(last) {
-                break;
-            }
-            last = last.wrapping_add(n as size_t);
-            gl = (*s).grid_mut().linedata.as_mut_ptr().offset(y as isize);
-            x = 0 as u_int;
-            while x < (*gl).cellused as u_int {
-                gce = (*gl).celldata.as_mut_ptr().offset(x as isize);
-                if !((*gce).flags as ::core::ffi::c_int & GRID_FLAG_PADDING != 0) {
-                    if !((*gce).flags as ::core::ffi::c_int) & GRID_FLAG_EXTENDED != 0 {
-                        if last.wrapping_add(2 as size_t) >= len {
-                            break 's_28;
-                        }
-                        let fresh1 = last;
-                        last = last.wrapping_add(1);
-                        *buf.add(fresh1) = (*gce).c2rust_unnamed.data.data as ::core::ffi::c_char;
-                    } else if (*gce).flags as ::core::ffi::c_int & GRID_FLAG_TAB != 0 {
-                        if last.wrapping_add(2 as size_t) >= len {
-                            break 's_28;
-                        }
-                        let fresh2 = last;
-                        last = last.wrapping_add(1);
-                        *buf.add(fresh2) = '\t' as i32 as ::core::ffi::c_char;
-                    } else if (*gce).flags as ::core::ffi::c_int & GRID_ATTR_CHARSET != 0 {
-                        if let Some(text) = tty_acs_get(None, true, (*gce).c2rust_unnamed.data.data)
-                        {
-                            acs = text.as_ptr();
-                            n = text.to_bytes().len() as ::core::ffi::c_int;
-                        } else {
-                            acs = &raw mut (*gce).c2rust_unnamed.data.data
-                                as *const ::core::ffi::c_char;
-                            n = 1 as ::core::ffi::c_int;
-                        }
-                        if last.wrapping_add(n as size_t).wrapping_add(1 as size_t) >= len {
-                            break 's_28;
-                        }
-                        memcpy(
-                            buf.add(last) as *mut ::core::ffi::c_void,
-                            acs as *const ::core::ffi::c_void,
-                            n as size_t,
-                        );
-                        last = last.wrapping_add(n as size_t);
-                    } else {
-                        utf8_to_data(
-                            (*(*gl)
-                                .extddata
-                                .as_mut_ptr()
-                                .offset((*gce).c2rust_unnamed.offset as isize))
-                            .data,
-                            &mut ud,
-                        );
-                        if ud.size as ::core::ffi::c_int > 0 as ::core::ffi::c_int {
-                            if last
-                                .wrapping_add(ud.size as size_t)
-                                .wrapping_add(1 as size_t)
-                                >= len
-                            {
-                                break 's_28;
-                            }
-                            memcpy(
-                                buf.add(last) as *mut ::core::ffi::c_void,
-                                &raw mut ud.data as *mut u_char as *const ::core::ffi::c_void,
-                                ud.size as size_t,
-                            );
-                            last = last.wrapping_add(ud.size as size_t);
-                        }
-                    }
-                }
-                x = x.wrapping_add(1);
-            }
-            if last.wrapping_add(3 as size_t) >= len {
-                break;
-            }
-            let fresh3 = last;
-            last = last.wrapping_add(1);
-            *buf.add(fresh3) = '"' as i32 as ::core::ffi::c_char;
-            let fresh4 = last;
-            last = last.wrapping_add(1);
-            *buf.add(fresh4) = '\n' as i32 as ::core::ffi::c_char;
-        }
-        y = y.wrapping_add(1);
-    }
-    *buf.add(last) = '\0' as i32 as ::core::ffi::c_char;
-    buf
 }

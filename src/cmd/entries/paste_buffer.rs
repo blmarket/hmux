@@ -1,6 +1,7 @@
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::cmdq_error;
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::paste::{paste_buffer_data, paste_free, paste_get_name, paste_get_top};
 use crate::src::shared::abi::*;
@@ -64,7 +65,7 @@ unsafe fn cmd_paste_buffer_exec(
         if pb.is_none() {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"no buffer ")?;
-                write_cstr(out, bufname)
+                write_cstr(out, nullable_cstr(bufname))
             });
             return CMD_RETURN_ERROR;
         }

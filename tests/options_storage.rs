@@ -2,7 +2,7 @@
 use hmux::src::format::bytes::write_cstr;
 use hmux::src::options::*;
 use std::ffi::{CStr, CString};
-use std::ptr::{null, null_mut};
+use std::ptr::null_mut;
 
 #[test]
 fn ordered_names_survive_updates_and_removal() {
@@ -58,7 +58,7 @@ fn ordered_names_survive_updates_and_removal() {
                 ),
                 c"updated"
             );
-            assert_eq!(options_remove_or_default(entry, null(), null_mut()), 0);
+            assert_eq!(options_remove_or_default(entry, None, null_mut()), 0);
         }
         assert!(options_iter(&*oo).next().is_none());
         assert!(hmux::src::options::options_get_only_mut(
@@ -98,7 +98,7 @@ fn aliases_parent_fallback_and_shadowing() {
             options_read_entry(&*child, c"@shared", |entry| entry.id()),
             Some((*local).id())
         );
-        options_remove_or_default(local, null(), null_mut());
+        options_remove_or_default(local, None, null_mut());
         assert_eq!(
             options_read_entry(&*child, c"@shared", |entry| entry.id()),
             Some((*inherited).id())
@@ -134,7 +134,7 @@ fn aliases_parent_fallback_and_shadowing() {
         let numeric = options_set_number(child, c"pane-border-lines", 1);
         assert_eq!(options_get_number_ref(&*child, c"pane-border-lines"), 1);
         assert_eq!(options_get_number_ref(&*parent, c"pane-border-lines"), 2);
-        options_remove_or_default(numeric, null(), null_mut());
+        options_remove_or_default(numeric, None, null_mut());
         assert_eq!(options_get_number_ref(&*child, c"pane-border-lines"), 2);
         options_set_string(child, c"display-panes-color", 0, |out| {
             out.write_all(b"red")
@@ -162,14 +162,16 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
     unsafe {
         let mut oo_owner = options_create(None);
         let oo = &raw mut *oo_owner;
-        let entry = options_set_string(oo, c"@bytes", 0, |out| write_cstr(out, c"\xff".as_ptr()));
+        let entry = options_set_string(oo, c"@bytes", 0, |out| write_cstr(out, c"\xff"));
         let name = options_name(&*(entry));
         let previous = (*entry)
             .value
             .string_ptr()
             .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut());
         assert_eq!(
-            options_set_string(oo, name, 1, |out| { write_cstr(out, previous) }),
+            options_set_string(oo, name, 1, |out| {
+                write_cstr(out, CStr::from_ptr(previous))
+            }),
             entry
         );
         assert_eq!(
@@ -187,7 +189,9 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
             .string_ptr()
             .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut());
         assert_eq!(
-            options_set_string(oo, name, 0, |out| { write_cstr(out, previous) }),
+            options_set_string(oo, name, 0, |out| {
+                write_cstr(out, CStr::from_ptr(previous))
+            }),
             entry
         );
         assert_eq!(
@@ -227,11 +231,8 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
             definition.default_str.unwrap()
         );
         assert_eq!(
-            hmux::src::options::options_get_only_mut(
-                &mut *(oo),
-                std::ffi::CStr::from_ptr(definition.name_ptr())
-            )
-            .map_or(std::ptr::null_mut(), |entry| entry),
+            hmux::src::options::options_get_only_mut(&mut *(oo), definition.name.unwrap())
+                .map_or(std::ptr::null_mut(), |entry| entry),
             default
         );
 
@@ -246,7 +247,7 @@ fn scalar_string_replacement_append_and_default_keep_stable_entry() {
             .map_or(std::ptr::null_mut(), |value| value.as_ptr().cast_mut())
             .is_null());
         options_set_string(oo, empty_definition.name.unwrap(), 1, |out| {
-            write_cstr(out, c"tail".as_ptr())
+            write_cstr(out, c"tail")
         });
         assert_eq!(
             CStr::from_ptr(
@@ -289,7 +290,7 @@ fn array_keys_order_normalize_and_keep_stable_items() {
         for key in keys {
             let key = CString::new(*key).unwrap();
             assert_eq!(
-                options_array_set(array, key.as_ptr(), c"value".as_ptr(), 0, null_mut()),
+                options_array_set(array, &*key, Some(c"value"), 0, null_mut()),
                 0
             );
         }
@@ -304,7 +305,7 @@ fn array_keys_order_normalize_and_keep_stable_items() {
             c"2"
         );
         assert_eq!(
-            options_array_set(array, c"0002".as_ptr(), c"updated".as_ptr(), 0, null_mut()),
+            options_array_set(array, c"0002", Some(c"updated"), 0, null_mut()),
             0
         );
         assert_eq!(
@@ -373,12 +374,12 @@ fn array_keys_order_normalize_and_keep_stable_items() {
             (non_utf8.as_ptr(), b"value".as_slice()),
             (c"4294967296".as_ptr(), b"".as_slice()),
         ] {
-            let output = options_to_cstring(array, key, 0);
+            let output = options_to_cstring(array, Some(CStr::from_ptr(key)), 0);
             assert_eq!(output.as_bytes(), expected);
         }
         for invalid in [c"", c"4294967296"] {
             assert_eq!(
-                options_array_set(array, invalid.as_ptr(), c"bad".as_ptr(), 0, null_mut()),
+                options_array_set(array, &*invalid, Some(c"bad"), 0, null_mut()),
                 -1
             );
             assert!(hmux::src::options::options_array_get_mut(
@@ -411,10 +412,7 @@ fn array_keys_order_normalize_and_keep_stable_items() {
                 *key
             );
             let key = CString::new(*key).unwrap();
-            assert_eq!(
-                options_array_set(array, key.as_ptr(), null(), 0, null_mut()),
-                0
-            );
+            assert_eq!(options_array_set(array, &*key, None, 0, null_mut()), 0);
         }
         assert!(options_array_iter_mut(&mut *(array))
             .next()
@@ -426,7 +424,7 @@ fn array_keys_order_normalize_and_keep_stable_items() {
             for index in (0..128).rev() {
                 let key = CString::new(index.to_string()).unwrap();
                 assert_eq!(
-                    options_array_set(array, key.as_ptr(), c"again".as_ptr(), 0, null_mut()),
+                    options_array_set(array, &*key, Some(c"again"), 0, null_mut()),
                     0
                 );
             }
@@ -437,7 +435,7 @@ fn array_keys_order_normalize_and_keep_stable_items() {
                 .is_null());
         }
         assert_eq!(
-            options_array_set(array, c"7".as_ptr(), c"last".as_ptr(), 0, null_mut()),
+            options_array_set(array, c"7", Some(c"last"), 0, null_mut()),
             0
         );
         // Replacing the option also destroys populated array storage.
@@ -463,7 +461,11 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
         let strings = options_empty(oo, definition);
         let mut input = b"  ONE,\xff TWO,,\0ignored".to_vec();
         assert_eq!(
-            options_array_assign(strings, input.as_ptr().cast(), null_mut()),
+            options_array_assign(
+                strings,
+                CStr::from_bytes_until_nul(&input).unwrap(),
+                null_mut()
+            ),
             0
         );
         input.fill(b'x');
@@ -499,7 +501,7 @@ fn array_assign_copies_split_tokens_and_keeps_partial_result_on_error() {
         let colours = options_empty(oo, colour_definition);
         let mut cause: Option<CString> = None;
         assert_eq!(
-            options_array_assign(colours, c"red,,invalid-colour".as_ptr(), &mut cause),
+            options_array_assign(colours, c"red,,invalid-colour", &mut cause),
             -1
         );
         assert!(!hmux::src::options::options_array_get_mut(

@@ -1,9 +1,10 @@
 //! Terminal output operates on the retained client holder. Each terminal
 //! access ends before nested output, so no model borrow spans those operations.
 use super::*;
+use std::ffi::CStr;
 
 pub unsafe fn tty_putcode(client: &ClientRef, mut code: tty_code_code) {
-    tty_puts(client, tty_term_string(&*(terminal_term(client)), code));
+    tty_puts(client, tty_term_string(terminal_term(client), code));
 }
 
 pub unsafe fn tty_putcode_i(
@@ -48,23 +49,34 @@ pub unsafe fn tty_putcode_iii(
     );
 }
 
-pub unsafe fn tty_putcode_s(client: &ClientRef, mut a: *const ::core::ffi::c_char) {
+pub unsafe fn tty_putcode_s(client: &ClientRef, a: Option<&CStr>) {
+    let a: *const ::core::ffi::c_char = a.map_or(std::ptr::null(), CStr::as_ptr);
     let mut code: tty_code_code = TTYC_CS;
     if !a.is_null() {
-        tty_puts(client, &tty_term_string_s(terminal_term(client), code, a));
+        tty_puts(
+            client,
+            &tty_term_string_s(terminal_term(client), code, CStr::from_ptr(a)),
+        );
     }
 }
 
 pub unsafe fn tty_putcode_ss(
     client: &ClientRef,
     mut code: tty_code_code,
-    mut a: *const ::core::ffi::c_char,
-    mut b: *const ::core::ffi::c_char,
+    a: Option<&CStr>,
+    b: Option<&CStr>,
 ) {
+    let b: *const ::core::ffi::c_char = b.map_or(std::ptr::null(), CStr::as_ptr);
+    let a: *const ::core::ffi::c_char = a.map_or(std::ptr::null(), CStr::as_ptr);
     if !a.is_null() && !b.is_null() {
         tty_puts(
             client,
-            &tty_term_string_ss(terminal_term(client), code, a, b),
+            &tty_term_string_ss(
+                terminal_term(client),
+                code,
+                CStr::from_ptr(a),
+                CStr::from_ptr(b),
+            ),
         );
     }
 }
@@ -86,13 +98,12 @@ pub(crate) unsafe fn tty_enqueue_bytes(
     }
     evbuffer_add(
         tty.out.as_deref_mut().expect("open TTY buffer"),
-        buf.as_ptr().cast(),
-        len,
+        &buf[..len],
     );
     log_debug(format_args!(
         "{}: {}",
         log_cstr(name.unwrap_or(c"(null)")),
-        log_cstr_n(buf.as_ptr().cast(), len as ::core::ffi::c_int)
+        log_cstr_n(&buf[..len])
     ));
     *written = written.wrapping_add(len);
     if let Some((runtime, source)) = tty_log.as_mut() {
@@ -111,7 +122,7 @@ pub unsafe fn tty_puts(client: &ClientRef, text: &CStr) {
 }
 
 pub unsafe fn tty_putc(client: &ClientRef, mut ch: u_char) {
-    if (*terminal_term(client)).flags & TERM_NOAM != 0
+    if terminal_term(client).flags & TERM_NOAM != 0
         && ch as ::core::ffi::c_int >= 0x20 as ::core::ffi::c_int
         && ch as ::core::ffi::c_int != 0x7f as ::core::ffi::c_int
         && terminal_value!(client, cy) == terminal_value!(client, sy).wrapping_sub(1 as u_int)
@@ -138,7 +149,7 @@ pub unsafe fn tty_putc(client: &ClientRef, mut ch: u_char) {
             if terminal_value!(client, cy) != terminal_value!(client, rlower) {
                 terminal_set!(client, cy, =, terminal_value!(client, cy).wrapping_add(1));
             }
-            if (*terminal_term(client)).flags & TERM_NOAM != 0 {
+            if terminal_term(client).flags & TERM_NOAM != 0 {
                 tty_putcode_ii(
                     client,
                     TTYC_CUP,
@@ -154,7 +165,7 @@ pub unsafe fn tty_putc(client: &ClientRef, mut ch: u_char) {
 
 pub unsafe fn tty_putn(client: &ClientRef, buf: &[u8], mut width: u_int) {
     let mut len = buf.len();
-    if (*terminal_term(client)).flags & TERM_NOAM != 0
+    if terminal_term(client).flags & TERM_NOAM != 0
         && terminal_value!(client, cy) == terminal_value!(client, sy).wrapping_sub(1 as u_int)
         && (terminal_value!(client, cx) as size_t).wrapping_add(len)
             >= terminal_value!(client, sx) as size_t
@@ -231,7 +242,7 @@ pub(super) unsafe fn tty_force_cursor_colour(client: &ClientRef, mut c: ::core::
         (r, g, b) = colour_split_rgb(c);
         let colour = format_cstring(format_args!("rgb:{r:02x}/{g:02x}/{b:02x}"))
             .expect("RGB colour contains no NUL");
-        tty_putcode_s(client, colour.as_ptr());
+        tty_putcode_s(client, Some(&*colour));
     }
     terminal_set!(client, ccolour, =, c);
 }
@@ -341,7 +352,6 @@ pub unsafe fn tty_update_mode(
     mut mode: ::core::ffi::c_int,
     s: Option<ScreenMode>,
 ) {
-    let mut term: *const tty_term = terminal_term(client);
     let mut changed: ::core::ffi::c_int = 0;
     if terminal_value!(client, flags) & TTY_NOCURSOR != 0 {
         mode &= !MODE_CURSOR;
@@ -364,7 +374,7 @@ pub unsafe fn tty_update_mode(
             screen_mode_display(mode)
         ));
     }
-    if changed & ALL_MOUSE_MODES != 0 && tty_term_has(term, TTYC_KMOUS) != 0 {
+    if changed & ALL_MOUSE_MODES != 0 && tty_term_has(terminal_term(client), TTYC_KMOUS) != 0 {
         tty_puts(client, c"\x1B[?1006l\x1B[?1000l\x1B[?1002l\x1B[?1003l");
         if mode & ALL_MOUSE_MODES != 0 {
             tty_puts(client, c"\x1B[?1006h");
@@ -449,7 +459,7 @@ pub unsafe fn tty_reset(client: &ClientRef) {
     let gc = terminal_value!(client, cell);
     if !grid_cells_equal(&gc, &grid_default_cell) {
         if gc.link != 0 {
-            tty_putcode_ss(client, TTYC_HLS, c"".as_ptr(), c"".as_ptr());
+            tty_putcode_ss(client, TTYC_HLS, Some(c""), Some(c""));
         }
         let utf8 = client.flags() & CLIENT_UTF8 as u64 != 0;
         if gc.attr as i32 & GRID_ATTR_CHARSET != 0
@@ -476,7 +486,7 @@ pub unsafe fn tty_invalidate(client: &ClientRef) {
         terminal.rlower = UINT_MAX;
     }
     if terminal_value!(client, flags) & TTY_STARTED != 0 {
-        if (*terminal_term(client)).flags & TERM_DECSLRM != 0 {
+        if terminal_term(client).flags & TERM_DECSLRM != 0 {
             tty_putcode(client, TTYC_ENMG);
         }
         tty_putcode(client, TTYC_SGR0);
@@ -573,7 +583,7 @@ pub(super) unsafe fn tty_margin_pane(client: &ClientRef, ctx: &tty_ctx) {
 }
 
 pub(super) unsafe fn tty_margin(client: &ClientRef, mut rleft: u_int, mut rright: u_int) {
-    if (*terminal_term(client)).flags & TERM_DECSLRM == 0 {
+    if terminal_term(client).flags & TERM_DECSLRM == 0 {
         return;
     }
     if terminal_value!(client, rleft) == rleft && terminal_value!(client, rright) == rright {
@@ -609,7 +619,7 @@ pub(super) unsafe fn tty_cursor_pane_unless_wrap(
 ) {
     if !ctx.flags & TTY_CTX_WRAPPED != 0
         || !(ctx.xoff == 0 as ::core::ffi::c_int && ctx.sx >= terminal_value!(client, sx))
-        || (*terminal_term(client)).flags & TERM_NOAM != 0
+        || terminal_term(client).flags & TERM_NOAM != 0
         || (ctx.xoff as u_int).wrapping_add(cx) != 0 as u_int
         || (ctx.yoff as u_int).wrapping_add(cy)
             != terminal_value!(client, cy).wrapping_add(1 as u_int)
@@ -642,7 +652,6 @@ pub(super) unsafe fn tty_cursor_pane(
 
 pub unsafe fn tty_cursor(client: &ClientRef, mut cx: u_int, mut cy: u_int) {
     let mut current_block: u64;
-    let mut term: *const tty_term = terminal_term(client);
     let mut thisx: u_int = 0;
     let mut thisy: u_int = 0;
     let mut change: ::core::ffi::c_int = 0;
@@ -668,13 +677,16 @@ pub unsafe fn tty_cursor(client: &ClientRef, mut cx: u_int, mut cy: u_int) {
     }
     if thisx > terminal_value!(client, sx).wrapping_sub(1 as u_int) {
         current_block = 11555347550778173209;
-    } else if cx == 0 as u_int && cy == 0 as u_int && tty_term_has(term, TTYC_HOME) != 0 {
+    } else if cx == 0 as u_int
+        && cy == 0 as u_int
+        && tty_term_has(terminal_term(client), TTYC_HOME) != 0
+    {
         tty_putcode(client, TTYC_HOME);
         current_block = 5411263895410993842;
     } else if cx == 0 as u_int
         && cy == thisy.wrapping_add(1 as u_int)
         && thisy != terminal_value!(client, rlower)
-        && ((*terminal_term(client)).flags & TERM_DECSLRM == 0
+        && (terminal_term(client).flags & TERM_DECSLRM == 0
             || terminal_value!(client, rleft) == 0 as u_int)
     {
         tty_putc(client, '\r' as i32 as u_char);
@@ -682,27 +694,33 @@ pub unsafe fn tty_cursor(client: &ClientRef, mut cx: u_int, mut cy: u_int) {
         current_block = 5411263895410993842;
     } else if cy == thisy {
         if cx == 0 as u_int
-            && ((*terminal_term(client)).flags & TERM_DECSLRM == 0
+            && (terminal_term(client).flags & TERM_DECSLRM == 0
                 || terminal_value!(client, rleft) == 0 as u_int)
         {
             tty_putc(client, '\r' as i32 as u_char);
             current_block = 5411263895410993842;
-        } else if cx == thisx.wrapping_sub(1 as u_int) && tty_term_has(term, TTYC_CUB1) != 0 {
+        } else if cx == thisx.wrapping_sub(1 as u_int)
+            && tty_term_has(terminal_term(client), TTYC_CUB1) != 0
+        {
             tty_putcode(client, TTYC_CUB1);
             current_block = 5411263895410993842;
-        } else if cx == thisx.wrapping_add(1 as u_int) && tty_term_has(term, TTYC_CUF1) != 0 {
+        } else if cx == thisx.wrapping_add(1 as u_int)
+            && tty_term_has(terminal_term(client), TTYC_CUF1) != 0
+        {
             tty_putcode(client, TTYC_CUF1);
             current_block = 5411263895410993842;
         } else {
             change = thisx.wrapping_sub(cx) as ::core::ffi::c_int;
-            if abs(change) as u_int > cx && tty_term_has(term, TTYC_HPA) != 0 {
+            if abs(change) as u_int > cx && tty_term_has(terminal_term(client), TTYC_HPA) != 0 {
                 tty_putcode_i(client, TTYC_HPA, cx as ::core::ffi::c_int);
                 current_block = 5411263895410993842;
             } else if change > 0 as ::core::ffi::c_int
-                && tty_term_has(term, TTYC_CUB) != 0
-                && (*terminal_term(client)).flags & TERM_DECSLRM == 0
+                && tty_term_has(terminal_term(client), TTYC_CUB) != 0
+                && terminal_term(client).flags & TERM_DECSLRM == 0
             {
-                if change == 2 as ::core::ffi::c_int && tty_term_has(term, TTYC_CUB1) != 0 {
+                if change == 2 as ::core::ffi::c_int
+                    && tty_term_has(terminal_term(client), TTYC_CUB1) != 0
+                {
                     tty_putcode(client, TTYC_CUB1);
                     tty_putcode(client, TTYC_CUB1);
                 } else {
@@ -710,8 +728,8 @@ pub unsafe fn tty_cursor(client: &ClientRef, mut cx: u_int, mut cy: u_int) {
                 }
                 current_block = 5411263895410993842;
             } else if change < 0 as ::core::ffi::c_int
-                && tty_term_has(term, TTYC_CUF) != 0
-                && (*terminal_term(client)).flags & TERM_DECSLRM == 0
+                && tty_term_has(terminal_term(client), TTYC_CUF) != 0
+                && terminal_term(client).flags & TERM_DECSLRM == 0
             {
                 tty_putcode_i(client, TTYC_CUF, -change);
                 current_block = 5411263895410993842;
@@ -722,13 +740,13 @@ pub unsafe fn tty_cursor(client: &ClientRef, mut cx: u_int, mut cy: u_int) {
     } else if cx == thisx {
         if thisy != terminal_value!(client, rupper)
             && cy == thisy.wrapping_sub(1 as u_int)
-            && tty_term_has(term, TTYC_CUU1) != 0
+            && tty_term_has(terminal_term(client), TTYC_CUU1) != 0
         {
             tty_putcode(client, TTYC_CUU1);
             current_block = 5411263895410993842;
         } else if thisy != terminal_value!(client, rlower)
             && cy == thisy.wrapping_add(1 as u_int)
-            && tty_term_has(term, TTYC_CUD1) != 0
+            && tty_term_has(terminal_term(client), TTYC_CUD1) != 0
         {
             tty_putcode(client, TTYC_CUD1);
             current_block = 5411263895410993842;
@@ -740,16 +758,20 @@ pub unsafe fn tty_cursor(client: &ClientRef, mut cx: u_int, mut cy: u_int) {
                 || change > 0 as ::core::ffi::c_int
                     && cy.wrapping_sub(change as u_int) < terminal_value!(client, rupper)
             {
-                if tty_term_has(term, TTYC_VPA) != 0 {
+                if tty_term_has(terminal_term(client), TTYC_VPA) != 0 {
                     tty_putcode_i(client, TTYC_VPA, cy as ::core::ffi::c_int);
                     current_block = 5411263895410993842;
                 } else {
                     current_block = 11555347550778173209;
                 }
-            } else if change > 0 as ::core::ffi::c_int && tty_term_has(term, TTYC_CUU) != 0 {
+            } else if change > 0 as ::core::ffi::c_int
+                && tty_term_has(terminal_term(client), TTYC_CUU) != 0
+            {
                 tty_putcode_i(client, TTYC_CUU, change);
                 current_block = 5411263895410993842;
-            } else if change < 0 as ::core::ffi::c_int && tty_term_has(term, TTYC_CUD) != 0 {
+            } else if change < 0 as ::core::ffi::c_int
+                && tty_term_has(terminal_term(client), TTYC_CUD) != 0
+            {
                 tty_putcode_i(client, TTYC_CUD, -change);
                 current_block = 5411263895410993842;
             } else {
@@ -789,14 +811,9 @@ pub(super) unsafe fn tty_hyperlink(
         hyperlinks_get(hl, gc.link)
     };
     if let Some(link) = link {
-        tty_putcode_ss(
-            client,
-            TTYC_HLS,
-            link.external_id.as_ptr(),
-            link.uri.as_ptr(),
-        );
+        tty_putcode_ss(client, TTYC_HLS, Some(&*link.external_id), Some(&*link.uri));
     } else {
-        tty_putcode_ss(client, TTYC_HLS, c"".as_ptr(), c"".as_ptr());
+        tty_putcode_ss(client, TTYC_HLS, Some(c""), Some(c""));
     }
 }
 
@@ -1045,13 +1062,13 @@ pub(super) unsafe fn tty_check_fg(
     }
     gc.fg = tty_map_theme_colour(client, gc.fg);
     if gc.fg & COLOUR_FLAG_RGB != 0 {
-        if (*terminal_term(client)).flags & TERM_RGBCOLOURS != 0 {
+        if terminal_term(client).flags & TERM_RGBCOLOURS != 0 {
             return;
         }
         (r, g, b) = colour_split_rgb(gc.fg);
         gc.fg = colour_find_rgb(r, g, b);
     }
-    if (*terminal_term(client)).flags & TERM_256COLOURS != 0 {
+    if terminal_term(client).flags & TERM_256COLOURS != 0 {
         colours = 256 as u_int;
     } else {
         colours = tty_term_number(terminal_term(client), TTYC_COLORS) as u_int;
@@ -1101,13 +1118,13 @@ pub(super) unsafe fn tty_check_bg(
     }
     gc.bg = tty_map_theme_colour(client, gc.bg);
     if gc.bg & COLOUR_FLAG_RGB != 0 {
-        if (*terminal_term(client)).flags & TERM_RGBCOLOURS != 0 {
+        if terminal_term(client).flags & TERM_RGBCOLOURS != 0 {
             return;
         }
         (r, g, b) = colour_split_rgb(gc.bg);
         gc.bg = colour_find_rgb(r, g, b);
     }
-    if (*terminal_term(client)).flags & TERM_256COLOURS != 0 {
+    if terminal_term(client).flags & TERM_256COLOURS != 0 {
         colours = 256 as u_int;
     } else {
         colours = tty_term_number(terminal_term(client), TTYC_COLORS) as u_int;
@@ -1170,7 +1187,7 @@ pub(super) unsafe fn tty_colours_fg(client: &ClientRef, gc: &grid_cell) {
             return;
         }
     } else if gc.fg >= 90 as ::core::ffi::c_int && gc.fg <= 97 as ::core::ffi::c_int {
-        if (*terminal_term(client)).flags & TERM_256COLOURS != 0 {
+        if terminal_term(client).flags & TERM_256COLOURS != 0 {
             xformat(&mut s, format_args!("\x1B[{}m", { gc.fg }));
             tty_puts(
                 client,
@@ -1196,7 +1213,7 @@ pub(super) unsafe fn tty_colours_bg(client: &ClientRef, gc: &grid_cell) {
             return;
         }
     } else if gc.bg >= 90 as ::core::ffi::c_int && gc.bg <= 97 as ::core::ffi::c_int {
-        if (*terminal_term(client)).flags & TERM_256COLOURS != 0 {
+        if terminal_term(client).flags & TERM_256COLOURS != 0 {
             xformat(
                 &mut s,
                 format_args!("\x1B[{}m", { gc.bg + 10 as ::core::ffi::c_int }),

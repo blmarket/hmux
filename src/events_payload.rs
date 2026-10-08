@@ -4,6 +4,7 @@ use crate::src::cmd::find::{
     cmd_find_valid_state,
 };
 use crate::src::format::bytes::format_message_with;
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_add;
 use crate::src::log::{log_cstr, log_cstr_n, log_debug};
@@ -73,14 +74,10 @@ impl Drop for event_payload_item {
     }
 }
 
-unsafe fn event_payload_set_item(
-    ep: &mut event_payload,
-    name: *const ::core::ffi::c_char,
-    value: EventPayloadValue,
-) {
+unsafe fn event_payload_set_item(ep: &mut event_payload, name: &CStr, value: EventPayloadValue) {
     // A legacy caller may borrow the old item's name. Copy it before removing
     // that owner, and finish removal before releasing references can dispatch.
-    let name = CStr::from_ptr(name).to_owned();
+    let name = name.to_owned();
     let key = name.to_bytes().to_vec();
     let new = Box::new(event_payload_item { name, value });
     let old = ep.items.remove(&key);
@@ -234,64 +231,48 @@ pub unsafe fn event_payload_get_target(ep: &event_payload, fs: &mut cmd_find_sta
 }
 pub unsafe fn event_payload_set_string(
     ep: &mut event_payload,
-    mut name: *const ::core::ffi::c_char,
+    name: &CStr,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let string = format_message_with(write);
     event_payload_set_item(&mut *ep, name, EventPayloadValue::String(string));
 }
-pub unsafe fn event_payload_set_time(
-    ep: &mut event_payload,
-    mut name: *const ::core::ffi::c_char,
-    mut value: time_t,
-) {
+pub unsafe fn event_payload_set_time(ep: &mut event_payload, name: &CStr, mut value: time_t) {
     event_payload_set_item(&mut *ep, name, EventPayloadValue::Time(value));
 }
 pub unsafe fn event_payload_set_int(
     ep: &mut event_payload,
-    mut name: *const ::core::ffi::c_char,
+    name: &CStr,
     mut value: ::core::ffi::c_int,
 ) {
     event_payload_set_item(&mut *ep, name, EventPayloadValue::Int(value));
 }
-pub unsafe fn event_payload_set_uint(
-    ep: &mut event_payload,
-    mut name: *const ::core::ffi::c_char,
-    mut value: u_int,
-) {
+pub unsafe fn event_payload_set_uint(ep: &mut event_payload, name: &CStr, mut value: u_int) {
     event_payload_set_item(&mut *ep, name, EventPayloadValue::Uint(value));
 }
 /// Transfer a retained client into the payload; payload cleanup releases it explicitly.
 pub unsafe fn event_payload_set_client(ep: &mut event_payload, owner: ClientRef) {
-    event_payload_set_item(ep, c"client".as_ptr(), EventPayloadValue::Client(owner));
+    event_payload_set_item(ep, c"client", EventPayloadValue::Client(owner));
 }
 /// Transfer a retained session into the payload; payload cleanup releases it explicitly.
-pub unsafe fn event_payload_set_session(
-    ep: &mut event_payload,
-    name: *const ::core::ffi::c_char,
-    owner: SessionRef,
-) {
+pub unsafe fn event_payload_set_session(ep: &mut event_payload, name: &CStr, owner: SessionRef) {
     event_payload_set_item(ep, name, EventPayloadValue::Session(owner));
 }
 /// Transfer a retained window into the payload; payload cleanup releases it explicitly.
-pub unsafe fn event_payload_set_window(
-    ep: &mut event_payload,
-    name: *const ::core::ffi::c_char,
-    owner: WindowRef,
-) {
+pub unsafe fn event_payload_set_window(ep: &mut event_payload, name: &CStr, owner: WindowRef) {
     event_payload_set_item(ep, name, EventPayloadValue::Window(owner));
 }
 /// Transfer a retained window_pane into the payload; payload cleanup releases it explicitly.
 pub unsafe fn event_payload_set_pane(
     ep: &mut event_payload,
-    name: *const ::core::ffi::c_char,
+    name: &CStr,
     owner: std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
 ) {
     event_payload_set_item(ep, name, EventPayloadValue::Pane(owner));
 }
 pub unsafe fn event_payload_set_identity(
     ep: &mut event_payload,
-    mut name: *const ::core::ffi::c_char,
+    name: &CStr,
     identity: EventPayloadIdentity,
 ) {
     event_payload_set_item(&mut *ep, name, EventPayloadValue::Identity(identity));
@@ -305,7 +286,7 @@ pub fn event_payload_get_string(ep: &event_payload) -> Option<&CStr> {
 unsafe fn event_payload_add_item(epi: &event_payload_item, evb: &mut SegmentedBuf) {
     match epi.type_0() as ::core::ffi::c_uint {
         0 => {
-            evbuffer_add_formatted(evb, |out| write_cstr(out, epi.value.string()));
+            evbuffer_add_formatted(evb, |out| out.write_all(epi.value.string().to_bytes()));
         }
         1 => {
             evbuffer_add_formatted(evb, |out| {
@@ -322,14 +303,7 @@ unsafe fn event_payload_add_item(epi: &event_payload_item, evb: &mut SegmentedBu
         }
         4 => {
             evbuffer_add_formatted(evb, |out| {
-                write_cstr(
-                    out,
-                    epi.value
-                        .client()
-                        .name()
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                )
+                write_cstr(out, epi.value.client().name().as_deref())
             });
         }
         5 => {
@@ -373,12 +347,9 @@ pub(crate) unsafe fn event_payload_print_owned(ep: &event_payload) -> Option<Vec
 pub unsafe fn event_payload_add_formats(
     ep: &event_payload,
     mut ft: *mut format_tree,
-    mut prefix: *const ::core::ffi::c_char,
+    prefix: Option<&CStr>,
 ) {
-    if prefix.is_null() {
-        prefix = c"".as_ptr();
-    }
-    let prefix = CStr::from_ptr(prefix).to_bytes();
+    let prefix = prefix.unwrap_or(c"").to_bytes();
     for epi in event_payload_items(ep) {
         let key = epi.name.as_ptr();
         if !(*key as ::core::ffi::c_int == '_' as i32) {
@@ -390,7 +361,10 @@ pub unsafe fn event_payload_add_formats(
             let name = CString::new(name_bytes).expect("C string parts contain no NUL");
             // format_add copies the key into its format entry before returning.
             format_add(ft, &name, |out| {
-                write_cstr(out, value.as_ptr().cast::<::core::ffi::c_char>())
+                write_cstr(
+                    out,
+                    nullable_cstr(value.as_ptr().cast::<::core::ffi::c_char>()),
+                )
             });
             let named = if epi.type_0() as ::core::ffi::c_uint
                 == EVENT_PAYLOAD_SESSION as ::core::ffi::c_int as ::core::ffi::c_uint
@@ -407,7 +381,7 @@ pub unsafe fn event_payload_add_formats(
                 let mut suffixed = name.as_bytes().to_vec();
                 suffixed.extend_from_slice(b"_name");
                 let suffixed = CString::new(suffixed).expect("C string parts contain no NUL");
-                format_add(ft, &suffixed, |out| write_cstr(out, named.as_ptr()));
+                format_add(ft, &suffixed, |out| write_cstr(out, &*named));
             }
         }
     }
@@ -427,7 +401,7 @@ pub unsafe fn event_payload_log(
             evbuffer_add_formatted(&mut evb, |out| out.write_all(b", "));
         }
         evbuffer_add_formatted(&mut evb, |out| {
-            write_cstr(out, epi.name.as_ptr())?;
+            write_cstr(out, &*epi.name)?;
             out.write_all(b"=")
         });
         event_payload_add_item(epi, &mut evb);
@@ -436,11 +410,7 @@ pub unsafe fn event_payload_log(
     log_debug(format_args!(
         "{}{}",
         log_cstr(&prefix),
-        log_cstr_n(
-            (evbuffer_pullup(&mut evb, -1).map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
-                as *mut ::core::ffi::c_char) as *const _,
-            evbuffer_get_length(&evb) as ::core::ffi::c_int
-        )
+        log_cstr_n(evbuffer_pullup(&mut evb, -1).map_or(&[][..], |bytes| bytes))
     ));
 }
 pub fn event_payload_get_client(ep: &event_payload) -> Option<&ClientRef> {
@@ -469,14 +439,11 @@ pub fn event_payload_get_pane(
         _ => None,
     }
 }
-pub unsafe fn event_payload_get_identity(
-    ep: &event_payload,
-    name: *const ::core::ffi::c_char,
-) -> Option<&EventPayloadIdentity> {
-    if name.is_null() {
-        return None;
-    }
-    match event_payload_find(ep, CStr::from_ptr(name)).map(|item| &item.value) {
+pub fn event_payload_get_identity<'a>(
+    ep: &'a event_payload,
+    name: &CStr,
+) -> Option<&'a EventPayloadIdentity> {
+    match event_payload_find(ep, name).map(|item| &item.value) {
         Some(EventPayloadValue::Identity(value)) => Some(value),
         _ => None,
     }
@@ -493,12 +460,10 @@ mod tests {
         unsafe {
             let mut ep = event_payload_create();
             let name = CString::new(vec![b'k', 0xff]).unwrap();
-            event_payload_set_string(&mut *ep, name.as_ptr(), |out| {
-                write_cstr(out, c"old".as_ptr())
-            });
+            event_payload_set_string(&mut *ep, &*name, |out| write_cstr(out, c"old"));
             let old_name =
                 event_payload_item_name(event_payload_items(&*ep).next().unwrap()).as_ptr();
-            event_payload_set_int(&mut *ep, old_name, 42);
+            event_payload_set_int(&mut *ep, CStr::from_ptr(old_name), 42);
 
             let replacement = event_payload_items(&*ep).next().unwrap();
             assert_eq!(
@@ -521,14 +486,14 @@ mod tests {
                 items: event_payload_tree::default(),
                 target: Default::default(),
             };
-            event_payload_set_int(&mut payload, c"beta".as_ptr(), 2);
-            event_payload_set_int(&mut payload, c"alpha".as_ptr(), 1);
+            event_payload_set_int(&mut payload, c"beta", 2);
+            event_payload_set_int(&mut payload, c"alpha", 1);
             let address = event_payload_find(&payload, c"alpha").unwrap()
                 as *const event_payload_item as usize;
             let mut moved = payload;
             for i in 0..128 {
                 let key = CString::new(format!("extra-{i}")).unwrap();
-                event_payload_set_int(&mut moved, key.as_ptr(), i);
+                event_payload_set_int(&mut moved, &*key, i);
             }
             assert_eq!(
                 event_payload_items(&moved).next().unwrap() as *const event_payload_item as usize,

@@ -1111,10 +1111,8 @@ pub unsafe fn tty_term_apply(
     mut capabilities: *const ::core::ffi::c_char,
     mut quiet: ::core::ffi::c_int,
 ) {
-    let mut ent: *const tty_term_code_entry = ::core::ptr::null::<tty_term_code_entry>();
     let mut offset: size_t = 0 as size_t;
     let mut cp: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
-    let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut name: *const ::core::ffi::c_char = ((*term).name).as_ptr().cast_mut();
     let mut i: u_int = 0;
     let mut n: ::core::ffi::c_int = 0;
@@ -1165,24 +1163,24 @@ pub unsafe fn tty_term_apply(
         }
         i = 0 as u_int;
         while i < tty_term_ncodes() {
-            ent = (&raw const tty_term_codes as *const tty_term_code_entry).offset(i as isize);
-            if !(strcmp(s, (*ent).name.as_ptr()) != 0 as ::core::ffi::c_int) {
+            let ent = &tty_term_codes[i as usize];
+            if !(strcmp(s, ent.name.as_ptr()) != 0 as ::core::ffi::c_int) {
                 if remove != 0 {
                     (&mut (*term).codes)[i as usize] = tty_code::None;
                 } else {
-                    match (*ent).type_0 as ::core::ffi::c_uint {
+                    match ent.type_0 as ::core::ffi::c_uint {
                         1 => {
                             (&mut (*term).codes)[i as usize] =
                                 tty_code::String(CStr::from_ptr(value).to_owned());
                         }
                         2 => {
-                            n = strtonum(
-                                value,
+                            let parsed = strtonum(
+                                CStr::from_ptr(value),
                                 0 as ::core::ffi::c_longlong,
                                 INT_MAX as ::core::ffi::c_longlong,
-                                &raw mut errstr,
-                            ) as ::core::ffi::c_int;
-                            if errstr.is_null() {
+                            );
+                            n = parsed.unwrap_or(0) as ::core::ffi::c_int;
+                            if parsed.is_ok() {
                                 (&mut (*term).codes)[i as usize] = tty_code::Number(n);
                             }
                         }
@@ -1214,7 +1212,7 @@ pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
         .collect::<Vec<_>>()
         .into_iter();
     a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-        crate::src::options::options_array_item(a_root, key.as_ptr())
+        crate::src::options::options_array_item(a_root, &*key)
     });
     while !a.is_null() {
         ov = crate::src::options::options_array_item_value_mut(&mut *(a))
@@ -1234,14 +1232,14 @@ pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
             tty_term_apply(term, s.add(offset), 0 as ::core::ffi::c_int);
         }
         a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-            crate::src::options::options_array_item(a_root, key.as_ptr())
+            crate::src::options::options_array_item(a_root, &*key)
         });
     }
     log_debug(format_args!(
         "SIXEL flag is {}",
         ((*term).flags & TERM_SIXEL != 0) as ::core::ffi::c_int
     ));
-    if tty_term_has(term, TTYC_SETRGBF) != 0 && tty_term_has(term, TTYC_SETRGBB) != 0 {
+    if tty_term_has(&*term, TTYC_SETRGBF) != 0 && tty_term_has(&*term, TTYC_SETRGBB) != 0 {
         (*term).flags |= TERM_RGBCOLOURS;
     } else {
         (*term).flags &= !TERM_RGBCOLOURS;
@@ -1250,7 +1248,7 @@ pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
         "RGBCOLOURS flag is {}",
         ((*term).flags & TERM_RGBCOLOURS != 0) as ::core::ffi::c_int
     ));
-    if tty_term_has(term, TTYC_CMG) != 0 && tty_term_has(term, TTYC_CLMG) != 0 {
+    if tty_term_has(&*term, TTYC_CMG) != 0 && tty_term_has(&*term, TTYC_CLMG) != 0 {
         (*term).flags |= TERM_DECSLRM;
     } else {
         (*term).flags &= !TERM_DECSLRM;
@@ -1259,7 +1257,7 @@ pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
         "DECSLRM flag is {}",
         ((*term).flags & TERM_DECSLRM != 0) as ::core::ffi::c_int
     ));
-    if tty_term_has(term, TTYC_RECT) != 0 {
+    if tty_term_has(&*term, TTYC_RECT) != 0 {
         (*term).flags |= TERM_DECFRA;
     } else {
         (*term).flags &= !TERM_DECFRA;
@@ -1268,7 +1266,7 @@ pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
         "DECFRA flag is {}",
         ((*term).flags & TERM_DECFRA != 0) as ::core::ffi::c_int
     ));
-    if tty_term_flag(term, TTYC_AM) == 0 {
+    if tty_term_flag(&*term, TTYC_AM) == 0 {
         (*term).flags |= TERM_NOAM;
     } else {
         (*term).flags &= !TERM_NOAM;
@@ -1278,7 +1276,7 @@ pub unsafe fn tty_term_apply_overrides(mut term: *mut tty_term) {
         ((*term).flags & TERM_NOAM != 0) as ::core::ffi::c_int
     ));
     (*term).acs.fill([0; 2]);
-    let acs = if tty_term_has(term, TTYC_ACSC) != 0 {
+    let acs = if tty_term_has(&*term, TTYC_ACSC) != 0 {
         tty_term_string(&*(term), TTYC_ACSC)
     } else {
         c"a#j+k+l+m+n+o-p-q-r-s-t+u+v+w+x|y<z>~."
@@ -1292,7 +1290,7 @@ unsafe fn tty_term_validate(mut term: *mut tty_term) {
     if !matches!((&(*term).codes)[TTYC_MS as usize], tty_code::String(_)) {
         return;
     }
-    let ms = tty_term_string_ss(term, TTYC_MS, c"c".as_ptr(), c"?".as_ptr());
+    let ms = tty_term_string_ss(&*term, TTYC_MS, c"c", c"?");
     if !ms.as_bytes().is_empty() {
         (*term).flags &= !TERM_INVALIDMS;
         return;
@@ -1308,7 +1306,6 @@ pub unsafe fn tty_term_create(
     mut ncaps: u_int,
 ) -> Result<Box<tty_term>, CString> {
     let mut term: *mut tty_term = ::core::ptr::null_mut::<tty_term>();
-    let mut ent: *const tty_term_code_entry = ::core::ptr::null::<tty_term_code_entry>();
     let mut o: *mut options_entry = ::core::ptr::null_mut::<options_entry>();
     let mut a: *mut options_array_item = ::core::ptr::null_mut::<options_array_item>();
     let mut ov: *mut options_value = ::core::ptr::null_mut::<options_value>();
@@ -1316,7 +1313,6 @@ pub unsafe fn tty_term_create(
     let mut j: u_int = 0;
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut value: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut offset: size_t = 0;
     let mut namelen: size_t = 0;
     let mut n: ::core::ffi::c_int = 0;
@@ -1352,29 +1348,29 @@ pub unsafe fn tty_term_create(
                 .offset(1 as ::core::ffi::c_int as isize);
             j = 0 as u_int;
             while j < tty_term_ncodes() {
-                ent = (&raw const tty_term_codes as *const tty_term_code_entry).offset(j as isize);
-                if !(strncmp((*ent).name.as_ptr(), *caps.offset(i as isize), namelen)
+                let ent = &tty_term_codes[j as usize];
+                if !(strncmp(ent.name.as_ptr(), *caps.offset(i as isize), namelen)
                     != 0 as ::core::ffi::c_int)
-                    && !(*(*ent).name.as_ptr().add(namelen) as ::core::ffi::c_int != '\0' as i32)
+                    && !(*ent.name.as_ptr().add(namelen) as ::core::ffi::c_int != '\0' as i32)
                 {
                     (&mut (*term).codes)[j as usize] = tty_code::None;
-                    match (*ent).type_0 as ::core::ffi::c_uint {
+                    match ent.type_0 as ::core::ffi::c_uint {
                         1 => {
                             (&mut (*term).codes)[j as usize] =
                                 tty_code::String(tty_term_strip(CStr::from_ptr(value)));
                         }
                         2 => {
-                            n = strtonum(
-                                value,
+                            let parsed = strtonum(
+                                CStr::from_ptr(value),
                                 0 as ::core::ffi::c_longlong,
                                 INT_MAX as ::core::ffi::c_longlong,
-                                &raw mut errstr,
-                            ) as ::core::ffi::c_int;
-                            if !errstr.is_null() {
+                            );
+                            n = parsed.unwrap_or(0) as ::core::ffi::c_int;
+                            if let Err(errstr) = parsed {
                                 log_debug(format_args!(
                                     "{}: {}",
-                                    crate::src::log::log_bytes((*ent).name.to_bytes()),
-                                    log_cstr(CStr::from_ptr(errstr))
+                                    crate::src::log::log_bytes(ent.name.to_bytes()),
+                                    log_cstr(errstr)
                                 ));
                             } else {
                                 (&mut (*term).codes)[j as usize] = tty_code::Number(n);
@@ -1404,7 +1400,7 @@ pub unsafe fn tty_term_create(
         .collect::<Vec<_>>()
         .into_iter();
     a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-        crate::src::options::options_array_item(a_root, key.as_ptr())
+        crate::src::options::options_array_item(a_root, &*key)
     });
     while !a.is_null() {
         ov = crate::src::options::options_array_item_value_mut(&mut *(a))
@@ -1421,10 +1417,10 @@ pub unsafe fn tty_term_create(
                 0 as ::core::ffi::c_int,
             ) == 0
         }) {
-            tty_parse_client_features(client_owner, s.add(offset), c":".as_ptr());
+            tty_parse_client_features(client_owner, CStr::from_ptr(s.add(offset)), c":");
         }
         a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-            crate::src::options::options_array_item(a_root, key.as_ptr())
+            crate::src::options::options_array_item(a_root, &*key)
         });
     }
     del_curterm(cur_term);
@@ -1450,22 +1446,22 @@ pub unsafe fn tty_term_create(
         }
     }
     tty_term_apply_overrides(term);
-    let error = if tty_term_has(term, TTYC_CLEAR) == 0 {
+    let error = if tty_term_has(&*term, TTYC_CLEAR) == 0 {
         Some(c"terminal does not support clear".to_owned())
-    } else if tty_term_has(term, TTYC_CUP) == 0 {
+    } else if tty_term_has(&*term, TTYC_CUP) == 0 {
         Some(c"terminal does not support cup".to_owned())
     } else {
         s = tty_term_string(&*(term), TTYC_CLEAR).as_ptr();
-        if tty_term_flag(term, TTYC_XT) != 0
+        if tty_term_flag(&*term, TTYC_XT) != 0
             || strncmp(s, c"\x1B[".as_ptr(), 2 as size_t) == 0 as ::core::ffi::c_int
         {
             (*term).flags |= TERM_VT100LIKE;
-            tty_parse_client_features(client_owner, c"bpaste,focus,title".as_ptr(), c",".as_ptr());
+            tty_parse_client_features(client_owner, c"bpaste,focus,title", c",");
         }
-        if (tty_term_flag(term, TTYC_TC) != 0 || tty_term_has(term, TTYC_RGB) != 0)
-            && (tty_term_has(term, TTYC_SETRGBF) == 0 || tty_term_has(term, TTYC_SETRGBB) == 0)
+        if (tty_term_flag(&*term, TTYC_TC) != 0 || tty_term_has(&*term, TTYC_RGB) != 0)
+            && (tty_term_has(&*term, TTYC_SETRGBF) == 0 || tty_term_has(&*term, TTYC_SETRGBB) == 0)
         {
-            tty_parse_client_features(client_owner, c"RGB".as_ptr(), c",".as_ptr());
+            tty_parse_client_features(client_owner, c"RGB", c",");
         }
         let applied = tty_apply_features(term, client_owner.terminal_feature_mask());
         if applied.enable_utf8 {
@@ -1479,7 +1475,7 @@ pub unsafe fn tty_term_create(
             log_debug(format_args!(
                 "{}{}",
                 log_cstr(CStr::from_ptr(name)),
-                log_cstr(&tty_term_describe(term, i as tty_code_code))
+                log_cstr(&tty_term_describe(&*term, i as tty_code_code))
             ));
             i = i.wrapping_add(1);
         }
@@ -1512,7 +1508,6 @@ impl Drop for tty_term {
 
 pub(crate) unsafe fn tty_term_read_list(name: &CStr) -> Result<Vec<CString>, CString> {
     let fd: ::core::ffi::c_int = STDIN_FILENO;
-    let mut ent: *const tty_term_code_entry = ::core::ptr::null::<tty_term_code_entry>();
     let mut error: ::core::ffi::c_int = 0;
     let mut n: ::core::ffi::c_int = 0;
     let mut i: u_int = 0;
@@ -1536,13 +1531,13 @@ pub(crate) unsafe fn tty_term_read_list(name: &CStr) -> Result<Vec<CString>, CSt
     let mut current_block_23: u64;
     i = 0 as u_int;
     while i < tty_term_ncodes() {
-        ent = (&raw const tty_term_codes as *const tty_term_code_entry).offset(i as isize);
-        match (*ent).type_0 as ::core::ffi::c_uint {
+        let ent = &tty_term_codes[i as usize];
+        match ent.type_0 as ::core::ffi::c_uint {
             0 => {
                 current_block_23 = 1856101646708284338;
             }
             1 => {
-                s = tigetstr((*ent).name.as_ptr().cast_mut());
+                s = tigetstr(ent.name.as_ptr().cast_mut());
                 if s.is_null()
                     || std::ptr::eq(s, -(1 as ::core::ffi::c_int) as *mut ::core::ffi::c_char)
                 {
@@ -1552,7 +1547,7 @@ pub(crate) unsafe fn tty_term_read_list(name: &CStr) -> Result<Vec<CString>, CSt
                 }
             }
             2 => {
-                n = tigetnum((*ent).name.as_ptr().cast_mut());
+                n = tigetnum(ent.name.as_ptr().cast_mut());
                 if n == -(1 as ::core::ffi::c_int) || n == -(2 as ::core::ffi::c_int) {
                     current_block_23 = 1856101646708284338;
                 } else {
@@ -1562,7 +1557,7 @@ pub(crate) unsafe fn tty_term_read_list(name: &CStr) -> Result<Vec<CString>, CSt
                 }
             }
             3 => {
-                n = tigetflag((*ent).name.as_ptr().cast_mut());
+                n = tigetflag(ent.name.as_ptr().cast_mut());
                 if n == -(1 as ::core::ffi::c_int) {
                     current_block_23 = 1856101646708284338;
                 } else {
@@ -1579,7 +1574,7 @@ pub(crate) unsafe fn tty_term_read_list(name: &CStr) -> Result<Vec<CString>, CSt
             }
         }
         if current_block_23 == 14763689060501151050 {
-            let name = (*ent).name.to_bytes();
+            let name = ent.name.to_bytes();
             let value = CStr::from_ptr(s).to_bytes();
             let mut cap = Vec::with_capacity(name.len() + 1 + value.len());
             cap.extend_from_slice(name);
@@ -1598,20 +1593,16 @@ pub fn tty_term_owner_ptr(owner: &Option<Box<tty_term>>) -> Option<&tty_term> {
     owner.as_deref()
 }
 
-pub unsafe fn tty_term_has(
-    mut term: *const tty_term,
-    mut code: tty_code_code,
-) -> ::core::ffi::c_int {
-    (!matches!((&(*term).codes)[code as usize], tty_code::None)) as ::core::ffi::c_int
+pub unsafe fn tty_term_has(term: &tty_term, mut code: tty_code_code) -> ::core::ffi::c_int {
+    (!matches!((&term.codes)[code as usize], tty_code::None)) as ::core::ffi::c_int
 }
-pub unsafe fn tty_term_has_name(
-    mut term: *const tty_term,
-    mut name: *const ::core::ffi::c_char,
-) -> ::core::ffi::c_int {
+pub unsafe fn tty_term_has_name(term: &tty_term, name: &CStr) -> ::core::ffi::c_int {
     let mut i: u_int = 0;
     i = 0 as u_int;
     while i < tty_term_ncodes() {
-        if strcmp(tty_term_codes[i as usize].name.as_ptr(), name) == 0 as ::core::ffi::c_int {
+        if strcmp(tty_term_codes[i as usize].name.as_ptr(), name.as_ptr())
+            == 0 as ::core::ffi::c_int
+        {
             return tty_term_has(term, i as tty_code_code);
         }
         i = i.wrapping_add(1);
@@ -1626,7 +1617,7 @@ pub unsafe fn tty_term_string(term: &tty_term, code: tty_code_code) -> &std::ffi
     }
 }
 pub unsafe fn tty_term_string_i(
-    mut term: *const tty_term,
+    term: &tty_term,
     mut code: tty_code_code,
     mut a: ::core::ffi::c_int,
 ) -> std::ffi::CString {
@@ -1643,7 +1634,7 @@ pub unsafe fn tty_term_string_i(
     std::ffi::CStr::from_ptr(s).to_owned()
 }
 pub unsafe fn tty_term_string_ii(
-    mut term: *const tty_term,
+    term: &tty_term,
     mut code: tty_code_code,
     mut a: ::core::ffi::c_int,
     mut b: ::core::ffi::c_int,
@@ -1661,7 +1652,7 @@ pub unsafe fn tty_term_string_ii(
     std::ffi::CStr::from_ptr(s).to_owned()
 }
 pub unsafe fn tty_term_string_iii(
-    mut term: *const tty_term,
+    term: &tty_term,
     mut code: tty_code_code,
     mut a: ::core::ffi::c_int,
     mut b: ::core::ffi::c_int,
@@ -1680,13 +1671,18 @@ pub unsafe fn tty_term_string_iii(
     std::ffi::CStr::from_ptr(s).to_owned()
 }
 pub unsafe fn tty_term_string_s(
-    mut term: *const tty_term,
+    term: &tty_term,
     mut code: tty_code_code,
-    mut a: *const ::core::ffi::c_char,
+    a: &CStr,
 ) -> std::ffi::CString {
     let mut x: *const ::core::ffi::c_char = tty_term_string(&*(term), code).as_ptr();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    s = tiparm_s(1 as ::core::ffi::c_int, 1 as ::core::ffi::c_int, x, a);
+    s = tiparm_s(
+        1 as ::core::ffi::c_int,
+        1 as ::core::ffi::c_int,
+        x,
+        a.as_ptr(),
+    );
     if s.is_null() {
         log_debug(format_args!(
             "could not expand {}",
@@ -1697,14 +1693,20 @@ pub unsafe fn tty_term_string_s(
     std::ffi::CStr::from_ptr(s).to_owned()
 }
 pub unsafe fn tty_term_string_ss(
-    mut term: *const tty_term,
+    term: &tty_term,
     mut code: tty_code_code,
-    mut a: *const ::core::ffi::c_char,
-    mut b: *const ::core::ffi::c_char,
+    a: &CStr,
+    b: &CStr,
 ) -> std::ffi::CString {
     let mut x: *const ::core::ffi::c_char = tty_term_string(&*(term), code).as_ptr();
     let mut s: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    s = tiparm_s(2 as ::core::ffi::c_int, 3 as ::core::ffi::c_int, x, a, b);
+    s = tiparm_s(
+        2 as ::core::ffi::c_int,
+        3 as ::core::ffi::c_int,
+        x,
+        a.as_ptr(),
+        b.as_ptr(),
+    );
     if s.is_null() {
         log_debug(format_args!(
             "could not expand {}",
@@ -1714,23 +1716,23 @@ pub unsafe fn tty_term_string_ss(
     }
     std::ffi::CStr::from_ptr(s).to_owned()
 }
-pub unsafe fn tty_term_number(term: *const tty_term, code: tty_code_code) -> ::core::ffi::c_int {
-    match &(&(*term).codes)[code as usize] {
+pub unsafe fn tty_term_number(term: &tty_term, code: tty_code_code) -> ::core::ffi::c_int {
+    match &(&term.codes)[code as usize] {
         tty_code::None => 0,
         tty_code::Number(value) => *value,
         _ => fatalx(|out| write!(out, "not a number: {}", (code) as i32)),
     }
 }
-pub unsafe fn tty_term_flag(term: *const tty_term, code: tty_code_code) -> ::core::ffi::c_int {
-    match &(&(*term).codes)[code as usize] {
+pub unsafe fn tty_term_flag(term: &tty_term, code: tty_code_code) -> ::core::ffi::c_int {
+    match &(&term.codes)[code as usize] {
         tty_code::None => 0,
         tty_code::Flag(value) => *value,
         _ => fatalx(|out| write!(out, "not a flag: {}", (code) as i32)),
     }
 }
-pub unsafe fn tty_term_describe(term: *const tty_term, code: tty_code_code) -> CString {
+pub unsafe fn tty_term_describe(term: &tty_term, code: tty_code_code) -> CString {
     let mut escaped: [::core::ffi::c_char; 128] = [0; 128];
-    match &(&(*term).codes)[code as usize] {
+    match &(&term.codes)[code as usize] {
         tty_code::None => format_message_with(|out| {
             write!(out, "{:4}: ", { code })?;
             out.write_all(tty_term_codes[code as usize].name.to_bytes())?;

@@ -5,9 +5,7 @@ use crate::src::compat::strtonum::strtonum;
 use std::ffi::CStr;
 
 pub(crate) fn decimal_in_range(input: &CStr, min: i64, max: i64) -> Option<i64> {
-    let mut error = std::ptr::null();
-    let value = unsafe { strtonum(input.as_ptr(), min, max, &mut error) };
-    error.is_null().then_some(value)
+    unsafe { strtonum(input, min, max) }.ok()
 }
 
 /// Keep strtoull's optional whitespace, sign, and 0x prefix semantics, and

@@ -10,6 +10,7 @@ use crate::src::compat::strtonum::strtonum;
 use crate::src::environ::{environ_create, environ_put, environ_update};
 use crate::src::events::events_fire_session;
 use crate::src::ffi::libc::{sscanf, strcmp};
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
 use crate::src::options::{options_get_number, options_get_string, options_set_string};
@@ -126,7 +127,6 @@ unsafe fn cmd_new_session_exec(
     };
     let mut tiop: *mut termios = ::core::ptr::null_mut::<termios>();
     let mut sg: *mut session_group = ::core::ptr::null_mut::<session_group>();
-    let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut template: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut group: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut tmp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
@@ -249,15 +249,19 @@ unsafe fn cmd_new_session_exec(
             if let Some(as_0_value) = as_0.as_ref() {
                 retval = cmd_attach_session(
                     item_handle,
-                    (as_0_value.name()).as_ptr().cast_mut(),
+                    Some(&*(as_0_value.name())),
                     args_has(args, 'D' as i32 as u_char),
                     args_has(args, 'X' as i32 as u_char),
                     0 as ::core::ffi::c_int,
-                    args_get(&*(args), 'c' as i32 as u_char)
-                        .map_or(std::ptr::null(), |value| value.as_ptr()),
+                    nullable_cstr(
+                        args_get(&*(args), 'c' as i32 as u_char)
+                            .map_or(std::ptr::null(), |value| value.as_ptr()),
+                    ),
                     args_has(args, 'E' as i32 as u_char),
-                    args_get(&*(args), 'f' as i32 as u_char)
-                        .map_or(std::ptr::null(), |value| value.as_ptr()),
+                    nullable_cstr(
+                        args_get(&*(args), 'f' as i32 as u_char)
+                            .map_or(std::ptr::null(), |value| value.as_ptr()),
+                    ),
                 );
                 return retval;
             }
@@ -268,7 +272,7 @@ unsafe fn cmd_new_session_exec(
         {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"duplicate session: ")?;
-                write_cstr(out, sname)
+                write_cstr(out, nullable_cstr(sname))
             });
         } else {
             group = args_get(&*(args), 't' as i32 as u_char)
@@ -277,7 +281,7 @@ unsafe fn cmd_new_session_exec(
                 groupwith_owner = (*target).s.upgrade();
                 groupwith = groupwith_owner.clone();
                 if groupwith.is_none() {
-                    sg = session_group_find(group);
+                    sg = session_group_find(CStr::from_ptr(group));
                 } else {
                     sg = crate::src::session::session_group_for(
                         &groupwith
@@ -294,7 +298,7 @@ unsafe fn cmd_new_session_exec(
                 } else if !check_name(CStr::from_ptr(group)) {
                     cmdq_error(item_handle, |out| {
                         out.write_all(b"invalid session group name: ")?;
-                        write_cstr(out, group)
+                        write_cstr(out, nullable_cstr(group))
                     });
                     current_block = 5193972633326621385;
                 } else {
@@ -405,14 +409,13 @@ unsafe fn cmd_new_session_exec(
                                             }
                                             current_block = 5873035170358615968;
                                         } else {
-                                            dsx = strtonum(
-                                                tmp,
+                                            let parsed = strtonum(
+                                                CStr::from_ptr(tmp),
                                                 1 as ::core::ffi::c_longlong,
                                                 USHRT_MAX as ::core::ffi::c_longlong,
-                                                &raw mut errstr,
-                                            )
-                                                as u_int;
-                                            if !errstr.is_null() {
+                                            );
+                                            dsx = parsed.unwrap_or(0) as u_int;
+                                            if let Err(errstr) = parsed {
                                                 cmdq_error(item_handle, |out| {
                                                     out.write_all(b"width ")?;
                                                     write_cstr(out, errstr)
@@ -444,14 +447,13 @@ unsafe fn cmd_new_session_exec(
                                                     }
                                                     current_block = 15855550149339537395;
                                                 } else {
-                                                    dsy = strtonum(
-                                                        tmp,
+                                                    let parsed = strtonum(
+                                                        CStr::from_ptr(tmp),
                                                         1 as ::core::ffi::c_longlong,
                                                         USHRT_MAX as ::core::ffi::c_longlong,
-                                                        &raw mut errstr,
-                                                    )
-                                                        as u_int;
-                                                    if !errstr.is_null() {
+                                                    );
+                                                    dsy = parsed.unwrap_or(0) as u_int;
+                                                    if let Err(errstr) = parsed {
                                                         cmdq_error(item_handle, |out| {
                                                             out.write_all(b"height ")?;
                                                             write_cstr(out, errstr)
@@ -574,7 +576,8 @@ unsafe fn cmd_new_session_exec(
                                                         environ_put(
                                                             env.as_deref_mut()
                                                                 .expect("environment"),
-                                                            av.string_ptr(),
+                                                            av.as_string()
+                                                                .expect("string argument"),
                                                             0 as ::core::ffi::c_int,
                                                         );
                                                     }
@@ -611,13 +614,7 @@ unsafe fn cmd_new_session_exec(
                                                             out.write_all(
                                                                 b"create window failed: ",
                                                             )?;
-                                                            write_cstr(
-                                                                out,
-                                                                cause.as_ref().map_or(
-                                                                    ::core::ptr::null(),
-                                                                    |value| value.as_ptr(),
-                                                                ),
-                                                            )
+                                                            write_cstr(out, cause.as_deref())
                                                         });
                                                     } else {
                                                         if !group.is_null() {
@@ -626,15 +623,20 @@ unsafe fn cmd_new_session_exec(
                                                                     groupwith.as_ref()
                                                                 {
                                                                     sg = session_group_new(
-                                                                        (groupwith_value.name())
+                                                                        CStr::from_ptr(
+                                                                            (groupwith_value
+                                                                                .name())
                                                                             .as_ptr()
                                                                             .cast_mut(),
+                                                                        ),
                                                                     );
                                                                     session_group_add(
                                                                         sg, groupwith_owner.as_ref().expect("retained group session"),
                                                                     );
                                                                 } else {
-                                                                    sg = session_group_new(group);
+                                                                    sg = session_group_new(
+                                                                        CStr::from_ptr(group),
+                                                                    );
                                                                 }
                                                             }
                                                             session_group_add(sg, &session_owner);
@@ -656,7 +658,7 @@ unsafe fn cmd_new_session_exec(
                                                                 );
                                                         }
                                                         events_fire_session(
-                                                            c"session-created".as_ptr(),
+                                                            c"session-created",
                                                             s.clone().expect("live session"),
                                                         );
                                                         if detached == 0 {

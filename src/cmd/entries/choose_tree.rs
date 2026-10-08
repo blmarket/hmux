@@ -1,6 +1,7 @@
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::queue::cmdq_error;
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::paste::paste_is_empty;
 use crate::src::server_client::Client as _;
 use crate::src::shared::client::ClientRef;
@@ -194,9 +195,9 @@ unsafe fn cmd_choose_tree_exec(
     let wp = (*target).pane_handle();
 
     let mut order: sort_order = SORT_ACTIVITY;
-    order = sort_order_from_string(
+    order = sort_order_from_string(nullable_cstr(
         args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
-    );
+    ));
     if order as ::core::ffi::c_uint == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
     {

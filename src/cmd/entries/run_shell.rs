@@ -9,6 +9,7 @@ use crate::src::cmd::queue::{
     cmdq_get_target_client, cmdq_insert_after, cmdq_print,
 };
 use crate::src::ffi::libc::strtod;
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::xformat;
 use crate::src::format::{
@@ -91,7 +92,7 @@ fn cmd_run_shell_args_parse(
     }
     Ok(ARGS_PARSE_STRING)
 }
-unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, msg: *const ::core::ffi::c_char) {
+unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, msg: &CStr) {
     let item_owner = cdata.item.upgrade();
     if cdata.wait && item_owner.is_none() {
         return;
@@ -103,7 +104,7 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, msg: *const ::core::ff
     };
     if pane.is_none() {
         if let Some(item) = item_owner.as_ref() {
-            cmdq_print(item, |out| write_cstr(out, msg));
+            cmdq_print(item, |out| write_cstr(out, nullable_cstr(msg.as_ptr())));
             return;
         }
         pane = cdata
@@ -131,7 +132,7 @@ unsafe fn cmd_run_shell_print(cdata: &cmd_run_shell_data, msg: *const ::core::ff
     if !pane.is_mode(&window_view_mode) {
         pane.set_mode(None, &window_view_mode, None, None, None);
     }
-    window_copy_add(&pane, 1, |out| write_cstr(out, msg));
+    window_copy_add(&pane, 1, |out| write_cstr(out, nullable_cstr(msg.as_ptr())));
 }
 fn cmd_run_shell_status_message(cmd: &CStr, suffix: &[u8], code: ::core::ffi::c_int) -> CString {
     let cmd = cmd.to_bytes();
@@ -175,7 +176,7 @@ unsafe fn cmd_run_shell_exec(
         if *end as ::core::ffi::c_int != '\0' as i32 {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"invalid delay time: ")?;
-                write_cstr(out, delay)
+                write_cstr(out, nullable_cstr(delay))
             });
             return CMD_RETURN_ERROR;
         }
@@ -213,8 +214,10 @@ unsafe fn cmd_run_shell_exec(
                     |out| {
                         write_cstr(
                             out,
-                            args_string(&mut *(args), i)
-                                .map_or(std::ptr::null(), |value| value.as_ptr()),
+                            nullable_cstr(
+                                args_string(&mut *(args), i)
+                                    .map_or(std::ptr::null(), |value| value.as_ptr()),
+                            ),
                         )
                     },
                 );
@@ -313,7 +316,7 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
                     0 as ::core::ffi::c_int,
                     |out| {
                         out.write_all(b"failed to run command: ")?;
-                        write_cstr(out, cmd.unwrap().as_ptr())
+                        write_cstr(out, &*(cmd.unwrap()))
                     },
                 );
             } else {
@@ -321,7 +324,7 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
                     item_owner.as_ref().expect("live command queue item"),
                     |out| {
                         out.write_all(b"failed to run command: ")?;
-                        write_cstr(out, cmd.unwrap().as_ptr())
+                        write_cstr(out, &*(cmd.unwrap()))
                     },
                 );
                 cmdq_continue(item_owner.as_ref().expect("live command queue item"));
@@ -356,12 +359,12 @@ unsafe fn cmd_run_shell_timer(mut cdata: Box<cmd_run_shell_data>) {
                     1 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
-                    |out| write_cstr(out, error_ptr),
+                    |out| write_cstr(out, nullable_cstr(error_ptr)),
                 );
             } else {
                 cmdq_error(
                     item_owner.as_ref().expect("live command queue item"),
-                    |out| write_cstr(out, error_ptr),
+                    |out| write_cstr(out, nullable_cstr(error_ptr)),
                 );
             }
         }
@@ -390,11 +393,7 @@ unsafe fn cmd_run_shell_callback(completion: JobCompletion, cdata: &cmd_run_shel
     }
     let mut event = evbuffer_new();
     if !completion.output.is_empty() {
-        evbuffer_add(
-            &mut event,
-            completion.output.as_ptr().cast(),
-            completion.output.len(),
-        );
+        evbuffer_add(&mut event, &completion.output);
     }
     let item = item_owner
         .as_ref()
@@ -408,13 +407,13 @@ unsafe fn cmd_run_shell_callback(completion: JobCompletion, cdata: &cmd_run_shel
     let mut size: size_t = 0;
     let mut retcode: ::core::ffi::c_int = 0;
     while let Some(line) = evbuffer_readln(&mut event) {
-        cmd_run_shell_print(cdata, line.as_ptr().cast());
+        cmd_run_shell_print(cdata, CStr::from_ptr(line.as_ptr().cast()));
     }
     size = evbuffer_get_length(&event);
     if size != 0 as size_t {
         let mut partial_line = evbuffer_pullup(&mut event, -1).unwrap_or_default().to_vec();
         partial_line.push(0);
-        cmd_run_shell_print(cdata, partial_line.as_ptr().cast());
+        cmd_run_shell_print(cdata, CStr::from_ptr(partial_line.as_ptr().cast()));
     }
     match completion.status {
         JobExitStatus::Exited(code) => {
@@ -437,7 +436,7 @@ unsafe fn cmd_run_shell_callback(completion: JobCompletion, cdata: &cmd_run_shel
         }
     }
     if let Some(msg) = msg.as_ref() {
-        cmd_run_shell_print(cdata, msg.as_ptr());
+        cmd_run_shell_print(cdata, &*msg);
     }
     if cdata.wait {
         if let Some(client) = cmdq_get_client((item).as_ref()) {

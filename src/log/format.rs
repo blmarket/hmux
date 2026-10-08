@@ -4,7 +4,7 @@
 //! `strvis` again: doing so would double the backslashes in these arguments.
 use crate::src::compat::vis::vis;
 use crate::src::shared::vis::{VIS_CSTYLE, VIS_NL, VIS_OCTAL, VIS_TAB};
-use std::ffi::{c_char, c_int, c_void, CStr};
+use std::ffi::{c_char, c_int, CStr};
 use std::fmt;
 
 /// Display bytes using the logger's existing escaping, stopping at the first NUL.
@@ -45,61 +45,37 @@ pub fn log_cstr(s: &CStr) -> impl fmt::Display + '_ {
     LogBytes(s.to_bytes())
 }
 
-/// A deferred read of a C string, optionally bounded like printf's `%.*s`.
-pub struct LogCStr {
-    ptr: *const c_char,
-    precision: Option<c_int>,
+/// Bytes of a C string, padded like printf's `%*s` before escaping.
+pub struct LogCStr<'a> {
+    bytes: &'a [u8],
     width: c_int,
 }
 
-/// Display a C string pointer with printf's byte precision (negative means
-/// unlimited). Null prints like glibc's `%.*s`.
-///
-/// # Safety
-/// A non-null pointer must be readable up to the first NUL or `precision` bytes,
-/// whichever comes first, until formatting completes. Negative precision
-/// requires NUL termination.
-pub unsafe fn log_cstr_n(ptr: *const c_char, precision: c_int) -> LogCStr {
+/// Display a byte buffer up to its first NUL, like printf's `%.*s` with the
+/// buffer length as the precision.
+pub fn log_cstr_n(bytes: &[u8]) -> LogCStr<'_> {
+    let len = bytes
+        .iter()
+        .position(|&byte| byte == 0)
+        .unwrap_or(bytes.len());
     LogCStr {
-        ptr,
-        precision: Some(precision),
+        bytes: &bytes[..len],
         width: 0,
     }
 }
 
-/// Display a C string pointer, padding to a byte width before escaping.
-/// Negative widths select left alignment, as with printf's `%*s`.
-///
-/// # Safety
-/// A non-null pointer must remain a readable NUL-terminated string until the
-/// returned argument has been formatted or dropped. Null prints `(null)`.
-pub unsafe fn log_cstr_width(ptr: *const c_char, width: c_int) -> LogCStr {
+/// Display a C string, padding to a byte width before escaping. Negative
+/// widths select left alignment, as with printf's `%*s`.
+pub fn log_cstr_width(s: &CStr, width: c_int) -> LogCStr<'_> {
     LogCStr {
-        ptr,
-        precision: None,
+        bytes: s.to_bytes(),
         width,
     }
 }
 
-impl fmt::Display for LogCStr {
+impl fmt::Display for LogCStr<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let precision = self.precision.filter(|&n| n >= 0).map(|n| n as usize);
-        let bytes = if self.ptr.is_null() {
-            // Match glibc's precision handling of a null %s argument.
-            if precision.is_some_and(|n| n < 6) {
-                b"".as_slice()
-            } else {
-                b"(null)"
-            }
-        } else {
-            unsafe {
-                let len = match precision {
-                    Some(limit) => libc::strnlen(self.ptr, limit),
-                    None => CStr::from_ptr(self.ptr).to_bytes().len(),
-                };
-                std::slice::from_raw_parts(self.ptr.cast(), len)
-            }
-        };
+        let bytes = self.bytes;
         let padding = (self.width.unsigned_abs() as usize).saturating_sub(bytes.len());
         if self.width >= 0 {
             for _ in 0..padding {
@@ -132,7 +108,7 @@ pub fn log_byte(byte: u8) -> impl fmt::Display {
 }
 
 /// Preserve libc's `(nil)` spelling for a null pointer.
-pub fn log_pointer(ptr: *const c_void) -> impl fmt::Display {
+pub fn log_pointer<T: ?Sized>(ptr: *const T) -> impl fmt::Display {
     struct Pointer(usize);
     impl fmt::Display for Pointer {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

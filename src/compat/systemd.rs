@@ -18,8 +18,6 @@ use crate::src::tmux::socket_path;
 use std::ffi::{CStr, CString};
 use std::time::Instant;
 
-static mut SYSTEMD_SOCKET_PATH: Option<CString> = None;
-
 struct ForeignCString(*mut ::core::ffi::c_char);
 
 impl ForeignCString {
@@ -146,10 +144,7 @@ pub unsafe fn systemd_create_socket(
         } else {
             match hmux_rt::unix::socket_path(std::os::fd::BorrowedFd::borrow_raw(fd)) {
                 Ok(path) => {
-                    let path = path.unwrap_or_default();
-                    let path_ptr = path.as_ptr();
-                    SYSTEMD_SOCKET_PATH = Some(path);
-                    socket_path = path_ptr;
+                    socket_path = Some(path.unwrap_or_default());
                     return Ok(fd);
                 }
                 Err(error) => *__errno_location() = error.raw_os_error().unwrap_or(libc::EIO),
@@ -177,12 +172,7 @@ unsafe extern "C" fn job_removed_handler(
     let Some(watch_path) = (*watch).path.as_ref() else {
         return 0 as ::core::ffi::c_int;
     };
-    r = sd_bus_message_read(
-        m,
-        b"uo\0" as *const u8 as *const ::core::ffi::c_char,
-        &raw mut id,
-        &raw mut path,
-    );
+    r = sd_bus_message_read(m, c"uo".as_ptr(), &raw mut id, &raw mut path);
     if r < 0 as ::core::ffi::c_int {
         return r;
     }
@@ -222,17 +212,17 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
     if r < 0 as ::core::ffi::c_int {
         set_systemd_error!(
             cause,
-            b"failed to connect to session bus: %s\0" as *const u8 as *const ::core::ffi::c_char,
+            c"failed to connect to session bus: %s".as_ptr(),
             strerror(-r),
         );
     } else {
         r = sd_bus_match_signal(
             bus,
             &raw mut slot,
-            b"org.freedesktop.systemd1\0" as *const u8 as *const ::core::ffi::c_char,
-            b"/org/freedesktop/systemd1\0" as *const u8 as *const ::core::ffi::c_char,
-            b"org.freedesktop.systemd1.Manager\0" as *const u8 as *const ::core::ffi::c_char,
-            b"JobRemoved\0" as *const u8 as *const ::core::ffi::c_char,
+            c"org.freedesktop.systemd1".as_ptr(),
+            c"/org/freedesktop/systemd1".as_ptr(),
+            c"org.freedesktop.systemd1.Manager".as_ptr(),
+            c"JobRemoved".as_ptr(),
             Some(
                 job_removed_handler
                     as unsafe extern "C" fn(
@@ -246,23 +236,22 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
         if r < 0 as ::core::ffi::c_int {
             set_systemd_error!(
                 cause,
-                b"failed to create match signal: %s\0" as *const u8 as *const ::core::ffi::c_char,
+                c"failed to create match signal: %s".as_ptr(),
                 strerror(-r),
             );
         } else {
             r = sd_bus_message_new_method_call(
                 bus,
                 &raw mut m,
-                b"org.freedesktop.systemd1\0" as *const u8 as *const ::core::ffi::c_char,
-                b"/org/freedesktop/systemd1\0" as *const u8 as *const ::core::ffi::c_char,
-                b"org.freedesktop.systemd1.Manager\0" as *const u8 as *const ::core::ffi::c_char,
-                b"StartTransientUnit\0" as *const u8 as *const ::core::ffi::c_char,
+                c"org.freedesktop.systemd1".as_ptr(),
+                c"/org/freedesktop/systemd1".as_ptr(),
+                c"org.freedesktop.systemd1.Manager".as_ptr(),
+                c"StartTransientUnit".as_ptr(),
             );
             if r < 0 as ::core::ffi::c_int {
                 set_systemd_error!(
                     cause,
-                    b"failed to create bus message: %s\0" as *const u8
-                        as *const ::core::ffi::c_char,
+                    c"failed to create bus message: %s".as_ptr(),
                     strerror(-r),
                 );
             } else {
@@ -270,7 +259,7 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                 if r < 0 as ::core::ffi::c_int {
                     set_systemd_error!(
                         cause,
-                        b"failed to generate uuid: %s\0" as *const u8 as *const ::core::ffi::c_char,
+                        c"failed to generate uuid: %s".as_ptr(),
                         strerror(-r),
                     );
                 } else {
@@ -286,42 +275,31 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                     }
                     scope.extend_from_slice(b".scope");
                     let name = CString::new(scope).expect("systemd scope name contains no NUL");
-                    r = sd_bus_message_append(
-                        m,
-                        b"s\0" as *const u8 as *const ::core::ffi::c_char,
-                        name.as_ptr(),
-                    );
+                    r = sd_bus_message_append(m, c"s".as_ptr(), name.as_ptr());
                     if r < 0 as ::core::ffi::c_int {
                         set_systemd_error!(
                             cause,
-                            b"failed to append to bus message: %s\0" as *const u8
-                                as *const ::core::ffi::c_char,
+                            c"failed to append to bus message: %s".as_ptr(),
                             strerror(-r),
                         );
                     } else {
-                        r = sd_bus_message_append(
-                            m,
-                            b"s\0" as *const u8 as *const ::core::ffi::c_char,
-                            b"fail\0" as *const u8 as *const ::core::ffi::c_char,
-                        );
+                        r = sd_bus_message_append(m, c"s".as_ptr(), c"fail".as_ptr());
                         if r < 0 as ::core::ffi::c_int {
                             set_systemd_error!(
                                 cause,
-                                b"failed to append to bus message: %s\0" as *const u8
-                                    as *const ::core::ffi::c_char,
+                                c"failed to append to bus message: %s".as_ptr(),
                                 strerror(-r),
                             );
                         } else {
                             r = sd_bus_message_open_container(
                                 m,
                                 'a' as i32 as ::core::ffi::c_char,
-                                b"(sv)\0" as *const u8 as *const ::core::ffi::c_char,
+                                c"(sv)".as_ptr(),
                             );
                             if r < 0 as ::core::ffi::c_int {
                                 set_systemd_error!(
                                     cause,
-                                    b"failed to start properties array: %s\0" as *const u8
-                                        as *const ::core::ffi::c_char,
+                                    c"failed to start properties array: %s".as_ptr(),
                                     strerror(-r),
                                 );
                             } else {
@@ -334,31 +312,29 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                 .expect("systemd pane description contains no NUL");
                                 r = sd_bus_message_append(
                                     m,
-                                    b"(sv)\0" as *const u8 as *const ::core::ffi::c_char,
-                                    b"Description\0" as *const u8 as *const ::core::ffi::c_char,
-                                    b"s\0" as *const u8 as *const ::core::ffi::c_char,
+                                    c"(sv)".as_ptr(),
+                                    c"Description".as_ptr(),
+                                    c"s".as_ptr(),
                                     desc.as_ptr(),
                                 );
                                 if r < 0 as ::core::ffi::c_int {
                                     set_systemd_error!(
                                         cause,
-                                        b"failed to append to properties: %s\0" as *const u8
-                                            as *const ::core::ffi::c_char,
+                                        c"failed to append to properties: %s".as_ptr(),
                                         strerror(-r),
                                     );
                                 } else {
                                     r = sd_bus_message_append(
                                         m,
-                                        b"(sv)\0" as *const u8 as *const ::core::ffi::c_char,
-                                        b"SendSIGHUP\0" as *const u8 as *const ::core::ffi::c_char,
-                                        b"b\0" as *const u8 as *const ::core::ffi::c_char,
+                                        c"(sv)".as_ptr(),
+                                        c"SendSIGHUP".as_ptr(),
+                                        c"b".as_ptr(),
                                         1 as ::core::ffi::c_int,
                                     );
                                     if r < 0 as ::core::ffi::c_int {
                                         set_systemd_error!(
                                             cause,
-                                            b"failed to append to properties: %s\0" as *const u8
-                                                as *const ::core::ffi::c_char,
+                                            c"failed to append to properties: %s".as_ptr(),
                                             strerror(-r),
                                         );
                                     } else {
@@ -374,9 +350,9 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                             .map_or(slice_owner.as_ptr(), |value| value.as_ptr());
                                         r = sd_bus_message_append(
                                             m,
-                                            b"(sv)\0" as *const u8 as *const ::core::ffi::c_char,
-                                            b"Slice\0" as *const u8 as *const ::core::ffi::c_char,
-                                            b"s\0" as *const u8 as *const ::core::ffi::c_char,
+                                            c"(sv)".as_ptr(),
+                                            c"Slice".as_ptr(),
+                                            c"s".as_ptr(),
                                             slice_ptr,
                                         );
                                         drop(slice_owner);
@@ -384,47 +360,37 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                         if r < 0 as ::core::ffi::c_int {
                                             set_systemd_error!(
                                                 cause,
-                                                b"failed to append to properties: %s\0" as *const u8
-                                                    as *const ::core::ffi::c_char,
+                                                c"failed to append to properties: %s".as_ptr(),
                                                 strerror(-r),
                                             );
                                         } else {
                                             r = sd_bus_message_append(
                                                 m,
-                                                b"(sv)\0" as *const u8
-                                                    as *const ::core::ffi::c_char,
-                                                b"PIDs\0" as *const u8
-                                                    as *const ::core::ffi::c_char,
-                                                b"au\0" as *const u8 as *const ::core::ffi::c_char,
+                                                c"(sv)".as_ptr(),
+                                                c"PIDs".as_ptr(),
+                                                c"au".as_ptr(),
                                                 1 as ::core::ffi::c_int,
                                                 pid,
                                             );
                                             if r < 0 as ::core::ffi::c_int {
                                                 set_systemd_error!(
                                                     cause,
-                                                    b"failed to append to properties: %s\0"
-                                                        as *const u8
-                                                        as *const ::core::ffi::c_char,
+                                                    c"failed to append to properties: %s".as_ptr(),
                                                     strerror(-r),
                                                 );
                                             } else {
                                                 r = sd_bus_message_append(
                                                     m,
-                                                    b"(sv)\0" as *const u8
-                                                        as *const ::core::ffi::c_char,
-                                                    b"CollectMode\0" as *const u8
-                                                        as *const ::core::ffi::c_char,
-                                                    b"s\0" as *const u8
-                                                        as *const ::core::ffi::c_char,
-                                                    b"inactive-or-failed\0" as *const u8
-                                                        as *const ::core::ffi::c_char,
+                                                    c"(sv)".as_ptr(),
+                                                    c"CollectMode".as_ptr(),
+                                                    c"s".as_ptr(),
+                                                    c"inactive-or-failed".as_ptr(),
                                                 );
                                                 if r < 0 as ::core::ffi::c_int {
                                                     set_systemd_error!(
                                                         cause,
-                                                        b"failed to append to properties: %s\0"
-                                                            as *const u8
-                                                            as *const ::core::ffi::c_char,
+                                                        c"failed to append to properties: %s"
+                                                            .as_ptr(),
                                                         strerror(-r),
                                                     );
                                                 } else {
@@ -449,24 +415,18 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                                     if have_unit {
                                                         r = sd_bus_message_append(
                                                             m,
-                                                            b"(sv)\0" as *const u8
-                                                                as *const ::core::ffi::c_char,
-                                                            b"Before\0" as *const u8
-                                                                as *const ::core::ffi::c_char,
-                                                            b"as\0" as *const u8
-                                                                as *const ::core::ffi::c_char,
+                                                            c"(sv)".as_ptr(),
+                                                            c"Before".as_ptr(),
+                                                            c"as".as_ptr(),
                                                             1 as ::core::ffi::c_int,
                                                             unit_owner.as_ptr(),
                                                         );
                                                         if r >= 0 as ::core::ffi::c_int {
                                                             r = sd_bus_message_append(
                                                                 m,
-                                                                b"(sv)\0" as *const u8
-                                                                    as *const ::core::ffi::c_char,
-                                                                b"PartOf\0" as *const u8
-                                                                    as *const ::core::ffi::c_char,
-                                                                b"as\0" as *const u8
-                                                                    as *const ::core::ffi::c_char,
+                                                                c"(sv)".as_ptr(),
+                                                                c"PartOf".as_ptr(),
+                                                                c"as".as_ptr(),
                                                                 1 as ::core::ffi::c_int,
                                                                 unit_owner.as_ptr(),
                                                             );
@@ -475,8 +435,7 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                                         if r < 0 as ::core::ffi::c_int {
                                                             set_systemd_error!(
                                                                 cause,
-                                                                b"failed to append to properties: %s\0" as *const u8
-                                                                    as *const ::core::ffi::c_char,
+                                                                c"failed to append to properties: %s".as_ptr(),
                                                                 strerror(-r),
                                                             );
                                                             current_block = 3315597219737674933;
@@ -493,21 +452,19 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                                             if r < 0 as ::core::ffi::c_int {
                                                                 set_systemd_error!(
                                                                     cause,
-                                                                    b"failed to end properties array: %s\0" as *const u8
-                                                                        as *const ::core::ffi::c_char,
+                                                                    c"failed to end properties array: %s".as_ptr(),
                                                                     strerror(-r),
                                                                 );
                                                             } else {
                                                                 r = sd_bus_message_append(
                                                                     m,
-                                                                    b"a(sa(sv))\0" as *const u8 as *const ::core::ffi::c_char,
+                                                                    c"a(sa(sv))".as_ptr(),
                                                                     0 as ::core::ffi::c_int,
                                                                 );
                                                                 if r < 0 as ::core::ffi::c_int {
                                                                     set_systemd_error!(
                                                                         cause,
-                                                                        b"failed to append to bus message: %s\0" as *const u8
-                                                                            as *const ::core::ffi::c_char,
+                                                                        c"failed to append to bus message: %s".as_ptr(),
                                                                         strerror(-r),
                                                                     );
                                                                 } else {
@@ -523,22 +480,20 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                                                         {
                                                                             set_systemd_error!(
                                                                                 cause,
-                                                                                b"StartTransientUnit call failed: %s\0" as *const u8
-                                                                                    as *const ::core::ffi::c_char,
+                                                                                c"StartTransientUnit call failed: %s".as_ptr(),
                                                                                 error.message,
                                                                             );
                                                                         } else {
                                                                             set_systemd_error!(
                                                                                 cause,
-                                                                                b"StartTransientUnit call failed: %s\0" as *const u8
-                                                                                    as *const ::core::ffi::c_char,
+                                                                                c"StartTransientUnit call failed: %s".as_ptr(),
                                                                                 strerror(-r),
                                                                             );
                                                                         }
                                                                     } else {
                                                                         r = sd_bus_message_read(
                                                                             reply,
-                                                                            b"o\0" as *const u8 as *const ::core::ffi::c_char,
+                                                                            c"o".as_ptr(),
                                                                             &raw mut job_path,
                                                                         );
                                                                         if r < 0
@@ -546,8 +501,7 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                                                         {
                                                                             set_systemd_error!(
                                                                                 cause,
-                                                                                b"failed to parse method reply: %s\0" as *const u8
-                                                                                    as *const ::core::ffi::c_char,
+                                                                                c"failed to parse method reply: %s".as_ptr(),
                                                                                 strerror(-r),
                                                                             );
                                                                         } else {
@@ -567,8 +521,7 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                                                                 if r < 0 as ::core::ffi::c_int {
                                                                                     set_systemd_error!(
                                                                                         cause,
-                                                                                        b"failed waiting for cgroup allocation: %s\0" as *const u8
-                                                                                            as *const ::core::ffi::c_char,
+                                                                                        c"failed waiting for cgroup allocation: %s".as_ptr(),
                                                                                         strerror(-r),
                                                                                     );
                                                                                     break;
@@ -580,8 +533,7 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                                                                     if elapsed_usec >= 1000000 as uint64_t {
                                                                                         set_systemd_error!(
                                                                                             cause,
-                                                                                            b"timeout waiting for cgroup allocation\0" as *const u8
-                                                                                                as *const ::core::ffi::c_char,
+                                                                                            c"timeout waiting for cgroup allocation".as_ptr(),
                                                                                         );
                                                                                         break;
                                                                                     } else {
@@ -594,8 +546,7 @@ pub unsafe fn systemd_move_to_new_cgroup() -> (::core::ffi::c_int, Option<CStrin
                                                                                         }
                                                                                         set_systemd_error!(
                                                                                             cause,
-                                                                                            b"failed waiting for cgroup allocation: %s\0" as *const u8
-                                                                                                as *const ::core::ffi::c_char,
+                                                                                            c"failed waiting for cgroup allocation: %s".as_ptr(),
                                                                                             strerror(-r),
                                                                                         );
                                                                                         break;

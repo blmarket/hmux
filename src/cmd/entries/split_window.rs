@@ -12,6 +12,7 @@ use crate::src::events_payload::{
     event_payload_create, event_payload_set_pane, event_payload_set_string,
     event_payload_set_target, event_payload_set_window,
 };
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_single_cstring, format_single_from_target_cstring};
 use crate::src::options::{options_set_number, options_set_string};
@@ -178,7 +179,7 @@ unsafe fn cmd_split_window_exec(
         for av in args_flag_values(&*args, 'e' as i32 as u_char) {
             environ_put(
                 sc.environ.as_deref_mut().expect("environment"),
-                av.string_ptr(),
+                av.as_string().expect("string argument"),
                 0 as ::core::ffi::c_int,
             );
         }
@@ -199,26 +200,14 @@ unsafe fn cmd_split_window_exec(
             None => {
                 cmdq_error(item_handle, |out| {
                     out.write_all(b"create pane failed: ")?;
-                    write_cstr(
-                        out,
-                        cause
-                            .as_ref()
-                            .map_or(::core::ptr::null(), |value| value.as_ptr()),
-                    )
+                    write_cstr(out, cause.as_deref())
                 });
                 window_owner.release(c"cmd_split_window");
                 return CMD_RETURN_ERROR;
             }
         };
         if spawned_pane.is_none() {
-            cmdq_error(item_handle, |out| {
-                write_cstr(
-                    out,
-                    cause
-                        .as_ref()
-                        .map_or(::core::ptr::null(), |value| value.as_ptr()),
-                )
-            });
+            cmdq_error(item_handle, |out| write_cstr(out, cause.as_deref()));
         } else {
             let new_pane = spawned_pane.as_ref().expect("spawned pane");
             style = args_get(&*(args), 's' as i32 as u_char)
@@ -226,13 +215,13 @@ unsafe fn cmd_split_window_exec(
             if !style.is_null() {
                 if new_pane.with_options_mut(|options| {
                     options_set_string(options, c"window-style", 0 as ::core::ffi::c_int, |out| {
-                        write_cstr(out, style)
+                        write_cstr(out, nullable_cstr(style))
                     })
                     .is_null()
                 }) {
                     cmdq_error(item_handle, |out| {
                         out.write_all(b"bad style: ")?;
-                        write_cstr(out, style)
+                        write_cstr(out, nullable_cstr(style))
                     });
                     current_block = 9814746494299271243;
                 } else {
@@ -241,7 +230,7 @@ unsafe fn cmd_split_window_exec(
                             options,
                             c"window-active-style",
                             0 as ::core::ffi::c_int,
-                            |out| write_cstr(out, style),
+                            |out| write_cstr(out, nullable_cstr(style)),
                         )
                         .is_null()
                     });
@@ -262,13 +251,13 @@ unsafe fn cmd_split_window_exec(
                                 options,
                                 c"pane-active-border-style",
                                 0 as ::core::ffi::c_int,
-                                |out| write_cstr(out, style),
+                                |out| write_cstr(out, nullable_cstr(style)),
                             )
                             .is_null()
                         }) {
                             cmdq_error(item_handle, |out| {
                                 out.write_all(b"bad active border style: ")?;
-                                write_cstr(out, style)
+                                write_cstr(out, nullable_cstr(style))
                             });
                             current_block = 9814746494299271243;
                         } else {
@@ -288,13 +277,13 @@ unsafe fn cmd_split_window_exec(
                                         options,
                                         c"pane-border-style",
                                         0 as ::core::ffi::c_int,
-                                        |out| write_cstr(out, style),
+                                        |out| write_cstr(out, nullable_cstr(style)),
                                     )
                                     .is_null()
                                 }) {
                                     cmdq_error(item_handle, |out| {
                                         out.write_all(b"bad inactive border style: ")?;
-                                        write_cstr(out, style)
+                                        write_cstr(out, nullable_cstr(style))
                                     });
                                     current_block = 9814746494299271243;
                                 } else {
@@ -325,13 +314,15 @@ unsafe fn cmd_split_window_exec(
                                                     |out| {
                                                         write_cstr(
                                                             out,
-                                                            args_get(
-                                                                &*(args),
-                                                                'm' as i32 as u_char,
-                                                            )
-                                                            .map_or(std::ptr::null(), |value| {
-                                                                value.as_ptr()
-                                                            }),
+                                                            nullable_cstr(
+                                                                args_get(
+                                                                    &*(args),
+                                                                    'm' as i32 as u_char,
+                                                                )
+                                                                .map_or(std::ptr::null(), |value| {
+                                                                    value.as_ptr()
+                                                                }),
+                                                            ),
                                                         )
                                                     },
                                                 )
@@ -355,29 +346,27 @@ unsafe fn cmd_split_window_exec(
                                         event_payload_set_target(&mut ep, &fs);
                                         event_payload_set_pane(
                                             &mut ep,
-                                            c"pane".as_ptr(),
+                                            c"pane",
                                             std::rc::Rc::clone(new_pane),
                                         );
                                         event_payload_set_window(
                                             &mut ep,
-                                            c"window".as_ptr(),
+                                            c"window",
                                             new_pane
                                                 .window_observer()
                                                 .upgrade()
                                                 .expect("spawned pane window"),
                                         );
-                                        event_payload_set_string(
-                                            &mut ep,
-                                            c"new_title".as_ptr(),
-                                            |out| write_cstr(out, title.as_ptr()),
-                                        );
-                                        events_fire(c"pane-title-changed".as_ptr(), ep);
+                                        event_payload_set_string(&mut ep, c"new_title", |out| {
+                                            write_cstr(out, &*title)
+                                        });
+                                        events_fire(c"pane-title-changed", ep);
                                     }
                                     if input != 0 {
                                         match new_pane.start_input(item_handle) {
                                             Err(error) => {
                                                 cmdq_error(item_handle, |out| {
-                                                    write_cstr(out, error.as_ptr())
+                                                    write_cstr(out, &*error)
                                                 });
                                                 current_block = 9814746494299271243;
                                             }
@@ -422,7 +411,7 @@ unsafe fn cmd_split_window_exec(
                                                     Some(new_pane),
                                                 );
                                                 cmdq_print(item_handle, |out| {
-                                                    write_cstr(out, cp.as_ptr())
+                                                    write_cstr(out, &*cp)
                                                 });
                                             }
                                             cmd_find_from_winlink_pane(

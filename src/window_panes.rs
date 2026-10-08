@@ -5,7 +5,6 @@ use crate::src::cmd::cmd_mouse_at;
 use crate::src::cmd::queue::{
     cmdq_append, cmdq_error, cmdq_get_cmd, cmdq_get_command, cmdq_get_error,
 };
-use crate::src::ffi::libc::memcpy;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::{xformat, xformat_with};
 use crate::src::format::{format_create_defaults, format_free, format_single_cstring};
@@ -282,11 +281,7 @@ unsafe fn window_panes_get_border_cell(
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let session_owner = window_panes_session(data);
     let mut s = session_owner.clone();
-    memcpy(
-        gc as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
+    *gc = grid_default_cell;
     let mut ft_owner = format_create_defaults(
         None,
         None,
@@ -335,7 +330,7 @@ unsafe fn window_panes_map_y(mut y: u_int, mut osy: u_int, mut dsy: u_int) -> ::
 unsafe fn window_panes_draw_borders(
     mut ctx: *mut screen_write_ctx,
     w_owner: &WindowRef,
-    mut gc: *const grid_cell,
+    gc: &grid_cell,
     mut osx: u_int,
     mut osy: u_int,
     mut dsx: u_int,
@@ -391,7 +386,7 @@ unsafe fn window_panes_draw_format(
     mut x: u_int,
     mut y: u_int,
     mut sx: u_int,
-    mut gc: *const grid_cell,
+    gc: &grid_cell,
 ) {
     let mut source_session_owner = None;
     let Some(mode_pane_owner) = Rc::<UnsafeCell<window_pane>>::from_observer(&(*data).wp) else {
@@ -578,11 +573,7 @@ unsafe fn window_panes_draw_number(
         },
     );
     format_free(ft_owner);
-    memcpy(
-        &raw mut bgc as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
+    bgc = grid_default_cell;
     bgc.bg = fgc.fg;
     format = 0 as u_int;
     if options_window
@@ -620,16 +611,16 @@ unsafe fn window_panes_draw_number(
             0 as ::core::ffi::c_int,
         );
         screen_write_puts(&mut *ctx, &fgc, |out| {
-            write_cstr(out, &raw mut buf as *mut ::core::ffi::c_char)
+            write_cstr(out, std::ffi::CStr::from_ptr(buf.as_ptr().cast()))
         });
         if width > len {
             screen_write_puts(&mut *ctx, &fgc, |out| {
                 out.write_all(b" ")?;
-                write_cstr(out, &raw mut lbuf as *mut ::core::ffi::c_char)
+                write_cstr(out, std::ffi::CStr::from_ptr(lbuf.as_ptr().cast()))
             });
         }
         if format != 0 && sy > 1 as u_int {
-            window_panes_draw_format(data, ctx, wp_owner, x, y, sx, &raw mut fgc);
+            window_panes_draw_format(data, ctx, wp_owner, x, y, sx, &fgc);
         }
         if let Some(owner) = session_owner {
             drop(owner);
@@ -675,7 +666,7 @@ unsafe fn window_panes_draw_number(
         }
         return;
     }
-    window_panes_draw_format(data, ctx, wp_owner, x, y, sx, &raw mut fgc);
+    window_panes_draw_format(data, ctx, wp_owner, x, y, sx, &fgc);
     if llen != 0 as size_t {
         cx = (x.wrapping_add(px) as size_t)
             .wrapping_sub(llen)
@@ -688,7 +679,7 @@ unsafe fn window_panes_draw_number(
             0 as ::core::ffi::c_int,
         );
         screen_write_puts(&mut *ctx, &fgc, |out| {
-            write_cstr(out, &raw mut lbuf as *mut ::core::ffi::c_char)
+            write_cstr(out, std::ffi::CStr::from_ptr(lbuf.as_ptr().cast()))
         });
     }
     if let Some(owner) = session_owner {
@@ -848,7 +839,7 @@ unsafe fn window_panes_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
             next = pane.next_in_window();
         }
         window_panes_get_border_cell(data, &raw mut border_gc);
-        window_panes_draw_borders(&raw mut ctx, &window, &raw mut border_gc, osx, osy, sx, sy);
+        window_panes_draw_borders(&raw mut ctx, &window, &border_gc, osx, osy, sx, sy);
         screen_write_stop(&mut ctx);
         mode_pane_owner.request_redraw(false);
     })();
@@ -912,7 +903,7 @@ unsafe fn window_panes_init(
             Err(error) => {
                 cmdq_error(item_handle.expect("command queue item"), |out| {
                     out.write_all(b"delay ")?;
-                    write_cstr(out, error.message().as_ptr())
+                    write_cstr(out, &*(error.message()))
                 });
                 return ::core::ptr::null_mut::<screen>();
             }
@@ -1044,11 +1035,7 @@ unsafe fn window_panes_run_command(
         Err(error) => {
             cmdq_append(
                 Some(client_owner),
-                cmdq_get_error(
-                    error
-                        .as_ref()
-                        .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
-                ),
+                cmdq_get_error(error.as_deref().expect("command error")),
             );
         }
         Ok(commands) => {

@@ -151,11 +151,6 @@ impl<'a> ArgumentValue<'a> {
         }
     }
 
-    /// Borrow the string for legacy readers; typed readers use `as_string`.
-    pub fn string_ptr(&self) -> *const ::core::ffi::c_char {
-        self.as_string().map_or(std::ptr::null(), CStr::as_ptr)
-    }
-
     /// Copy into stored arguments without carrying any parser-input borrow or cache.
     pub fn to_owned(&self) -> args_value {
         if let Some(text) = self.as_string() {

@@ -174,23 +174,23 @@ unsafe fn cmd_select_pane_marked_pane(
     cmd_find_from_pane(&mut find, payload_pane, 0);
     let mut payload = event_payload_create();
     event_payload_set_target(&mut payload, &find);
-    event_payload_set_pane(&mut payload, c"pane".as_ptr(), payload_pane.clone());
+    event_payload_set_pane(&mut payload, c"pane", payload_pane.clone());
     if let Some(marked) = marked.as_ref() {
-        event_payload_set_pane(&mut payload, c"new_pane".as_ptr(), marked.clone());
+        event_payload_set_pane(&mut payload, c"new_pane", marked.clone());
     }
     event_payload_set_window(
         &mut payload,
-        c"window".as_ptr(),
+        c"window",
         payload_pane
             .window_observer()
             .upgrade()
             .expect("marked pane window"),
     );
     if let Some(previous) = previous.as_ref() {
-        event_payload_set_pane(&mut payload, c"old_pane".as_ptr(), previous.clone());
+        event_payload_set_pane(&mut payload, c"old_pane", previous.clone());
     }
-    event_payload_set_int(&mut payload, c"marked".as_ptr(), marked.is_some() as i32);
-    events_fire(c"marked-pane-changed".as_ptr(), payload);
+    event_payload_set_int(&mut payload, c"marked", marked.is_some() as i32);
+    events_fire(c"marked-pane-changed", payload);
     for changed in [previous.as_ref(), marked.as_ref()].into_iter().flatten() {
         changed.invalidate_style();
         let window = changed
@@ -250,21 +250,19 @@ unsafe fn cmd_select_pane_exec(
         }
         if let Some(style) = args_get(arguments, b'P') {
             let invalid = original_pane.with_options_mut(|options| {
-                options_set_string(options, c"window-style", 0, |out| {
-                    write_cstr(out, style.as_ptr())
-                })
-                .is_null()
+                options_set_string(options, c"window-style", 0, |out| write_cstr(out, &*style))
+                    .is_null()
             });
             if invalid {
                 cmdq_error(item_handle, |out| {
                     out.write_all(b"bad style: ")?;
-                    write_cstr(out, style.as_ptr())
+                    write_cstr(out, &*style)
                 });
                 return CMD_RETURN_ERROR;
             }
             original_pane.with_options_mut(|options| {
                 options_set_string(options, c"window-active-style", 0, |out| {
-                    write_cstr(out, style.as_ptr())
+                    write_cstr(out, &*style)
                 })
                 .is_null()
             });
@@ -273,7 +271,7 @@ unsafe fn cmd_select_pane_exec(
         if args_has(arguments, b'g') != 0 {
             let style = original_pane
                 .with_options_mut(|options| options_get_string(options, c"window-style"));
-            cmdq_print(item_handle, |out| write_cstr(out, style.as_ptr()));
+            cmdq_print(item_handle, |out| write_cstr(out, &*style));
             return CMD_RETURN_NORMAL;
         }
         // A direction selects the layout's neighbouring pane; there is none
@@ -311,12 +309,12 @@ unsafe fn cmd_select_pane_exec(
                 cmd_find_from_pane(&mut find, &pane, 0);
                 let mut payload = event_payload_create();
                 event_payload_set_target(&mut payload, &find);
-                event_payload_set_pane(&mut payload, c"pane".as_ptr(), pane.clone());
-                event_payload_set_window(&mut payload, c"window".as_ptr(), window.clone());
-                event_payload_set_string(&mut payload, c"new_title".as_ptr(), |out| {
-                    write_cstr(out, title.as_ptr())
+                event_payload_set_pane(&mut payload, c"pane", pane.clone());
+                event_payload_set_window(&mut payload, c"window", window.clone());
+                event_payload_set_string(&mut payload, c"new_title", |out| {
+                    write_cstr(out, &*title)
                 });
-                events_fire(c"pane-title-changed".as_ptr(), payload);
+                events_fire(c"pane-title-changed", payload);
                 server_redraw_window_borders(&window);
                 server_status_window(&window);
             }

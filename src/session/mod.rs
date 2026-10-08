@@ -174,18 +174,17 @@ unsafe fn session_find(name: &CStr) -> Option<SessionRef> {
     map.get(name.to_bytes()).cloned()
 }
 unsafe fn session_find_by_id_str(s: &CStr) -> Option<SessionRef> {
-    let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut id: u_int = 0;
     if s.to_bytes().first() != Some(&b'$') {
         return None;
     }
-    id = strtonum(
-        s.as_ptr().add(1),
+    let parsed = strtonum(
+        CStr::from_ptr(s.as_ptr().add(1)),
         0 as ::core::ffi::c_longlong,
         UINT_MAX as ::core::ffi::c_longlong,
-        &raw mut errstr,
-    ) as u_int;
-    if !errstr.is_null() {
+    );
+    id = parsed.unwrap_or(0) as u_int;
+    if parsed.is_err() {
         return None;
     }
     session_find_by_id(id)
@@ -279,18 +278,14 @@ unsafe fn session_free(s: &mut session) {
     drop(s.options.take());
     crate::src::window::winlink_stack_clear(&mut s.lastw);
 }
-unsafe fn session_destroy(
-    s_owner: &SessionRef,
-    mut notify: ::core::ffi::c_int,
-    mut from: *const ::core::ffi::c_char,
-) {
+unsafe fn session_destroy(s_owner: &SessionRef, mut notify: ::core::ffi::c_int, from: &CStr) {
     let s = s_owner.get();
 
     let mut wl: refbox::Weak<winlink> = refbox::Weak::new();
     log_debug(format_args!(
         "session {} destroyed ({})",
         log_bytes((*s).name.as_bytes()),
-        log_cstr(CStr::from_ptr(from))
+        log_cstr(from)
     ));
     // This field also marks explicit session teardown. An expired observer
     // still needs the normal destruction path if the index owner remains.
@@ -300,7 +295,7 @@ unsafe fn session_destroy(
     (*s).set_curw((refbox::Weak::new()).clone());
     let owner = sessions_remove(&mut sessions, s_owner).expect("registered session owner");
     if notify != 0 {
-        events_fire_session(c"session-closed".as_ptr(), std::rc::Rc::clone(s_owner));
+        events_fire_session(c"session-closed", std::rc::Rc::clone(s_owner));
     }
     (*s).tio = None;
     (*s).tio = None;
@@ -313,7 +308,7 @@ unsafe fn session_destroy(
     crate::src::window::winlink_stack_clear(&mut (*s).lastw);
     while !crate::src::window::winlinks_is_empty(&(*s).windows) {
         wl = winlinks_minmax(&(*s).windows, RB_NEGINF);
-        events_fire_winlink(c"window-unlinked".as_ptr(), wl.clone());
+        events_fire_winlink(c"window-unlinked", wl.clone());
         winlink_remove(&raw mut (*s).windows, wl.clone());
     }
     session_set_cwd(&mut *s, None);
@@ -417,7 +412,7 @@ unsafe fn session_attach(
     }
     wl.get_mut_unchecked().session = std::rc::Rc::downgrade(s_owner);
     winlink_set_window(wl.clone(), window_owner);
-    events_fire_winlink(c"window-linked".as_ptr(), wl.clone());
+    events_fire_winlink(c"window-linked", wl.clone());
     session_group_synchronize_from(s_owner);
     Ok(wl)
 }
@@ -439,7 +434,7 @@ unsafe fn session_detach(
         session_next(s_owner, 0 as ::core::ffi::c_int);
     }
     wl.get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
-    events_fire_winlink(c"window-unlinked".as_ptr(), wl.clone());
+    events_fire_winlink(c"window-unlinked", wl.clone());
     winlink_stack_remove(&raw mut (*s).lastw, wl.clone());
     winlink_remove(&raw mut (*s).windows, wl.clone());
     session_group_synchronize_from(s_owner);
@@ -552,38 +547,30 @@ unsafe fn session_fire_window_changed(
     let mut ep = event_payload_create();
     cmd_find_from_winlink(&raw mut fs, wl.clone(), 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
-    event_payload_set_session(&mut ep, c"session".as_ptr(), std::rc::Rc::clone(s_owner));
+    event_payload_set_session(&mut ep, c"session", std::rc::Rc::clone(s_owner));
     event_payload_set_window(
         &mut ep,
-        c"window".as_ptr(),
+        c"window",
         std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
     );
     event_payload_set_window(
         &mut ep,
-        c"new_window".as_ptr(),
+        c"new_window",
         std::rc::Rc::clone((wl.get_unchecked().window_handle().as_ref()).expect("live window")),
     );
-    event_payload_set_int(&mut ep, c"window_index".as_ptr(), wl.get_unchecked().idx);
-    event_payload_set_int(
-        &mut ep,
-        c"new_window_index".as_ptr(),
-        wl.get_unchecked().idx,
-    );
+    event_payload_set_int(&mut ep, c"window_index", wl.get_unchecked().idx);
+    event_payload_set_int(&mut ep, c"new_window_index", wl.get_unchecked().idx);
     if old.is_alive() {
         event_payload_set_window(
             &mut ep,
-            c"old_window".as_ptr(),
+            c"old_window",
             std::rc::Rc::clone(
                 (old.get_unchecked().window_handle().as_ref()).expect("live window"),
             ),
         );
-        event_payload_set_int(
-            &mut ep,
-            c"old_window_index".as_ptr(),
-            old.get_unchecked().idx,
-        );
+        event_payload_set_int(&mut ep, c"old_window_index", old.get_unchecked().idx);
     }
-    events_fire(c"session-window-changed".as_ptr(), ep);
+    events_fire(c"session-window-changed", ep);
 }
 unsafe fn session_set_current(
     s_owner: &SessionRef,
@@ -660,7 +647,7 @@ unsafe fn session_synchronize_windows(source: &SessionRef, destination: &Session
         winlink_set_window(replacement.clone(), &window);
         // Both source and newly published links retain this window now.
         drop(window);
-        events_fire_winlink(c"window-linked".as_ptr(), replacement.clone());
+        events_fire_winlink(c"window-linked", replacement.clone());
         // Notification may change alerts or add a later source link. Observe
         // both at the original post-notification point in the live traversal.
         replacement.get_mut_unchecked().flags |= link.get_unchecked().flags & WINLINK_ALERTFLAGS;
@@ -703,7 +690,7 @@ unsafe fn session_synchronize_windows(source: &SessionRef, destination: &Session
             .id();
         let replacement = destination.with_winlinks(|links| winlink_find_by_window_id(links, id));
         if !replacement.is_alive() {
-            events_fire_winlink(c"window-unlinked".as_ptr(), old.clone());
+            events_fire_winlink(c"window-unlinked", old.clone());
         }
         winlink_remove(&mut old_windows, old);
     }

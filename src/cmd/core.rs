@@ -293,7 +293,7 @@ pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
         .collect::<Vec<_>>()
         .into_iter();
     a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-        crate::src::options::options_array_item(a_root, key.as_ptr())
+        crate::src::options::options_array_item(a_root, &*key)
     });
     while !a.is_null() {
         ov = crate::src::options::options_array_item_value_mut(&mut *(a))
@@ -325,7 +325,7 @@ pub unsafe fn cmd_get_alias(name: &CStr) -> Option<CString> {
             }
         }
         a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-            crate::src::options::options_array_item(a_root, key.as_ptr())
+            crate::src::options::options_array_item(a_root, &*key)
         });
     }
     None

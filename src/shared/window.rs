@@ -124,7 +124,7 @@ pub struct window_mode {
             *mut mouse_event,
         ) -> (),
     >,
-    pub key_table: Option<unsafe fn(refbox::Weak<window_mode_entry>) -> *const ::core::ffi::c_char>,
+    pub key_table: Option<unsafe fn(refbox::Weak<window_mode_entry>) -> &'static std::ffi::CStr>,
     pub command: Option<
         unsafe fn(
             refbox::Weak<window_mode_entry>,

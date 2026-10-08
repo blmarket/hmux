@@ -7,7 +7,7 @@ use hmux_buffer::{Buf, BufMut, SegmentedBuf};
 use hmux_rt::Handle as _;
 use hmux_rt::{AsyncRead as _, AsyncWrite as _};
 use std::cell::{Cell, RefCell};
-use std::ffi::{c_int, c_short, c_void};
+use std::ffi::{c_int, c_short};
 use std::future::{poll_fn, Future};
 use std::pin::pin;
 use std::rc::{Rc, Weak};
@@ -348,12 +348,8 @@ pub unsafe fn bufferevent_disable(stream: *mut bufferevent, flags: c_short) -> c
     }
     0
 }
-pub unsafe fn bufferevent_write(
-    stream: *mut bufferevent,
-    data: *const c_void,
-    size: usize,
-) -> c_int {
-    super::evbuffer_add(bufferevent_get_output(&mut *stream), data, size)
+pub unsafe fn bufferevent_write(stream: *mut bufferevent, data: &[u8]) -> c_int {
+    super::evbuffer_add(bufferevent_get_output(&mut *stream), data)
 }
 /// Move bytes into output. If the source belongs to another stream, obtain it
 /// through bufferevent_get_input/output so that stream also rechecks its I/O.
@@ -387,11 +383,11 @@ mod tests {
             let observer = handle.clone();
             let state = state(&*stream);
             let generation = state.generation.get();
-            bufferevent_write(stream, b"abc".as_ptr().cast(), 3);
+            bufferevent_write(stream, b"abc");
             assert!(state.generation.get() > generation);
             assert_eq!((*stream).output.remaining(), 3);
             let generation = state.generation.get();
-            super::super::evbuffer_add(&mut (*stream).input, b"x".as_ptr().cast(), 1);
+            super::super::evbuffer_add(&mut (*stream).input, b"x");
             assert_eq!(state.generation.get(), generation);
             super::super::evbuffer_drain(bufferevent_get_input(&mut *stream), 1);
             assert_eq!(state.generation.get(), generation + 1);

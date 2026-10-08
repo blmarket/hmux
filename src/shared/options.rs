@@ -166,34 +166,6 @@ pub struct options_name_map {
     pub to: &'static ::std::ffi::CStr,
 }
 
-impl options_table_entry {
-    pub fn name_ptr(&self) -> *const std::ffi::c_char {
-        self.name.map_or(std::ptr::null(), std::ffi::CStr::as_ptr)
-    }
-    pub fn alternative_name_ptr(&self) -> *const std::ffi::c_char {
-        self.alternative_name
-            .map_or(std::ptr::null(), std::ffi::CStr::as_ptr)
-    }
-    pub fn default_str_ptr(&self) -> *const std::ffi::c_char {
-        self.default_str
-            .map_or(std::ptr::null(), std::ffi::CStr::as_ptr)
-    }
-    pub fn separator_ptr(&self) -> *const std::ffi::c_char {
-        self.separator
-            .map_or(std::ptr::null(), std::ffi::CStr::as_ptr)
-    }
-    pub fn pattern_ptr(&self) -> *const std::ffi::c_char {
-        self.pattern
-            .map_or(std::ptr::null(), std::ffi::CStr::as_ptr)
-    }
-    pub fn text_ptr(&self) -> *const std::ffi::c_char {
-        self.text.map_or(std::ptr::null(), std::ffi::CStr::as_ptr)
-    }
-    pub fn unit_ptr(&self) -> *const std::ffi::c_char {
-        self.unit.map_or(std::ptr::null(), std::ffi::CStr::as_ptr)
-    }
-}
-
 impl options_entry {
     pub fn tableentry_ptr(&self) -> Option<&'static options_table_entry> {
         self.tableentry

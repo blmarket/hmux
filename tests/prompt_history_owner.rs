@@ -148,7 +148,7 @@ fn history_owns_entries_and_preserves_order_pruning_and_navigation() {
         let path = std::env::temp_dir().join(format!("hmux-prompt-history-{}", std::process::id()));
         let path_string = CString::new(path.as_os_str().as_bytes()).unwrap();
         options_set_string(options, c"history-file", 0, |out| {
-            write_cstr(out, path_string.as_ptr())
+            write_cstr(out, &*path_string)
         });
         prompt_save_history();
         assert_eq!(

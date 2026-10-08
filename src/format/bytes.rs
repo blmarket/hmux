@@ -78,16 +78,18 @@ pub fn format_message_with(write: impl FnOnce(&mut dyn Write) -> io::Result<()>)
     })
 }
 
-/// Write an unescaped C string. A null pointer retains the legacy `(null)` text.
+/// Write an unescaped C string. A missing string keeps the legacy `(null)` text.
+pub fn write_cstr<'a>(out: &mut dyn Write, value: impl Into<Option<&'a CStr>>) -> io::Result<()> {
+    out.write_all(value.into().map_or(b"(null)".as_slice(), CStr::to_bytes))
+}
+
+/// Borrow a C string pointer from code that has not moved to `&CStr` yet.
 ///
 /// # Safety
-/// A non-null pointer must reference a readable NUL-terminated string.
-pub unsafe fn write_cstr(out: &mut dyn Write, value: *const c_char) -> io::Result<()> {
-    if value.is_null() {
-        out.write_all(b"(null)")
-    } else {
-        out.write_all(CStr::from_ptr(value).to_bytes())
-    }
+/// A non-null pointer must reference a readable NUL-terminated string that
+/// outlives the returned borrow.
+pub unsafe fn nullable_cstr<'a>(ptr: *const c_char) -> Option<&'a CStr> {
+    (!ptr.is_null()).then(|| CStr::from_ptr(ptr))
 }
 
 struct CStrWriter<'a> {
@@ -245,9 +247,12 @@ mod tests {
     fn raw_c_strings_stop_at_nul_and_keep_legacy_null_text() {
         unsafe {
             let raw = [0xffu8, b'x', 0, b'y', 0];
-            let actual = format_bytes_with(|out| write_cstr(out, raw.as_ptr().cast())).unwrap();
+            let actual =
+                format_bytes_with(|out| write_cstr(out, nullable_cstr(raw.as_ptr().cast())))
+                    .unwrap();
             assert_eq!(actual, b"\xffx");
-            let actual = format_bytes_with(|out| write_cstr(out, std::ptr::null())).unwrap();
+            let actual =
+                format_bytes_with(|out| write_cstr(out, nullable_cstr(std::ptr::null()))).unwrap();
             assert_eq!(actual, b"(null)");
         }
     }

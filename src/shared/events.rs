@@ -77,11 +77,11 @@ impl EventPayloadValue {
             Self::Identity(_) => 8,
         }
     }
-    pub fn string(&self) -> *const ::core::ffi::c_char {
+    pub fn string(&self) -> &std::ffi::CStr {
         let Self::String(value) = self else {
             panic!("incorrect event payload type")
         };
-        value.as_ptr()
+        value
     }
     pub fn time(&self) -> time_t {
         let Self::Time(value) = self else {

@@ -559,11 +559,11 @@ pub unsafe fn tty_acs_needed(terminal: Option<&tty>, utf8: bool) -> ::core::ffi:
         return 0;
     };
     if tty_term_has(
-        tty_term_owner_ptr(&terminal.term).map_or(std::ptr::null(), |term| term),
+        tty_term_owner_ptr(&terminal.term).expect("client has a terminal"),
         TTYC_U8,
     ) != 0
         && tty_term_number(
-            tty_term_owner_ptr(&terminal.term).map_or(std::ptr::null(), |term| term),
+            tty_term_owner_ptr(&terminal.term).expect("client has a terminal"),
             TTYC_U8,
         ) == 0
     {

@@ -6,9 +6,8 @@ use crate::src::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_string,
     event_payload_set_target, event_payload_set_window,
 };
-use crate::src::ffi::libc::{getpid, kill, memcpy};
+use crate::src::ffi::libc::{getpid, kill};
 use crate::src::ffi::utempter::utempter_remove_record;
-use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
 use crate::src::format_draw::format_draw;
 use crate::src::grid::grid_default_cell;
@@ -26,6 +25,7 @@ use crate::src::shared::client::ClientRef;
 use crate::src::tmux::sig2name;
 use crate::src::window::Window as _;
 use crate::src::window_pane::WindowPane as _;
+use std::ffi::CStr;
 use std::os::fd::AsRawFd;
 use std::time::SystemTime;
 
@@ -44,7 +44,7 @@ use crate::src::shared::pane::PANE_EXITED;
 use crate::src::spawn::spawn_editor_finish;
 
 unsafe fn server_fire_pane_exit(
-    mut name: *const ::core::ffi::c_char,
+    name: &CStr,
     wp_owner: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
 ) {
     let mut wp = wp_owner.get();
@@ -57,27 +57,19 @@ unsafe fn server_fire_pane_exit(
         idx: 0,
     };
     let mut status: ::core::ffi::c_int = (*wp).status;
-    let mut signame: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
-    if ((status & 0x7f as ::core::ffi::c_int) + 1 as ::core::ffi::c_int) as ::core::ffi::c_schar
-        as ::core::ffi::c_int
-        >> 1 as ::core::ffi::c_int
-        > 0 as ::core::ffi::c_int
-    {
-        signame = sig2name(status & 0x7f as ::core::ffi::c_int);
-    }
     let mut ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, wp_owner, 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
-    event_payload_set_pane(&mut ep, c"pane".as_ptr(), std::rc::Rc::clone(wp_owner));
+    event_payload_set_pane(&mut ep, c"pane", std::rc::Rc::clone(wp_owner));
     event_payload_set_window(
         &mut ep,
-        c"window".as_ptr(),
+        c"window",
         std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
     if status & 0x7f as ::core::ffi::c_int == 0 as ::core::ffi::c_int {
         event_payload_set_int(
             &mut ep,
-            c"exit_status".as_ptr(),
+            c"exit_status",
             (status & 0xff00 as ::core::ffi::c_int) >> 8 as ::core::ffi::c_int,
         );
     } else if ((status & 0x7f as ::core::ffi::c_int) + 1 as ::core::ffi::c_int)
@@ -85,13 +77,13 @@ unsafe fn server_fire_pane_exit(
         >> 1 as ::core::ffi::c_int
         > 0 as ::core::ffi::c_int
     {
-        event_payload_set_string(&mut ep, c"exit_signal".as_ptr(), |out| {
-            write_cstr(out, signame)
+        event_payload_set_string(&mut ep, c"exit_signal", |out| {
+            out.write_all(sig2name(status & 0x7f as ::core::ffi::c_int).as_bytes())
         });
     }
     event_payload_set_int(
         &mut ep,
-        c"exit_success".as_ptr(),
+        c"exit_success",
         (status == 0 as ::core::ffi::c_int) as ::core::ffi::c_int,
     );
     events_fire(name, ep);
@@ -197,7 +189,7 @@ pub(super) unsafe fn finish_process(
             (*wp).flags |= PANE_STATUSDRAWN;
             (*wp).dead_time = SystemTime::now();
             if notify != 0 {
-                server_fire_pane_exit(c"pane-died".as_ptr(), pane_owner);
+                server_fire_pane_exit(c"pane-died", pane_owner);
             }
             let format = pane_owner
                 .with_options_mut(|options| options_get_string(options, c"remain-on-exit-format"));
@@ -212,11 +204,7 @@ pub(super) unsafe fn finish_process(
                     0 as ::core::ffi::c_int,
                 );
                 screen_write_linefeed(&mut ctx, 1 as ::core::ffi::c_int, 8 as u_int);
-                memcpy(
-                    &raw mut gc as *mut ::core::ffi::c_void,
-                    &raw const grid_default_cell as *const ::core::ffi::c_void,
-                    ::core::mem::size_of::<grid_cell>() as size_t,
-                );
+                gc = grid_default_cell;
                 let expanded = format_single_cstring(
                     None,
                     s,
@@ -227,7 +215,7 @@ pub(super) unsafe fn finish_process(
                 );
                 format_draw(
                     &raw mut ctx,
-                    &raw mut gc,
+                    &gc,
                     sx,
                     expanded.as_ptr(),
                     ::core::ptr::null_mut::<style_ranges>(),
@@ -242,7 +230,7 @@ pub(super) unsafe fn finish_process(
         }
     }
     if notify != 0 {
-        server_fire_pane_exit(c"pane-exited".as_ptr(), pane_owner);
+        server_fire_pane_exit(c"pane-exited", pane_owner);
     }
     ClientRef::forget_pane(pane_owner);
     std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window"))

@@ -480,7 +480,7 @@ unsafe fn prompt_format_tree(pr: &prompt) -> Box<format_tree> {
     }
     let ft = &raw mut *owner;
     let tmp = utf8_tocstr_cstring(&pr.buffer);
-    format_add(ft, c"prompt_input", |out| write_cstr(out, tmp.as_ptr()));
+    format_add(ft, c"prompt_input", |out| write_cstr(out, &*tmp));
     format_add(ft, c"prompt_flags", |out| prompt_write_flags(out, pr.flags));
     format_add(ft, c"prompt_type", |out| {
         out.write_all(prompt_type_string(pr.type_0).to_bytes())
@@ -494,7 +494,7 @@ unsafe fn prompt_format_tree(pr: &prompt) -> Box<format_tree> {
 }
 unsafe fn prompt_expand1(pr: &prompt, mut ft: *mut format_tree) -> CString {
     let prompt = format_expand_time_cstring(ft, pr.string.as_ptr());
-    format_add(ft, c"message", |out| write_cstr(out, prompt.as_ptr()));
+    format_add(ft, c"message", |out| write_cstr(out, &*prompt));
     format_expand_time_cstring(ft, pr.message_format.as_ptr())
 }
 unsafe fn prompt_effective_style(pr: &prompt, sy: &mut style, ft: *mut format_tree) {
@@ -505,7 +505,7 @@ unsafe fn prompt_effective_style(pr: &prompt, sy: &mut style, ft: *mut format_tr
     };
     style_set(sy, cell);
     let expanded = format_expand_time_cstring(ft, text.as_ptr());
-    if style_parse(sy, &grid_default_cell, expanded.as_ptr()) != 0 {
+    if style_parse(sy, &grid_default_cell, &*expanded) != 0 {
         style_set(sy, cell);
     }
 }
@@ -1616,7 +1616,7 @@ unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
             .collect::<Vec<_>>()
             .into_iter();
         a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-            crate::src::options::options_array_item(a_root, key.as_ptr())
+            crate::src::options::options_array_item(a_root, &*key)
         });
         while !a.is_null() {
             let value = (*(crate::src::options::options_array_item_value_mut(&mut *(a))
@@ -1631,7 +1631,7 @@ unsafe fn prompt_complete_commands(s: &CStr) -> Vec<CString> {
                 }
             }
             a = a_keys.next().map_or(std::ptr::null_mut(), |key| {
-                crate::src::options::options_array_item(a_root, key.as_ptr())
+                crate::src::options::options_array_item(a_root, &*key)
             });
         }
     }

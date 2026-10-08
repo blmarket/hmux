@@ -1,5 +1,6 @@
 use crate::src::cmd::queue::cmdq_print;
 use crate::src::ffi::libc::{getgrgid, getpwuid, getuid};
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::server::clients;
 use crate::src::server_client::Client as _;
@@ -179,14 +180,14 @@ pub unsafe fn server_acl_display(item_handle: &std::rc::Rc<std::cell::UnsafeCell
         if current_block_12 == 11050875288958768710 {
             if (*loop_0).flags & SERVER_ACL_READONLY != 0 {
                 cmdq_print(item_handle, |out| {
-                    write_cstr(out, name)?;
+                    write_cstr(out, nullable_cstr(name))?;
                     out.write_all(b" (")?;
                     out.write_all(&[(type_0 as ::core::ffi::c_int) as u8])?;
                     out.write_all(b",R)")
                 });
             } else {
                 cmdq_print(item_handle, |out| {
-                    write_cstr(out, name)?;
+                    write_cstr(out, nullable_cstr(name))?;
                     out.write_all(b" (")?;
                     out.write_all(&[(type_0 as ::core::ffi::c_int) as u8])?;
                     out.write_all(b",W)")

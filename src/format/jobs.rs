@@ -118,7 +118,7 @@ unsafe fn format_job_update(job: &refbox::Weak<job>, entry: &JobEntry) {
         format_job_set_out_from_line(record, &line);
         log_debug(format_args!(
             "format_job_update: {} {}: {}",
-            log_pointer(std::ptr::from_ref(record).cast()),
+            log_pointer(std::ptr::from_ref(record)),
             log_cstr(&record.cmd),
             log_cstr(record.out.as_ref().unwrap()),
         ));
@@ -140,11 +140,7 @@ unsafe fn format_job_update(job: &refbox::Weak<job>, entry: &JobEntry) {
 unsafe fn format_job_complete(completion: JobCompletion, entry: &JobEntry) {
     let mut buffer = evbuffer_new();
     if !completion.output.is_empty() {
-        evbuffer_add(
-            &mut buffer,
-            completion.output.as_ptr().cast(),
-            completion.output.len(),
-        );
+        evbuffer_add(&mut buffer, &completion.output);
     }
     if entry
         .with_record(|record| record.job = refbox::Weak::new())
@@ -169,7 +165,7 @@ unsafe fn format_job_complete(completion: JobCompletion, entry: &JobEntry) {
     let Some((client, status)) = entry.with_record(|record| {
         log_debug(format_args!(
             "format_job_complete: {} {}: {}",
-            log_pointer(std::ptr::from_ref(record).cast()),
+            log_pointer(std::ptr::from_ref(record)),
             log_cstr(&record.cmd),
             log_cstr(&output),
         ));
@@ -188,18 +184,15 @@ unsafe fn format_job_complete(completion: JobCompletion, entry: &JobEntry) {
     }
 }
 
-pub(super) unsafe fn format_job_get(
-    es: *mut format_expand_state,
-    command: *const ::core::ffi::c_char,
-) -> CString {
+pub(super) unsafe fn format_job_get(es: *mut format_expand_state, command: &CStr) -> CString {
     let ft = (*es).ft;
     let cache = JobCache::for_client((*ft).client.as_ref());
     // Publish the entry before expansion, preserving recursive lookup ordering.
-    let entry = cache.entry((*ft).client.as_ref(), (*ft).tag, CStr::from_ptr(command));
+    let entry = cache.entry((*ft).client.as_ref(), (*ft).tag, command);
     let mut next = format_expand_state::default();
     format_copy_state(&mut next, es, FORMAT_EXPAND_NOJOBS | FORMAT_EXPAND_NOCYCLE);
     next.flags &= !FORMAT_EXPAND_TIME;
-    let expanded = format_expand1_cstring(&mut next, command);
+    let expanded = format_expand1_cstring(&mut next, command.as_ptr());
     let Some((force, running)) = entry.with_record(|record| {
         let force = if record.expanded.as_deref() != Some(expanded.as_c_str()) {
             format_job_set_expanded(record, expanded.clone());

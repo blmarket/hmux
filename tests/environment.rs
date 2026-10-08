@@ -1,6 +1,7 @@
 //! Environment-owner compatibility and lifetime checks.
 use hmux::src::environ::{environ, environ_create, ENVIRON_HIDDEN};
 use hmux::src::format::bytes::write_cstr;
+use std::ffi::CStr;
 
 #[test]
 fn owner_preserves_missing_valueless_flags_order_and_bytes() {
@@ -115,8 +116,8 @@ fn formatted_updates_use_an_owned_snapshot_of_the_previous_value() {
     let entry = std::ptr::from_ref(env.find(c"VAR").unwrap());
     let previous = env.find(c"VAR").unwrap().value.clone().unwrap();
     unsafe {
-        environ_set(&mut env, c"VAR".as_ptr(), 0x40, |out| {
-            write_cstr(out, previous.as_ptr())?;
+        environ_set(&mut env, c"VAR", 0x40, |out| {
+            write_cstr(out, &*previous)?;
             out.write_all(b"-new")
         });
     }
@@ -141,13 +142,13 @@ fn put_splits_first_equals_and_preserves_c_string_bytes() {
 
     let mut env = environ_create();
     unsafe {
-        environ_put(&mut env, b"plain=one=two\0".as_ptr().cast(), 7);
-        environ_put(&mut env, b"\xff=\xfe\0".as_ptr().cast(), 8);
-        environ_put(&mut env, b"=empty-name\0".as_ptr().cast(), 9);
-        environ_put(&mut env, b"no-equals\0".as_ptr().cast(), 10);
+        environ_put(&mut env, c"plain=one=two", 7);
+        environ_put(&mut env, c"\xff=\xfe", 8);
+        environ_put(&mut env, c"=empty-name", 9);
+        environ_put(&mut env, c"no-equals", 10);
         environ_put(
             &mut env,
-            b"first=visible\0later=hidden\0".as_ptr().cast(),
+            CStr::from_bytes_until_nul(b"first=visible\0later=hidden\0").unwrap(),
             11,
         );
     }
@@ -203,7 +204,7 @@ fn update_borrows_sources_and_accepts_owned_snapshots() {
         let array = options_empty(options, definition);
         for (index, pattern) in [(c"0", c"a*"), (c"1", c"missing")] {
             assert_eq!(
-                options_array_set(array, index.as_ptr(), pattern.as_ptr(), 0, null_mut()),
+                options_array_set(array, &*index, Some(&*pattern), 0, null_mut()),
                 0
             );
         }

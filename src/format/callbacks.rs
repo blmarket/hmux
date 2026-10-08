@@ -1131,7 +1131,7 @@ unsafe fn format_cb_session_windows(ft: *mut format_tree) -> Option<CString> {
     }
 }
 unsafe fn format_cb_socket_path(_ft: *mut format_tree) -> Option<CString> {
-    Some(CStr::from_ptr(socket_path).to_owned())
+    Some(socket_path_cstr().to_owned())
 }
 unsafe fn format_cb_version(_ft: *mut format_tree) -> Option<CString> {
     Some(getversion().to_owned())

@@ -2,6 +2,7 @@ use crate::src::arguments::{args_count, args_has, args_string};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_target_client};
 use crate::src::ffi::libc::{getgrnam, getpwnam, getuid};
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
 use crate::src::server_acl::{
@@ -17,6 +18,7 @@ use crate::src::shared::command::CMD_CLIENT_CANFAIL;
 use crate::src::shared::command::*;
 use crate::src::shared::command::{cmd, cmd_entry, cmd_entry_flag, cmdq_item};
 use crate::src::shared::server_acl::SERVER_ACL_IS_GROUP;
+use std::ffi::CStr;
 pub static cmd_server_access_entry: cmd_entry = {
     cmd_entry {
         name: c"server-access",
@@ -46,14 +48,14 @@ unsafe fn cmd_server_access_deny(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     mut id: id_t,
     mut flags: ::core::ffi::c_int,
-    mut type_0: *const ::core::ffi::c_char,
-    mut name: *const ::core::ffi::c_char,
+    type_0: &CStr,
+    name: &CStr,
 ) -> cmd_retval {
     if server_acl_find(id, flags) == 0 {
         cmdq_error(item_handle, |out| {
-            write_cstr(out, type_0)?;
+            write_cstr(out, nullable_cstr(type_0.as_ptr()))?;
             out.write_all(b" ")?;
-            write_cstr(out, name)?;
+            write_cstr(out, nullable_cstr(name.as_ptr()))?;
             out.write_all(b" not found")
         });
         return CMD_RETURN_ERROR;
@@ -113,15 +115,15 @@ unsafe fn cmd_server_access_exec(
     if name.is_null() {
         cmdq_error(item_handle, |out| {
             out.write_all(b"unknown ")?;
-            write_cstr(out, type_0)?;
+            write_cstr(out, nullable_cstr(type_0))?;
             out.write_all(b": ")?;
-            write_cstr(out, arg.as_ptr())
+            write_cstr(out, &*arg)
         });
         return CMD_RETURN_ERROR;
     }
     if !flags & SERVER_ACL_IS_GROUP != 0 && (id == 0 as id_t || id == getuid()) {
         cmdq_error(item_handle, |out| {
-            write_cstr(out, name)?;
+            write_cstr(out, nullable_cstr(name))?;
             out.write_all(b" owns the server, can't change access")
         });
         return CMD_RETURN_ERROR;
@@ -139,14 +141,20 @@ unsafe fn cmd_server_access_exec(
         return CMD_RETURN_ERROR;
     }
     if args_has(args, 'd' as i32 as u_char) != 0 {
-        return cmd_server_access_deny(item_handle, id, flags, type_0, name);
+        return cmd_server_access_deny(
+            item_handle,
+            id,
+            flags,
+            CStr::from_ptr(type_0),
+            CStr::from_ptr(name),
+        );
     }
     if args_has(args, 'a' as i32 as u_char) != 0 {
         if server_acl_find(id, flags) != 0 {
             cmdq_error(item_handle, |out| {
-                write_cstr(out, type_0)?;
+                write_cstr(out, nullable_cstr(type_0))?;
                 out.write_all(b" ")?;
-                write_cstr(out, name)?;
+                write_cstr(out, nullable_cstr(name))?;
                 out.write_all(b" is already added")
             });
             return CMD_RETURN_ERROR;
@@ -161,9 +169,9 @@ unsafe fn cmd_server_access_exec(
     if args_has(args, 'w' as i32 as u_char) != 0 {
         if server_acl_find(id, flags) == 0 {
             cmdq_error(item_handle, |out| {
-                write_cstr(out, type_0)?;
+                write_cstr(out, nullable_cstr(type_0))?;
                 out.write_all(b" ")?;
-                write_cstr(out, name)?;
+                write_cstr(out, nullable_cstr(name))?;
                 out.write_all(b" not found")
             });
             return CMD_RETURN_ERROR;
@@ -174,9 +182,9 @@ unsafe fn cmd_server_access_exec(
     if args_has(args, 'r' as i32 as u_char) != 0 {
         if server_acl_find(id, flags) == 0 {
             cmdq_error(item_handle, |out| {
-                write_cstr(out, type_0)?;
+                write_cstr(out, nullable_cstr(type_0))?;
                 out.write_all(b" ")?;
-                write_cstr(out, name)?;
+                write_cstr(out, nullable_cstr(name))?;
                 out.write_all(b" not found")
             });
             return CMD_RETURN_ERROR;

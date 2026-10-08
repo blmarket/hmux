@@ -15,8 +15,8 @@ pub unsafe fn setproctitle(write: impl FnOnce(&mut dyn std::io::Write) -> std::i
     used = snprintf(
         &raw mut name as *mut ::core::ffi::c_char,
         ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as size_t,
-        b"%s: %s\0" as *const u8 as *const ::core::ffi::c_char,
-        getprogname(),
+        c"%s: %s".as_ptr(),
+        getprogname().as_ptr(),
         &raw mut title as *mut ::core::ffi::c_char,
     );
     if used >= ::core::mem::size_of::<[::core::ffi::c_char; 16]>() as ::core::ffi::c_int {

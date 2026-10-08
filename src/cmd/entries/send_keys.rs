@@ -135,11 +135,10 @@ unsafe fn cmd_send_keys_inject_key(
         return std::rc::Rc::downgrade(item_handle);
     }
     let table = key_bindings_get_table(
-        std::ffi::CStr::from_ptr(wme
-            .get_unchecked()
+        wme.get_unchecked()
             .mode
             .key_table
-            .expect("non-null function pointer")(wme)),
+            .expect("non-null function pointer")(wme),
         1 as ::core::ffi::c_int,
     )
     .expect("created key table");
@@ -266,7 +265,7 @@ unsafe fn cmd_send_keys_exec(
             Err(error) => {
                 cmdq_error(item_handle, |out| {
                     out.write_all(b"repeat count ")?;
-                    write_cstr(out, error.message().as_ptr())
+                    write_cstr(out, &*(error.message()))
                 });
                 return CMD_RETURN_ERROR;
             }

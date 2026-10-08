@@ -1,4 +1,5 @@
 //! Presentation defaults shared with hmux, applied before user configuration.
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::options::{options_get_only, options_set_string, options_to_cstring};
 use crate::src::tmux::global_w_options;
 use std::ffi::CStr;
@@ -12,7 +13,7 @@ pub(super) unsafe fn apply() {
     for name in [c"window-status-format", c"window-status-current-format"] {
         let unchanged = options_get_only(options, name).is_some_and(|entry| {
             entry.tableentry.is_some_and(|definition| {
-                options_to_cstring(entry, std::ptr::null(), 0)
+                options_to_cstring(entry, nullable_cstr(std::ptr::null()), 0)
                     == crate::src::options::options_default_to_cstring(definition)
             })
         });

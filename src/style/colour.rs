@@ -525,7 +525,6 @@ pub unsafe fn colour_totheme(mut c: ::core::ffi::c_int) -> client_theme {
 }
 unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
     let s = input.as_ptr();
-    let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut cp: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut n: ::core::ffi::c_int = 0;
     let mut r: u_char = 0;
@@ -562,14 +561,16 @@ unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
         (::core::mem::size_of::<[::core::ffi::c_char; 7]>() as size_t).wrapping_sub(1 as size_t),
     ) == 0 as ::core::ffi::c_int
     {
-        n = strtonum(
-            s.add(::core::mem::size_of::<[::core::ffi::c_char; 7]>() as usize)
-                .offset(-(1 as ::core::ffi::c_int as isize)),
+        let parsed = strtonum(
+            std::ffi::CStr::from_ptr(
+                s.add(::core::mem::size_of::<[::core::ffi::c_char; 7]>() as usize)
+                    .offset(-(1 as ::core::ffi::c_int as isize)),
+            ),
             0 as ::core::ffi::c_longlong,
             255 as ::core::ffi::c_longlong,
-            &raw mut errstr,
-        ) as ::core::ffi::c_int;
-        if !errstr.is_null() {
+        );
+        n = parsed.unwrap_or(0) as ::core::ffi::c_int;
+        if parsed.is_err() {
             return -(1 as ::core::ffi::c_int);
         }
         return n | COLOUR_FLAG_256;
@@ -580,14 +581,16 @@ unsafe fn colour_fromstring_impl(input: &std::ffi::CStr) -> ::core::ffi::c_int {
         (::core::mem::size_of::<[::core::ffi::c_char; 6]>() as size_t).wrapping_sub(1 as size_t),
     ) == 0 as ::core::ffi::c_int
     {
-        n = strtonum(
-            s.add(::core::mem::size_of::<[::core::ffi::c_char; 6]>() as usize)
-                .offset(-(1 as ::core::ffi::c_int as isize)),
+        let parsed = strtonum(
+            std::ffi::CStr::from_ptr(
+                s.add(::core::mem::size_of::<[::core::ffi::c_char; 6]>() as usize)
+                    .offset(-(1 as ::core::ffi::c_int as isize)),
+            ),
             0 as ::core::ffi::c_longlong,
             255 as ::core::ffi::c_longlong,
-            &raw mut errstr,
-        ) as ::core::ffi::c_int;
-        if !errstr.is_null() {
+        );
+        n = parsed.unwrap_or(0) as ::core::ffi::c_int;
+        if parsed.is_err() {
             return -(1 as ::core::ffi::c_int);
         }
         return n | COLOUR_FLAG_256;
@@ -3530,20 +3533,19 @@ unsafe fn colour_byname_impl(name: &std::ffi::CStr) -> ::core::ffi::c_int {
     ];
     let mut i: u_int = 0;
     let mut c: ::core::ffi::c_int = 0;
-    let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if strncasecmp(name, c"grey".as_ptr(), 4 as size_t) == 0 as ::core::ffi::c_int
         || strncasecmp(name, c"gray".as_ptr(), 4 as size_t) == 0 as ::core::ffi::c_int
     {
         if *name.offset(4 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == '\0' as i32 {
             return 0xbebebe as ::core::ffi::c_int | COLOUR_FLAG_RGB;
         }
-        c = strtonum(
-            name.offset(4 as ::core::ffi::c_int as isize),
+        let parsed = strtonum(
+            std::ffi::CStr::from_ptr(name.offset(4 as ::core::ffi::c_int as isize)),
             0 as ::core::ffi::c_longlong,
             100 as ::core::ffi::c_longlong,
-            &raw mut errstr,
-        ) as ::core::ffi::c_int;
-        if !errstr.is_null() {
+        );
+        c = parsed.unwrap_or(0) as ::core::ffi::c_int;
+        if parsed.is_err() {
             return -(1 as ::core::ffi::c_int);
         }
         c = round(2.55f64 * c as ::core::ffi::c_double) as ::core::ffi::c_int;

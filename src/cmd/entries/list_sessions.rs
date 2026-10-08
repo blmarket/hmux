@@ -1,6 +1,7 @@
 use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_print};
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_create_with_client, format_defaults, format_expand_cstring, format_free,
@@ -71,9 +72,9 @@ unsafe fn cmd_list_sessions_exec(
     }
     filter =
         args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr());
-    sort_crit.order = sort_order_from_string(
+    sort_crit.order = sort_order_from_string(nullable_cstr(
         args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
-    );
+    ));
     if sort_crit.order as ::core::ffi::c_uint
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
@@ -109,7 +110,7 @@ unsafe fn cmd_list_sessions_exec(
         }
         if flag != 0 {
             let line = format_expand_cstring(ft, template);
-            cmdq_print(item_handle, |out| write_cstr(out, line.as_ptr()));
+            cmdq_print(item_handle, |out| write_cstr(out, &*line));
         }
         format_free(ft_owner);
         i = i.wrapping_add(1);

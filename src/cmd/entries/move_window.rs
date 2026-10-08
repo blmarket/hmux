@@ -2,6 +2,7 @@ use crate::src::arguments::{args_get, args_has};
 use crate::src::cmd::find::cmd_find_target;
 use crate::src::cmd::queue::cmdq_error;
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::options::options_get_number;
 use crate::src::resize::recalculate_sizes;
@@ -96,7 +97,7 @@ unsafe fn cmd_move_window_exec(
         if cmd_find_target(
             &raw mut target,
             Some(item_handle),
-            tflag,
+            nullable_cstr(tflag),
             CMD_FIND_SESSION,
             CMD_FIND_QUIET,
         ) != 0 as ::core::ffi::c_int
@@ -114,7 +115,7 @@ unsafe fn cmd_move_window_exec(
     if cmd_find_target(
         &raw mut target,
         Some(item_handle),
-        tflag,
+        nullable_cstr(tflag),
         CMD_FIND_WINDOW,
         CMD_FIND_WINDOW_INDEX,
     ) != 0 as ::core::ffi::c_int
@@ -153,7 +154,7 @@ unsafe fn cmd_move_window_exec(
         kflag,
         (dflag == 0) as ::core::ffi::c_int,
     ) {
-        cmdq_error(item_handle, |out| write_cstr(out, cause.as_ptr()));
+        cmdq_error(item_handle, |out| write_cstr(out, &*cause));
         return CMD_RETURN_ERROR;
     }
     if std::ptr::eq(

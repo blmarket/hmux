@@ -36,7 +36,7 @@ use crate::src::shared::client::ClientRef;
 use crate::src::shared::session::SessionRef;
 use crate::src::shared::status::message_list;
 use crate::src::text::utf8::utf8_update_width_cache;
-use crate::src::tmux::{get_timer, global_options, socket_path, start_time};
+use crate::src::tmux::{get_timer, global_options, socket_path_cstr, start_time};
 use crate::src::tty::tty_create_log;
 
 use crate::src::window::windows;
@@ -162,12 +162,12 @@ pub unsafe fn server_create_socket(flags: uint64_t) -> Result<::core::ffi::c_int
 }
 
 unsafe fn server_create_listener(flags: uint64_t) -> Result<UnixListener, CString> {
-    let path = CStr::from_ptr(socket_path).to_bytes();
+    let path = socket_path_cstr().to_bytes();
     let result = (|| {
         if path.len() >= 108 {
             return Err(io::Error::from_raw_os_error(ENAMETOOLONG));
         }
-        unlink(socket_path);
+        unlink(socket_path_cstr().as_ptr());
         let mask = if flags & CLIENT_DEFAULTSOCKET as uint64_t != 0 {
             umask((S_IXUSR | S_IXGRP | S_IRWXO) as __mode_t)
         } else {
@@ -229,7 +229,7 @@ pub(crate) unsafe fn server_start(
     }
     server_client_flags = flags;
     let runtime = hmux_rt::mio::Runtime::new().expect("hmux-rt initialization");
-    let mut process_owner = proc_start(c"server".as_ptr());
+    let mut process_owner = proc_start(c"server");
     server_proc = &raw mut *process_owner;
     proc_set_signals(
         server_proc,
@@ -430,7 +430,7 @@ pub unsafe fn server_update_socket() {
     }
     if n != last {
         last = n;
-        if stat(socket_path, &raw mut sb) != 0 as ::core::ffi::c_int {
+        if stat(socket_path_cstr().as_ptr(), &raw mut sb) != 0 as ::core::ffi::c_int {
             return;
         }
         mode = (sb.st_mode & ACCESSPERMS as __mode_t) as ::core::ffi::c_int;
@@ -447,7 +447,7 @@ pub unsafe fn server_update_socket() {
         } else {
             mode &= !(S_IXUSR | S_IXGRP | S_IXOTH);
         }
-        chmod(socket_path, mode as __mode_t);
+        chmod(socket_path_cstr().as_ptr(), mode as __mode_t);
     }
 }
 unsafe fn server_accept(result: io::Result<OwnedFd>) {

@@ -195,14 +195,14 @@ pub fn format_owner_ptr(owner: &mut Option<Box<format_tree>>) -> *mut format_tre
         .map_or(std::ptr::null_mut(), |tree| &raw mut **tree)
 }
 
-pub unsafe fn format_log_debug(mut ft: *mut format_tree, mut prefix: *const ::core::ffi::c_char) {
+pub unsafe fn format_log_debug(mut ft: *mut format_tree, prefix: &CStr) {
     if log_get_level() == 0 as ::core::ffi::c_int {
         return;
     }
     format_each(ft, |key, value| {
         log_debug(format_args!(
             "{}: {}={}",
-            log_cstr(CStr::from_ptr(prefix)),
+            log_cstr(prefix),
             log_cstr(key),
             log_cstr(value)
         ));

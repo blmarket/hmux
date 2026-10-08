@@ -55,20 +55,17 @@ pub static cmd_refresh_client_entry: cmd_entry = {
         exec: Some(cmd_refresh_client_exec),
     }
 };
-unsafe fn cmd_refresh_client_update_subscription(
-    tc_owner: &ClientRef,
-    mut value: *const ::core::ffi::c_char,
-) {
-    let Some(parsed) = monitor_parse_owned(CStr::from_ptr(value)) else {
+unsafe fn cmd_refresh_client_update_subscription(tc_owner: &ClientRef, value: &CStr) {
+    let Some(parsed) = monitor_parse_owned(value) else {
         control_remove_sub(tc_owner, value);
         return;
     };
     control_add_sub(
         tc_owner,
-        parsed.name.as_ptr(),
+        &*parsed.name,
         parsed.type_0,
         parsed.id,
-        parsed.format.as_ptr(),
+        &*parsed.format,
     );
 }
 unsafe fn cmd_refresh_client_control_client_size(
@@ -174,11 +171,8 @@ fn cmd_refresh_parse_pane(value: &CStr) -> Option<(u_int, &CStr)> {
     (matched == 1).then_some((pane, suffix))
 }
 
-unsafe fn cmd_refresh_client_update_offset(
-    tc_owner: &ClientRef,
-    value: *const ::core::ffi::c_char,
-) {
-    let Some((pane, action)) = cmd_refresh_parse_pane(CStr::from_ptr(value)) else {
+unsafe fn cmd_refresh_client_update_offset(tc_owner: &ClientRef, value: &CStr) {
+    let Some((pane, action)) = cmd_refresh_parse_pane(value) else {
         return;
     };
     let Some(pane_owner) = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::find_by_id(pane)
@@ -194,8 +188,8 @@ unsafe fn cmd_refresh_client_update_offset(
     }
 }
 
-unsafe fn cmd_refresh_report(client: &ClientRef, value: *const ::core::ffi::c_char) {
-    let Some((pane, report)) = cmd_refresh_parse_pane(CStr::from_ptr(value)) else {
+unsafe fn cmd_refresh_report(client: &ClientRef, value: &CStr) {
+    let Some((pane, report)) = cmd_refresh_parse_pane(value) else {
         return;
     };
     let Some(pane_owner) = std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::find_by_id(pane)
@@ -213,8 +207,7 @@ unsafe fn cmd_refresh_report(client: &ClientRef, value: *const ::core::ffi::c_ch
         tty_keys_colours(
             &mut tty.flags,
             diagnostic_name.as_deref(),
-            report.as_ptr(),
-            report.to_bytes().len(),
+            report.to_bytes(),
             &mut size,
             &mut fg,
             &mut bg,
@@ -234,7 +227,6 @@ unsafe fn cmd_refresh_client_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     let tc_owner = cmdq_get_target_client((item).as_ref());
     let mut tc: Option<ClientRef> = tc_owner.clone();
-    let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     let mut adjust: u_int = 0;
     if args_has(args, 'c' as i32 as u_char) != 0
         || args_has(args, 'L' as i32 as u_char) != 0
@@ -245,14 +237,13 @@ unsafe fn cmd_refresh_client_exec(
         if args_count(args) == 0 as u_int {
             adjust = 1 as u_int;
         } else {
-            adjust = strtonum(
-                args_string(&mut *(args), 0 as u_int)
-                    .map_or(std::ptr::null(), |value| value.as_ptr()),
+            let parsed = strtonum(
+                args_string(&mut *(args), 0 as u_int).expect("numeric argument"),
                 1 as ::core::ffi::c_longlong,
                 INT_MAX as ::core::ffi::c_longlong,
-                &raw mut errstr,
-            ) as u_int;
-            if !errstr.is_null() {
+            );
+            adjust = parsed.unwrap_or(0) as u_int;
+            if let Err(errstr) = parsed {
                 cmdq_error(item_handle, |out| {
                     out.write_all(b"adjustment ")?;
                     write_cstr(out, errstr)
@@ -311,8 +302,7 @@ unsafe fn cmd_refresh_client_exec(
     if args_has(args, 'r' as i32 as u_char) != 0 {
         cmd_refresh_report(
             tc.as_ref().expect("live client"),
-            args_get(&*(args), 'r' as i32 as u_char)
-                .map_or(std::ptr::null(), |value| value.as_ptr()),
+            args_get(&*(args), 'r' as i32 as u_char).expect("-r takes a value"),
         );
     }
     if args_has(args, 'A' as i32 as u_char) != 0 {
@@ -320,7 +310,7 @@ unsafe fn cmd_refresh_client_exec(
             for av in args_flag_values(&*args, 'A' as i32 as u_char) {
                 cmd_refresh_client_update_offset(
                     &tc.clone().expect("live client"),
-                    av.string_ptr(),
+                    av.as_string().expect("-A takes a value"),
                 );
             }
             return CMD_RETURN_NORMAL;
@@ -330,7 +320,7 @@ unsafe fn cmd_refresh_client_exec(
             for av in args_flag_values(&*args, 'B' as i32 as u_char) {
                 cmd_refresh_client_update_subscription(
                     &tc.clone().expect("live client"),
-                    av.string_ptr(),
+                    av.as_string().expect("-B takes a value"),
                 );
             }
             return CMD_RETURN_NORMAL;

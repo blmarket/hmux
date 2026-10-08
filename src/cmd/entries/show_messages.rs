@@ -65,12 +65,7 @@ unsafe fn cmd_show_messages_terminals(
             write!(out, "Terminal {}: ", n)?;
             out.write_all(term.name.to_bytes())?;
             out.write_all(b" for ")?;
-            write_cstr(
-                out,
-                term.client_name
-                    .as_deref()
-                    .map_or(std::ptr::null(), std::ffi::CStr::as_ptr),
-            )?;
+            write_cstr(out, term.client_name.as_deref())?;
             write!(out, ", flags=0x{:x}:", term.flags as u32)
         });
         n = n.wrapping_add(1);
@@ -106,14 +101,14 @@ unsafe fn cmd_show_messages_exec(
     let mut ft_owner = format_create_from_target(item_handle);
     ft = &raw mut *ft_owner;
     for msg in message_log.iter_rev() {
-        format_add(ft, c"message_text", |out| write_cstr(out, msg.msg.as_ptr()));
+        format_add(ft, c"message_text", |out| write_cstr(out, &*msg.msg));
         format_add(ft, c"message_number", |out| {
             write!(out, "{}", { msg.msg_num })
         });
         let msg_time = msg.msg_time;
         format_add_time(ft, c"message_time", msg_time);
         let s = format_expand_cstring(ft, SHOW_MESSAGES_TEMPLATE.as_ptr());
-        cmdq_print(item_handle, |out| write_cstr(out, s.as_ptr()));
+        cmdq_print(item_handle, |out| write_cstr(out, &*s));
     }
     format_free(ft_owner);
     CMD_RETURN_NORMAL

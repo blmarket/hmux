@@ -338,7 +338,7 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         us: 0,
         link: 0,
     };
-    let mut dgc: *const grid_cell = &raw const grid_default_cell;
+    let dgc = &raw const grid_default_cell;
     screen_write_start(&mut ctx, s);
     screen_write_clearscreen(&mut ctx, 8 as u_int);
     if sy <= 1 as u_int {
@@ -369,7 +369,7 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         if idx != (*data).current {
             format_draw(
                 &raw mut ctx,
-                dgc,
+                &*dgc,
                 sx,
                 (*item).text.as_ptr(),
                 ::core::ptr::null_mut::<style_ranges>(),
@@ -379,7 +379,7 @@ unsafe fn window_switch_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
             screen_write_clearendofline(&mut ctx, sgc.bg as u_int);
             format_draw(
                 &raw mut ctx,
-                &raw mut sgc,
+                &sgc,
                 sx,
                 (*item).text.as_ptr(),
                 ::core::ptr::null_mut::<style_ranges>(),
@@ -613,14 +613,7 @@ unsafe fn window_switch_run_command(
                     1 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
-                    |out| {
-                        write_cstr(
-                            out,
-                            error
-                                .as_ref()
-                                .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
-                        )
-                    },
+                    |out| write_cstr(out, error.as_deref()),
                 );
             }
         }

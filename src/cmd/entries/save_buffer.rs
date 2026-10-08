@@ -3,6 +3,7 @@ use crate::src::cmd::queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_pr
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
 use crate::src::ffi::libc::strerror;
 use crate::src::file::file_write_with_cmdq_wait;
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::paste::{paste_buffer_data, paste_get_name, paste_get_top};
@@ -78,9 +79,9 @@ unsafe fn cmd_save_buffer_done(
     }
     if error != 0 as ::core::ffi::c_int {
         cmdq_error(item_handle, |out| {
-            write_cstr(out, strerror(error))?;
+            write_cstr(out, nullable_cstr(strerror(error)))?;
             out.write_all(b": ")?;
-            write_cstr(out, path.map_or(::core::ptr::null(), CStr::as_ptr))
+            write_cstr(out, path)
         });
     }
     cmdq_continue(item_handle);
@@ -110,7 +111,7 @@ unsafe fn cmd_save_buffer_exec(
         if pb.is_none() {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"no buffer ")?;
-                write_cstr(out, bufname)
+                write_cstr(out, nullable_cstr(bufname))
             });
             return CMD_RETURN_ERROR;
         }
@@ -133,7 +134,7 @@ unsafe fn cmd_save_buffer_exec(
         {
             let buffer = pb.borrow();
             let bufdata = paste_buffer_data(&buffer).unwrap_or_default();
-            evbuffer_add(&mut evb, bufdata.as_ptr().cast(), bufdata.len());
+            evbuffer_add(&mut evb, &bufdata);
         }
         cmdq_print_data(item_handle, &mut evb);
         return CMD_RETURN_NORMAL;
@@ -158,10 +159,9 @@ unsafe fn cmd_save_buffer_exec(
     let waiting_item = std::rc::Rc::downgrade(item_handle);
     file_write_with_cmdq_wait(
         queue_client.as_ref(),
-        path,
+        CStr::from_ptr(path),
         flags,
-        bufdata.as_ptr().cast(),
-        bufdata.len(),
+        &bufdata,
         Some(Box::new(move |event| unsafe {
             cmd_save_buffer_done(
                 &waiting_item

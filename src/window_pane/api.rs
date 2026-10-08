@@ -12,6 +12,7 @@ use crate::src::shared::pane::{
 };
 use crate::src::shared::screen::MODE_SYNC;
 use crate::src::shared::window::{WindowRef, WindowWeak};
+use std::ffi::CStr;
 use std::os::fd::AsRawFd;
 use std::time::Duration;
 
@@ -681,7 +682,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         window_pane_upgrade(observer)
     }
     unsafe fn release(self, source: &CStr) {
-        window_pane_remove_ref(self, source.as_ptr());
+        window_pane_remove_ref(self, &*source);
     }
     unsafe fn tty_name(&self) -> CString {
         CStr::from_ptr((*self.get()).tty.as_ptr()).to_owned()
@@ -715,8 +716,8 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
             self,
             client,
             find.map_or(std::ptr::null_mut(), |find| find),
-            message.as_ptr(),
-            input.map_or(std::ptr::null(), CStr::as_ptr),
+            &*message,
+            input,
             inputcb,
             freecb,
             flags,
@@ -724,11 +725,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         );
     }
     unsafe fn update_prompt(&self, message: &CStr, input: Option<&CStr>) {
-        window_pane_update_prompt(
-            self,
-            message.as_ptr(),
-            input.map_or(std::ptr::null(), CStr::as_ptr),
-        );
+        window_pane_update_prompt(self, &*message, input);
     }
     unsafe fn paste_buffer(&self, bytes: &[u8], separator: &[u8], bracket: bool, raw: bool) {
         let pane = &*self.get();
@@ -738,9 +735,9 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         let bracket = bracket
             && (*pane.screen_ptr()).mode & crate::src::shared::screen::MODE_BRACKETPASTE != 0;
         let write = |bytes: &[u8]| {
-            let _ = pane.event.with_ptr(|event| {
-                crate::src::reactor::bufferevent_write(event, bytes.as_ptr().cast(), bytes.len())
-            });
+            let _ = pane
+                .event
+                .with_ptr(|event| crate::src::reactor::bufferevent_write(event, &bytes));
         };
         if bracket {
             write(b"\x1b[200~");
@@ -1035,12 +1032,14 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         }
         // Callbacks observe the old focus flag, as in the original operation.
         events_fire_pane(
-            if focused {
-                c"pane-focus-in"
-            } else {
-                c"pane-focus-out"
-            }
-            .as_ptr(),
+            CStr::from_ptr(
+                if focused {
+                    c"pane-focus-in"
+                } else {
+                    c"pane-focus-out"
+                }
+                .as_ptr(),
+            ),
             Rc::clone(self),
         );
         if focused {
@@ -1310,7 +1309,7 @@ impl WindowPane for Rc<UnsafeCell<window_pane>> {
         super::input::input_parse_pane(self)
     }
     unsafe fn parse_output(&self, bytes: &[u8]) {
-        super::input::input_parse_buffer(self, bytes.as_ptr(), bytes.len())
+        super::input::input_parse_buffer(self, bytes)
     }
     unsafe fn spawn_process(
         context: *mut crate::src::shared::spawn::spawn_context,
@@ -1619,7 +1618,7 @@ mod tests {
         (*pane.get()).pipe_fd = None;
         let stream = bufferevent_new(-1, None, None, None);
         (*pane.get()).event = StreamHandle::from_ptr(stream);
-        evbuffer_add(&mut (*stream).input, bytes.as_ptr().cast(), bytes.len());
+        evbuffer_add(&mut (*stream).input, &bytes);
         pane
     }
 
@@ -1678,7 +1677,7 @@ mod tests {
             let mut options = crate::src::options::options_create_owned(None);
             let definition = crate::src::options_table::options_table
                 .iter()
-                .find(|entry| CStr::from_ptr(entry.name_ptr()) == c"extended-keys")
+                .find(|entry| entry.name == Some(c"extended-keys"))
                 .unwrap();
             crate::src::options::options_default(&mut *options, definition);
             let previous_options = global_options;

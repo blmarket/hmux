@@ -4,6 +4,7 @@ use crate::src::server::clients;
 use crate::src::server_client::Client as _;
 use crate::src::session::sessions;
 use crate::src::session::SessionIndex as _;
+use std::ffi::CStr;
 
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
@@ -176,7 +177,8 @@ pub unsafe fn sort_next_order(sort_crit: *mut sort_criteria) {
         .map_or(0, |index| (index + 1) % sequence.len());
     criteria.order = sequence[next];
 }
-pub unsafe fn sort_order_from_string(mut order: *const ::core::ffi::c_char) -> sort_order {
+pub unsafe fn sort_order_from_string(order: Option<&CStr>) -> sort_order {
+    let order: *const ::core::ffi::c_char = order.map_or(std::ptr::null(), CStr::as_ptr);
     if !order.is_null() {
         if strcasecmp(order, c"activity".as_ptr()) == 0 as ::core::ffi::c_int {
             return SORT_ACTIVITY;
@@ -206,29 +208,29 @@ pub unsafe fn sort_order_from_string(mut order: *const ::core::ffi::c_char) -> s
     }
     SORT_END
 }
-pub unsafe fn sort_order_to_string(mut order: sort_order) -> *const ::core::ffi::c_char {
+pub fn sort_order_to_string(order: sort_order) -> Option<&'static CStr> {
     if order as ::core::ffi::c_uint == SORT_ACTIVITY as ::core::ffi::c_int as ::core::ffi::c_uint {
-        return c"activity".as_ptr();
+        return Some(c"activity");
     }
     if order as ::core::ffi::c_uint == SORT_CREATION as ::core::ffi::c_int as ::core::ffi::c_uint {
-        return c"creation".as_ptr();
+        return Some(c"creation");
     }
     if order as ::core::ffi::c_uint == SORT_INDEX as ::core::ffi::c_int as ::core::ffi::c_uint {
-        return c"index".as_ptr();
+        return Some(c"index");
     }
     if order as ::core::ffi::c_uint == SORT_MODIFIER as ::core::ffi::c_int as ::core::ffi::c_uint {
-        return c"modifier".as_ptr();
+        return Some(c"modifier");
     }
     if order as ::core::ffi::c_uint == SORT_NAME as ::core::ffi::c_int as ::core::ffi::c_uint {
-        return c"name".as_ptr();
+        return Some(c"name");
     }
     if order as ::core::ffi::c_uint == SORT_ORDER as ::core::ffi::c_int as ::core::ffi::c_uint {
-        return c"order".as_ptr();
+        return Some(c"order");
     }
     if order as ::core::ffi::c_uint == SORT_SIZE as ::core::ffi::c_int as ::core::ffi::c_uint {
-        return c"size".as_ptr();
+        return Some(c"size");
     }
-    ::core::ptr::null::<::core::ffi::c_char>()
+    None
 }
 pub unsafe fn sort_would_window_tree_swap(
     mut sort_crit: *mut sort_criteria,

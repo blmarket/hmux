@@ -1,5 +1,4 @@
 use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned};
-use crate::src::ffi::libc::memcpy;
 use crate::src::format::bytes::format_message_with;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
@@ -77,7 +76,7 @@ unsafe fn status_timer_callback(client: &ClientRef) {
     }
     log_debug(format_args!(
         "client {}, status interval {}",
-        log_pointer(std::rc::Rc::as_ptr(client).cast()),
+        log_pointer(std::rc::Rc::as_ptr(client)),
         timeout.as_secs() as i32
     ));
 }
@@ -302,11 +301,7 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
         let sl: *mut status_line = &mut *status;
         if !grid_cells_equal(&gc, &(*sl).style) {
             force = 1 as ::core::ffi::c_int;
-            memcpy(
-                &raw mut (*sl).style as *mut ::core::ffi::c_void,
-                &raw mut gc as *const ::core::ffi::c_void,
-                ::core::mem::size_of::<grid_cell>() as size_t,
-            );
+            (*sl).style = gc;
         }
         if (*sl).screen.grid().sx != width || (*sl).screen.grid().sy != lines {
             screen_resize(&mut (*sl).screen, width, lines, 0 as ::core::ffi::c_int);
@@ -388,7 +383,7 @@ pub unsafe fn status_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
                     style_ranges_clear(&raw mut (*sle).ranges);
                     format_draw(
                         &raw mut ctx,
-                        &raw mut gc,
+                        &gc,
                         width,
                         expanded.as_ptr(),
                         &raw mut (*sle).ranges,
@@ -455,7 +450,7 @@ pub unsafe fn status_message_set(
     } else {
         server_add_message(|out| {
             out.write_all(b"message: ")?;
-            write_cstr(out, message.as_ptr())
+            write_cstr(out, &*message)
         });
     }
 }
@@ -561,16 +556,9 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     let (message, ignore_styles) = c_owner.status_message_text();
     if ignore_styles {
         let msg = status_message_escape(message.as_deref().unwrap_or(c""));
-        format_add(ft, c"message", |out| write_cstr(out, msg.as_ptr()));
+        format_add(ft, c"message", |out| write_cstr(out, &*msg));
     } else {
-        format_add(ft, c"message", |out| {
-            write_cstr(
-                out,
-                (message)
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            )
-        });
+        format_add(ft, c"message", |out| write_cstr(out, (message).as_deref()));
     }
     format_add(ft, c"command_prompt", |out| {
         write!(out, "{}", { 0 as ::core::ffi::c_int })
@@ -607,7 +595,7 @@ pub unsafe fn status_message_redraw(c_owner: &ClientRef) -> ::core::ffi::c_int {
     );
     format_draw(
         &raw mut ctx,
-        &raw mut gc,
+        &gc,
         aw,
         expanded.as_ptr(),
         ::core::ptr::null_mut::<style_ranges>(),
@@ -632,14 +620,15 @@ unsafe fn status_prompt_accept(c_owner: &ClientRef) -> cmd_retval {
 }
 pub unsafe fn status_prompt_set(
     c_owner: &ClientRef,
-    mut fs: *mut cmd_find_state,
-    mut msg: *const ::core::ffi::c_char,
-    mut input: *const ::core::ffi::c_char,
+    fs: Option<&cmd_find_state>,
+    msg: &CStr,
+    input: Option<&CStr>,
     mut inputcb: status_prompt_input_cb,
     mut freecb: prompt_free_cb,
     mut flags: ::core::ffi::c_int,
     mut prompt_type: prompt_type,
 ) {
+    let mut input: *const ::core::ffi::c_char = input.map_or(std::ptr::null(), CStr::as_ptr);
     let mut c: Option<ClientRef> = Some(c_owner.clone());
     let mut pd = prompt_create_data::default();
     status_message_clear(c_owner);
@@ -653,8 +642,8 @@ pub unsafe fn status_prompt_set(
             .upgrade()
             .as_ref(),
     );
-    pd.fs = fs.as_ref();
-    pd.prompt = CStr::from_ptr(msg);
+    pd.fs = fs;
+    pd.prompt = msg;
     pd.input = if input.is_null() {
         None
     } else {
@@ -696,11 +685,8 @@ pub unsafe fn status_prompt_clear(c_owner: &ClientRef) {
     c_owner.clear_prompt();
 }
 
-pub unsafe fn status_prompt_update(
-    c_owner: &ClientRef,
-    mut msg: *const ::core::ffi::c_char,
-    mut input: *const ::core::ffi::c_char,
-) {
+pub unsafe fn status_prompt_update(c_owner: &ClientRef, msg: &CStr, input: Option<&CStr>) {
+    let input: *const ::core::ffi::c_char = input.map_or(std::ptr::null(), CStr::as_ptr);
     let mut c: Option<ClientRef> = Some(c_owner.clone());
     let prompt = c_owner.prompt_observer();
     if !prompt.is_alive() {
@@ -708,7 +694,7 @@ pub unsafe fn status_prompt_update(
     }
     prompt_update(
         &mut prompt.try_borrow_mut().expect("unborrowed prompt"),
-        CStr::from_ptr(msg),
+        msg,
         (!input.is_null()).then(|| CStr::from_ptr(input)),
     );
     c.as_ref()

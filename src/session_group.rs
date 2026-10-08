@@ -127,20 +127,20 @@ pub unsafe fn session_group_for(target: &SessionWeak) -> *mut session_group {
     std::ptr::null_mut()
 }
 
-pub unsafe fn session_group_find(name: *const core::ffi::c_char) -> *mut session_group {
+pub unsafe fn session_group_find(name: &CStr) -> *mut session_group {
     let key = session_group {
-        name: CStr::from_ptr(name).to_owned(),
+        name: name.to_owned(),
         ..session_group::empty()
     };
     session_groups_find(&session_groups, &key)
 }
 
-pub unsafe fn session_group_new(name: *const core::ffi::c_char) -> *mut session_group {
+pub unsafe fn session_group_new(name: &CStr) -> *mut session_group {
     let existing = session_group_find(name);
     if !existing.is_null() {
         return existing;
     }
-    let owner = session_group::new(CStr::from_ptr(name));
+    let owner = session_group::new(name);
     let group = owner.node_ptr();
     assert!(session_groups_insert(&raw mut session_groups, owner).is_null());
     group
@@ -160,16 +160,12 @@ unsafe fn session_group_fire(name: &CStr, group: *mut session_group, owner: &Ses
         cmd_find_from_session(&mut target, owner, 0);
         event_payload_set_target(&mut payload, &target);
     }
-    event_payload_set_session(&mut payload, c"session".as_ptr(), owner.clone());
-    event_payload_set_string(&mut payload, c"group".as_ptr(), |out| {
-        write_cstr(out, (*group).name.as_ptr())
+    event_payload_set_session(&mut payload, c"session", owner.clone());
+    event_payload_set_string(&mut payload, c"group", |out| {
+        write_cstr(out, &*((*group).name))
     });
-    event_payload_set_uint(
-        &mut payload,
-        c"group_size".as_ptr(),
-        session_group_count(group),
-    );
-    events_fire(name.as_ptr(), payload);
+    event_payload_set_uint(&mut payload, c"group_size", session_group_count(group));
+    events_fire(&*name, payload);
 }
 
 pub unsafe fn session_group_add(group: *mut session_group, owner: &SessionRef) {

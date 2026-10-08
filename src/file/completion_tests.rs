@@ -18,7 +18,7 @@ unsafe fn start_read(
             let callback = callback(Rc::downgrade(item));
             file_read_with_cmdq_wait_init(
                 None,
-                path.as_ptr(),
+                &*path,
                 move |file| {
                     observed.set(file);
                     callback

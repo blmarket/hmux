@@ -10,6 +10,7 @@ use crate::src::shared::window::{
     WINDOW_ACTIVITY, WINDOW_BELL, WINDOW_SILENCE, WINLINK_ACTIVITY, WINLINK_BELL, WINLINK_SILENCE,
 };
 use crate::src::window::Window;
+use std::ffi::CStr;
 
 const SESSION_ALERTED: ::core::ffi::c_int = 0x1;
 
@@ -74,10 +75,10 @@ unsafe fn alerts_check_bell(w_owner: &WindowRef) -> ::core::ffi::c_int {
             server_status_session(&session_owner);
         }
         if !(alerts_action_applies(wl.clone(), c"bell-action") == 0) {
-            events_fire_winlink(c"alert-bell".as_ptr(), wl.clone());
+            events_fire_winlink(c"alert-bell", wl.clone());
             if !((*s).flags & SESSION_ALERTED != 0) {
                 (*s).flags |= SESSION_ALERTED;
-                alerts_set_message(wl.clone(), c"Bell".as_ptr(), c"visual-bell");
+                alerts_set_message(wl.clone(), c"Bell", c"visual-bell");
             }
         }
         wl = w_owner.next_winlink(Some(wl.clone()));
@@ -114,10 +115,10 @@ unsafe fn alerts_check_activity(w_owner: &WindowRef) -> ::core::ffi::c_int {
                 server_status_session(&session_owner);
             }
             if !(alerts_action_applies(wl.clone(), c"activity-action") == 0) {
-                events_fire_winlink(c"alert-activity".as_ptr(), wl.clone());
+                events_fire_winlink(c"alert-activity", wl.clone());
                 if !((*s).flags & SESSION_ALERTED != 0) {
                     (*s).flags |= SESSION_ALERTED;
-                    alerts_set_message(wl.clone(), c"Activity".as_ptr(), c"visual-activity");
+                    alerts_set_message(wl.clone(), c"Activity", c"visual-activity");
                 }
             }
         }
@@ -157,10 +158,10 @@ unsafe fn alerts_check_silence(w_owner: &WindowRef) -> ::core::ffi::c_int {
                 server_status_session(&session_owner);
             }
             if !(alerts_action_applies(wl.clone(), c"silence-action") == 0) {
-                events_fire_winlink(c"alert-silence".as_ptr(), wl.clone());
+                events_fire_winlink(c"alert-silence", wl.clone());
                 if !((*s).flags & SESSION_ALERTED != 0) {
                     (*s).flags |= SESSION_ALERTED;
-                    alerts_set_message(wl.clone(), c"Silence".as_ptr(), c"visual-silence");
+                    alerts_set_message(wl.clone(), c"Silence", c"visual-silence");
                 }
             }
         }
@@ -169,11 +170,7 @@ unsafe fn alerts_check_silence(w_owner: &WindowRef) -> ::core::ffi::c_int {
     0x4 as ::core::ffi::c_int
 }
 
-unsafe fn alerts_set_message(
-    mut wl: refbox::Weak<winlink>,
-    mut type_0: *const ::core::ffi::c_char,
-    option: &'static CStr,
-) {
+unsafe fn alerts_set_message(mut wl: refbox::Weak<winlink>, type_0: &CStr, option: &'static CStr) {
     let Some(session_owner) = wl.get_unchecked().session.upgrade() else {
         return;
     };
@@ -190,7 +187,7 @@ unsafe fn alerts_set_message(
             && !client.is_control()
         {
             client.alert(
-                CStr::from_ptr(type_0),
+                type_0,
                 visual,
                 session_owner.current_winlink() == wl,
                 wl.get_unchecked().idx,

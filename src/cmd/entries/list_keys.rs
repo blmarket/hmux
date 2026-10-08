@@ -1,6 +1,7 @@
 use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client, cmdq_print};
 use crate::src::cmd::{cmd_get_args_mut, cmd_list_print_cstring};
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_add, format_create_with_client, format_defaults, format_expand_cstring, format_free,
@@ -128,40 +129,26 @@ unsafe fn cmd_list_keys_format_add_key_binding(
         format_add(ft, c"key_repeat", |out| out.write_all(b"0"));
     }
     if bd.note.is_some() {
-        format_add(ft, c"key_note", |out| {
-            write_cstr(
-                out,
-                bd.note
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            )
-        });
+        format_add(ft, c"key_note", |out| write_cstr(out, bd.note.as_deref()));
     } else {
-        format_add(ft, c"key_note", |out| write_cstr(out, c"".as_ptr()));
+        format_add(ft, c"key_note", |out| write_cstr(out, c""));
     }
     let key_string = key_string_format(bd.key, false);
     format_add(ft, c"key_prefix", |out| {
         write_cstr(
             out, // format_add copies the bytes synchronously; this pointer cannot escape.
-            prefix.as_ptr(),
+            nullable_cstr(prefix.as_ptr()),
         )
     });
     format_add(ft, c"key_table", |out| {
-        write_cstr(
-            out,
-            bd.tablename
-                .as_ref()
-                .map_or(::core::ptr::null(), |s| s.as_ptr()),
-        )
+        write_cstr(out, bd.tablename.as_deref())
     });
-    format_add(ft, c"key_string", |out| {
-        write_cstr(out, key_string.as_ptr())
-    });
+    format_add(ft, c"key_string", |out| write_cstr(out, &*key_string));
     let command = cmd_list_print_cstring(
         &bd.cmdlist().borrow(),
         CMD_LIST_PRINT_ESCAPED | CMD_LIST_PRINT_NO_GROUPS,
     );
-    format_add(ft, c"key_command", |out| write_cstr(out, command.as_ptr()));
+    format_add(ft, c"key_command", |out| write_cstr(out, &*command));
 }
 unsafe fn cmd_list_keys_exec(
     mut self_0: refbox::Weak<cmd>,
@@ -194,15 +181,15 @@ unsafe fn cmd_list_keys_exec(
         if only == KEYC_UNKNOWN as ::core::ffi::c_ulong as key_code {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"invalid key: ")?;
-                write_cstr(out, keystr)
+                write_cstr(out, nullable_cstr(keystr))
             });
             return CMD_RETURN_ERROR;
         }
         only &= KEYC_MASK_KEY | KEYC_MASK_MODIFIERS;
     }
-    sort_crit.order = sort_order_from_string(
+    sort_crit.order = sort_order_from_string(nullable_cstr(
         args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
-    );
+    ));
     if sort_crit.order as ::core::ffi::c_uint
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
@@ -219,7 +206,7 @@ unsafe fn cmd_list_keys_exec(
         if table.is_none() {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"table ")?;
-                write_cstr(out, tablename)?;
+                write_cstr(out, nullable_cstr(tablename))?;
                 out.write_all(b" doesn't exist")
             });
             return CMD_RETURN_ERROR;
@@ -252,7 +239,7 @@ unsafe fn cmd_list_keys_exec(
     if filter_key != 0 && bindings.is_empty() {
         cmdq_error(item_handle, |out| {
             out.write_all(b"unknown key: ")?;
-            write_cstr(out, keystr)
+            write_cstr(out, nullable_cstr(keystr))
         });
         return CMD_RETURN_ERROR;
     }
@@ -292,10 +279,10 @@ unsafe fn cmd_list_keys_exec(
                 1 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
-                |out| write_cstr(out, line.as_ptr()),
+                |out| write_cstr(out, &*line),
             );
         } else if !line.is_empty() {
-            cmdq_print(item_handle, |out| write_cstr(out, line.as_ptr()));
+            cmdq_print(item_handle, |out| write_cstr(out, &*line));
         }
         if single != 0 {
             break;

@@ -1,6 +1,7 @@
 use crate::src::arguments::args_get;
 use crate::src::cmd::queue::{cmdq_error, cmdq_print};
 use crate::src::cmd::{cmd_get_args_mut, cmd_get_entry};
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::prompt::{prompt_type, prompt_type_string};
 use crate::src::prompt_history::{prompt_history_clear, prompt_history_get, prompt_history_size};
@@ -90,7 +91,7 @@ unsafe fn cmd_show_prompt_history_exec(
             {
                 cmdq_error(item_handle, |out| {
                     out.write_all(b"invalid type: ")?;
-                    write_cstr(out, typestr)
+                    write_cstr(out, nullable_cstr(typestr))
                 });
                 return CMD_RETURN_ERROR;
             }
@@ -117,7 +118,7 @@ unsafe fn cmd_show_prompt_history_exec(
                 });
                 h = h.wrapping_add(1);
             }
-            cmdq_print(item_handle, |out| write_cstr(out, c"".as_ptr()));
+            cmdq_print(item_handle, |out| write_cstr(out, c""));
             t = t.wrapping_add(1);
         }
     } else {
@@ -127,7 +128,7 @@ unsafe fn cmd_show_prompt_history_exec(
         {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"invalid type: ")?;
-                write_cstr(out, typestr)
+                write_cstr(out, nullable_cstr(typestr))
             });
             return CMD_RETURN_ERROR;
         }
@@ -145,7 +146,7 @@ unsafe fn cmd_show_prompt_history_exec(
             });
             h = h.wrapping_add(1);
         }
-        cmdq_print(item_handle, |out| write_cstr(out, c"".as_ptr()));
+        cmdq_print(item_handle, |out| write_cstr(out, c""));
     }
     CMD_RETURN_NORMAL
 }

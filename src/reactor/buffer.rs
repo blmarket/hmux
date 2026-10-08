@@ -2,7 +2,7 @@
 //! Stream scheduling belongs to bufferevent, not these storage operations.
 use crate::src::shared::abi::{size_t, ssize_t};
 use hmux_buffer::{Buf, BufMut, Buffer, LineEnding, SegmentedBuf};
-use std::ffi::{c_int, c_void};
+use std::ffi::c_int;
 
 pub fn evbuffer_new() -> Box<SegmentedBuf> {
     Box::new(SegmentedBuf::default())
@@ -10,10 +10,8 @@ pub fn evbuffer_new() -> Box<SegmentedBuf> {
 pub fn evbuffer_get_length(b: &SegmentedBuf) -> size_t {
     b.remaining() as size_t
 }
-pub unsafe fn evbuffer_add(b: &mut SegmentedBuf, data: *const c_void, len: size_t) -> c_int {
-    if len != 0 {
-        b.put_slice(std::slice::from_raw_parts(data.cast(), len));
-    }
+pub fn evbuffer_add(b: &mut SegmentedBuf, data: &[u8]) -> c_int {
+    b.put_slice(data);
     0
 }
 pub fn evbuffer_drain(b: &mut SegmentedBuf, len: size_t) -> c_int {
@@ -139,12 +137,10 @@ mod tests {
             let text = CString::new("x".repeat(size)).unwrap();
             let mut buffer = SegmentedBuf::default();
             assert_eq!(
-                unsafe {
-                    append_formatted(&mut buffer, |out| {
-                        write_cstr(out, text.as_ptr())?;
-                        write!(out, ":{}:{}", (-7i32) as i32, (42usize) as usize)
-                    })
-                },
+                append_formatted(&mut buffer, |out| {
+                    write_cstr(out, &*text)?;
+                    write!(out, ":{}:{}", (-7i32) as i32, (42usize) as usize)
+                }),
                 (size + 6) as c_int
             );
             assert_eq!(buffer.chunks().len(), 1);
@@ -169,20 +165,18 @@ mod tests {
     #[test]
     fn formatting_preserves_prefix_empty_output_and_embedded_nul() {
         let mut buffer = SegmentedBuf::from(b"prefix".to_vec());
-        unsafe {
-            assert_eq!(
-                append_formatted(&mut buffer, |out| { write_cstr(out, c"".as_ptr()) }),
-                0
-            );
-            assert_eq!(buffer.remaining(), 6);
-            assert_eq!(
-                append_formatted(&mut buffer, |out| {
-                    out.write_all(&[(0i32) as u8])?;
-                    write!(out, ":{}", (7i32) as i32)
-                }),
-                3
-            );
-        }
+        assert_eq!(
+            append_formatted(&mut buffer, |out| { write_cstr(out, c"") }),
+            0
+        );
+        assert_eq!(buffer.remaining(), 6);
+        assert_eq!(
+            append_formatted(&mut buffer, |out| {
+                out.write_all(&[(0i32) as u8])?;
+                write!(out, ":{}", (7i32) as i32)
+            }),
+            3
+        );
         assert_eq!(
             buffer.chunks().flatten().copied().collect::<Vec<_>>(),
             b"prefix\0:7"

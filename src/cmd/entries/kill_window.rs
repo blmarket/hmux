@@ -6,6 +6,7 @@ use crate::src::format::{
 };
 use crate::src::resize::recalculate_sizes;
 use crate::src::server_fn::{server_kill_window, server_renumber_all, server_unlink_window};
+use std::ffi::CStr;
 
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
@@ -105,7 +106,7 @@ unsafe fn cmd_kill_window_exec(
         return CMD_RETURN_NORMAL;
     }
     if args_has(args, 'a' as i32 as u_char) != 0 {
-        return cmd_kill_window_all(item_handle, filter);
+        return cmd_kill_window_all(item_handle, CStr::from_ptr(filter));
     }
     server_kill_window(
         wl.get_unchecked()
@@ -119,7 +120,7 @@ unsafe fn cmd_kill_window_exec(
 }
 unsafe fn cmd_kill_window_all(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    mut filter: *const ::core::ffi::c_char,
+    filter: &CStr,
 ) -> cmd_retval {
     let item = item_handle.get();
     let mut target: *mut cmd_find_state = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
@@ -147,7 +148,7 @@ unsafe fn cmd_kill_window_all(
                 item_handle,
                 s.as_ref().expect("live session"),
                 (loop_0).clone(),
-                filter,
+                Some(filter),
             ) != 0
             {
                 server_kill_window(
@@ -185,7 +186,7 @@ unsafe fn cmd_kill_window_all(
                 item_handle,
                 s.as_ref().expect("live session"),
                 (loop_0).clone(),
-                filter,
+                Some(filter),
             ) != 0
             {
                 kill_current = 1 as u_int;
@@ -210,8 +211,9 @@ unsafe fn cmd_kill_window_filter(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     s_owner: &SessionRef,
     mut wl: refbox::Weak<winlink>,
-    mut filter: *const ::core::ffi::c_char,
+    filter: Option<&CStr>,
 ) -> ::core::ffi::c_int {
+    let filter: *const ::core::ffi::c_char = filter.map_or(std::ptr::null(), CStr::as_ptr);
     let item = item_handle.get();
 
     let queue_client = cmdq_get_client((item).as_ref());

@@ -1,4 +1,5 @@
 //! Pane implementation. Window state is accessed through the Window trait.
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::session::Session;
 use crate::src::shared::client::ClientRef;
 use crate::src::shared::window::WindowRef;
@@ -34,7 +35,7 @@ use crate::src::events_payload::{
     event_payload_create, event_payload_set_int, event_payload_set_pane, event_payload_set_string,
     event_payload_set_target, event_payload_set_uint, event_payload_set_window,
 };
-use crate::src::ffi::libc::{__ctype_b_loc, fnmatch, gethostname, getpid, kill, memcpy, memset};
+use crate::src::ffi::libc::{__ctype_b_loc, fnmatch, gethostname, getpid, kill, memset};
 use crate::src::ffi::regex::RegexStorage;
 use crate::src::ffi::utempter::utempter_remove_record;
 use crate::src::file::{file_cancel, file_read_with_cmdq_wait_init};
@@ -256,35 +257,29 @@ unsafe fn window_fire_pane_moved(
     let mut ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, wp_owner, 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
-    event_payload_set_pane(&mut ep, c"pane".as_ptr(), Rc::clone(wp_owner));
-    event_payload_set_window(&mut ep, c"window".as_ptr(), std::rc::Rc::clone(new_w_owner));
-    event_payload_set_window(
-        &mut ep,
-        c"old_window".as_ptr(),
-        std::rc::Rc::clone(old_w_owner),
-    );
-    event_payload_set_window(
-        &mut ep,
-        c"new_window".as_ptr(),
-        std::rc::Rc::clone(new_w_owner),
-    );
+    event_payload_set_pane(&mut ep, c"pane", Rc::clone(wp_owner));
+    event_payload_set_window(&mut ep, c"window", std::rc::Rc::clone(new_w_owner));
+    event_payload_set_window(&mut ep, c"old_window", std::rc::Rc::clone(old_w_owner));
+    event_payload_set_window(&mut ep, c"new_window", std::rc::Rc::clone(new_w_owner));
     if old_idx != -(1 as ::core::ffi::c_int) {
-        event_payload_set_int(&mut ep, c"old_window_index".as_ptr(), old_idx);
+        event_payload_set_int(&mut ep, c"old_window_index", old_idx);
     }
     if new_idx != -(1 as ::core::ffi::c_int) {
-        event_payload_set_int(&mut ep, c"window_index".as_ptr(), new_idx);
-        event_payload_set_int(&mut ep, c"new_window_index".as_ptr(), new_idx);
+        event_payload_set_int(&mut ep, c"window_index", new_idx);
+        event_payload_set_int(&mut ep, c"new_window_index", new_idx);
     }
-    events_fire(c"pane-moved".as_ptr(), ep);
+    events_fire(c"pane-moved", ep);
 }
 
 unsafe fn window_fire_pane_mode_changed(
-    mut name: *const ::core::ffi::c_char,
+    name: &CStr,
     wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
-    mut previous: *const ::core::ffi::c_char,
-    mut current: *const ::core::ffi::c_char,
+    previous: Option<&CStr>,
+    current: Option<&CStr>,
     mut entered: ::core::ffi::c_int,
 ) {
+    let current: *const ::core::ffi::c_char = current.map_or(std::ptr::null(), CStr::as_ptr);
+    let previous: *const ::core::ffi::c_char = previous.map_or(std::ptr::null(), CStr::as_ptr);
     let mut wp = wp_owner.get();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -297,28 +292,28 @@ unsafe fn window_fire_pane_mode_changed(
     let mut ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, wp_owner, 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
-    event_payload_set_pane(&mut ep, c"pane".as_ptr(), std::rc::Rc::clone(wp_owner));
+    event_payload_set_pane(&mut ep, c"pane", std::rc::Rc::clone(wp_owner));
     event_payload_set_window(
         &mut ep,
-        c"window".as_ptr(),
+        c"window",
         std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
     if !current.is_null() {
-        event_payload_set_string(&mut ep, c"current_mode".as_ptr(), |out| {
-            write_cstr(out, current)
+        event_payload_set_string(&mut ep, c"current_mode", |out| {
+            write_cstr(out, nullable_cstr(current))
         });
     }
     if !previous.is_null() {
-        event_payload_set_string(&mut ep, c"previous_mode".as_ptr(), |out| {
-            write_cstr(out, previous)
+        event_payload_set_string(&mut ep, c"previous_mode", |out| {
+            write_cstr(out, nullable_cstr(previous))
         });
     }
-    event_payload_set_int(&mut ep, c"mode_entered".as_ptr(), entered);
+    event_payload_set_int(&mut ep, c"mode_entered", entered);
     events_fire(name, ep);
 }
 
 unsafe fn window_fire_pane_prompt(
-    mut name: *const ::core::ffi::c_char,
+    name: &CStr,
     wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
     mut type_0: prompt_type,
 ) {
@@ -335,13 +330,13 @@ unsafe fn window_fire_pane_prompt(
     let mut ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, wp_owner, 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
-    event_payload_set_pane(&mut ep, c"pane".as_ptr(), std::rc::Rc::clone(wp_owner));
+    event_payload_set_pane(&mut ep, c"pane", std::rc::Rc::clone(wp_owner));
     event_payload_set_window(
         &mut ep,
-        c"window".as_ptr(),
+        c"window",
         std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
-    event_payload_set_string(&mut ep, c"prompt_type".as_ptr(), |out| {
+    event_payload_set_string(&mut ep, c"prompt_type", |out| {
         out.write_all(type_string.to_bytes())
     });
     events_fire(name, ep);
@@ -381,27 +376,27 @@ unsafe fn window_pane_destroy_ready(
 
 unsafe fn window_pane_add_ref(
     wp_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
-    from: *const ::core::ffi::c_char,
+    from: &CStr,
 ) -> std::rc::Rc<std::cell::UnsafeCell<window_pane>> {
     let mut wp = wp_owner.get();
     let owner = Rc::clone(wp_owner);
     log_debug(format_args!(
         "retain pane %{} ({})",
         { (*wp).id },
-        log_cstr(CStr::from_ptr(from))
+        log_cstr(from)
     ));
     owner
 }
 
 unsafe fn window_pane_remove_ref(
     owner: std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    from: *const ::core::ffi::c_char,
+    from: &CStr,
 ) {
     let wp = owner.get();
     log_debug(format_args!(
         "release pane %{} ({})",
         { (*wp).id },
-        log_cstr(CStr::from_ptr(from))
+        log_cstr(from)
     ));
     drop(owner);
 }
@@ -515,11 +510,10 @@ unsafe fn window_pane_find_by_id_str(s: &CStr) -> Option<Rc<std::cell::UnsafeCel
     if s.to_bytes().first() != Some(&b'%') {
         return None;
     }
-    let mut error = std::ptr::null();
-    let id = strtonum(s.as_ptr().add(1), 0, UINT_MAX as i64, &mut error) as u_int;
-    if !error.is_null() {
+    let Ok(id) = strtonum(&s[1..], 0, UINT_MAX as i64) else {
         return None;
-    }
+    };
+    let id = id as u_int;
     window_pane_find_by_id(id)
 }
 
@@ -801,7 +795,7 @@ unsafe fn window_pane_destroy(pane_owner: &Rc<std::cell::UnsafeCell<window_pane>
     drop((*wp).sync_timer.take());
     drop((*wp).sb_auto_timer.take());
     window_pane_clear_resizes(&mut *wp, ::core::ptr::null_mut::<window_pane_resize>());
-    window_pane_remove_ref(owner, c"window_pane_destroy".as_ptr());
+    window_pane_remove_ref(owner, c"window_pane_destroy");
 }
 
 unsafe fn window_pane_free(wp_value: &mut window_pane) {
@@ -964,17 +958,17 @@ unsafe fn window_pane_resize(
     let mut ep = event_payload_create();
     cmd_find_from_pane(&raw mut fs, pane_owner, 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
-    event_payload_set_pane(&mut ep, c"pane".as_ptr(), std::rc::Rc::clone(pane_owner));
+    event_payload_set_pane(&mut ep, c"pane", std::rc::Rc::clone(pane_owner));
     event_payload_set_window(
         &mut ep,
-        c"window".as_ptr(),
+        c"window",
         std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
-    event_payload_set_uint(&mut ep, c"width".as_ptr(), sx);
-    event_payload_set_uint(&mut ep, c"height".as_ptr(), sy);
-    event_payload_set_uint(&mut ep, c"old_width".as_ptr(), old_sx);
-    event_payload_set_uint(&mut ep, c"old_height".as_ptr(), old_sy);
-    events_fire(c"pane-resized".as_ptr(), ep);
+    event_payload_set_uint(&mut ep, c"width", sx);
+    event_payload_set_uint(&mut ep, c"height", sy);
+    event_payload_set_uint(&mut ep, c"old_width", old_sx);
+    event_payload_set_uint(&mut ep, c"old_height", old_sy);
+    events_fire(c"pane-resized", ep);
 }
 
 unsafe fn window_pane_set_mode(
@@ -1053,17 +1047,17 @@ unsafe fn window_pane_set_mode(
     server_redraw_window_borders(((*wp).window_handle().as_ref()).expect("live window"));
     server_status_window(((*wp).window_handle().as_ref()).expect("live window"));
     window_fire_pane_mode_changed(
-        c"pane-mode-entered".as_ptr(),
+        c"pane-mode-entered",
         pane_owner,
-        oname,
-        name,
+        nullable_cstr(oname),
+        nullable_cstr(name),
         1 as ::core::ffi::c_int,
     );
     window_fire_pane_mode_changed(
-        c"pane-mode-changed".as_ptr(),
+        c"pane-mode-changed",
         pane_owner,
-        oname,
-        name,
+        nullable_cstr(oname),
+        nullable_cstr(name),
         1 as ::core::ffi::c_int,
     );
     0 as ::core::ffi::c_int
@@ -1130,17 +1124,17 @@ unsafe fn window_pane_reset_mode(pane_owner: &Rc<std::cell::UnsafeCell<window_pa
     server_redraw_window_borders(((*wp).window_handle().as_ref()).expect("live window"));
     server_status_window(((*wp).window_handle().as_ref()).expect("live window"));
     window_fire_pane_mode_changed(
-        c"pane-mode-exited".as_ptr(),
+        c"pane-mode-exited",
         pane_owner,
-        p,
-        name,
+        nullable_cstr(p),
+        nullable_cstr(name),
         0 as ::core::ffi::c_int,
     );
     window_fire_pane_mode_changed(
-        c"pane-mode-changed".as_ptr(),
+        c"pane-mode-changed",
         pane_owner,
-        p,
-        name,
+        nullable_cstr(p),
+        nullable_cstr(name),
         0 as ::core::ffi::c_int,
     );
     if kill_0 != 0 {
@@ -1200,13 +1194,14 @@ unsafe fn window_pane_set_prompt(
     pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
     client_owner: Option<&ClientRef>,
     mut fs: *mut cmd_find_state,
-    mut msg: *const ::core::ffi::c_char,
-    mut input: *const ::core::ffi::c_char,
+    msg: &CStr,
+    input: Option<&CStr>,
     mut inputcb: status_prompt_input_cb,
     mut freecb: prompt_free_cb,
     mut flags: ::core::ffi::c_int,
     mut type_0: prompt_type,
 ) {
+    let mut input: *const ::core::ffi::c_char = input.map_or(std::ptr::null(), CStr::as_ptr);
     let wp = pane_owner.get();
     let session_owner = client_owner.and_then(|owner| owner.attached_session().upgrade());
     let mut pd = prompt_create_data::default();
@@ -1220,7 +1215,7 @@ unsafe fn window_pane_set_prompt(
     });
     prompt_set_options(&mut pd, session_owner.as_ref());
     pd.fs = fs.as_ref();
-    pd.prompt = CStr::from_ptr(msg);
+    pd.prompt = msg;
     pd.input = if input.is_null() {
         None
     } else {
@@ -1244,7 +1239,7 @@ unsafe fn window_pane_set_prompt(
     (*wp).prompt_data = identity;
     (*wp).flags |= PANE_REDRAW;
     prompt_incremental_start(&prompt);
-    window_fire_pane_prompt(c"pane-prompt-opened".as_ptr(), pane_owner, type_0);
+    window_fire_pane_prompt(c"pane-prompt-opened", pane_owner, type_0);
 }
 
 unsafe fn window_pane_clear_prompt(owner: &Rc<std::cell::UnsafeCell<window_pane>>) {
@@ -1262,7 +1257,7 @@ unsafe fn window_pane_clear_prompt(owner: &Rc<std::cell::UnsafeCell<window_pane>
         prompt_free(&prompt.downgrade());
         (*wp).flags |= PANE_REDRAW;
         if !(*wp).flags & PANE_DESTROYED != 0 {
-            window_fire_pane_prompt(c"pane-prompt-closed".as_ptr(), owner, type_0);
+            window_fire_pane_prompt(c"pane-prompt-closed", owner, type_0);
         }
     }
 }
@@ -1273,9 +1268,10 @@ fn window_pane_has_prompt(wp: &window_pane) -> ::core::ffi::c_int {
 
 unsafe fn window_pane_update_prompt(
     pane_owner: &Rc<std::cell::UnsafeCell<window_pane>>,
-    mut msg: *const ::core::ffi::c_char,
-    mut input: *const ::core::ffi::c_char,
+    msg: &CStr,
+    input: Option<&CStr>,
 ) {
+    let input: *const ::core::ffi::c_char = input.map_or(std::ptr::null(), CStr::as_ptr);
     let wp = pane_owner.get();
     if (*wp).prompt.is_some() {
         prompt_update(
@@ -1285,7 +1281,7 @@ unsafe fn window_pane_update_prompt(
                 .expect("active prompt")
                 .try_borrow_mut()
                 .expect("unborrowed prompt"),
-            CStr::from_ptr(msg),
+            msg,
             (!input.is_null()).then(|| CStr::from_ptr(input)),
         );
         (*wp).flags |= PANE_REDRAW;
@@ -1410,10 +1406,10 @@ unsafe fn window_pane_copy_paste(
             log_debug(format_args!(
                 "{}: {}",
                 "window_pane_copy_paste",
-                log_cstr_n(bytes.as_ptr().cast(), bytes.len() as ::core::ffi::c_int)
+                log_cstr_n(&bytes)
             ));
             let _ = (*loop_0).event.with_ptr(|event| unsafe {
-                bufferevent_write(event, bytes.as_ptr().cast(), bytes.len());
+                bufferevent_write(event, &bytes);
             });
         }
         cursor = window_owner.next_pane(Some(&pane_owner));
@@ -1473,10 +1469,10 @@ unsafe fn window_pane_paste(
     log_debug(format_args!(
         "{}: {}",
         "window_pane_paste",
-        log_cstr_n(bytes.as_ptr().cast(), bytes.len() as ::core::ffi::c_int)
+        log_cstr_n(&bytes)
     ));
     let _ = (*wp).event.with_ptr(|event| unsafe {
-        bufferevent_write(event, bytes.as_ptr().cast(), bytes.len());
+        bufferevent_write(event, &bytes);
     });
     if options_get_number(
         options_owner_ptr(&mut (*wp).options).map_or(std::ptr::null_mut(), |options| options),
@@ -1702,7 +1698,12 @@ unsafe fn window_pane_input_callback(
                 .expect("file wait retains command item"),
         );
     } else {
-        input_parse_buffer(lookup_wp_owner.as_ref().expect("live pane"), buf, len);
+        let bytes: &[u8] = if buf.is_null() {
+            &[]
+        } else {
+            std::slice::from_raw_parts(buf, len)
+        };
+        input_parse_buffer(lookup_wp_owner.as_ref().expect("live pane"), bytes);
     }
     evbuffer_drain(buffer, len);
 }
@@ -1740,7 +1741,7 @@ unsafe fn window_pane_start_input(
     });
     file_read_with_cmdq_wait_init(
         c_owner.as_ref(),
-        c"-".as_ptr(),
+        c"-",
         move |file| {
             cdata.file = file;
             cdata.into_callback()
@@ -2109,13 +2110,9 @@ unsafe fn window_pane_send_theme_update(pane_owner: &Rc<std::cell::UnsafeCell<wi
                 "window_pane_send_theme_update",
                 { (*wp).id }
             ));
-            let _ = (*wp).event.with_ptr(|event| unsafe {
-                bufferevent_write(
-                    event,
-                    c"\x1B[?997;2n".as_ptr() as *const ::core::ffi::c_void,
-                    9 as size_t,
-                )
-            });
+            let _ = (*wp)
+                .event
+                .with_ptr(|event| unsafe { bufferevent_write(event, b"\x1B[?997;2n") });
         }
         2 => {
             log_debug(format_args!(
@@ -2123,13 +2120,9 @@ unsafe fn window_pane_send_theme_update(pane_owner: &Rc<std::cell::UnsafeCell<wi
                 "window_pane_send_theme_update",
                 { (*wp).id }
             ));
-            let _ = (*wp).event.with_ptr(|event| unsafe {
-                bufferevent_write(
-                    event,
-                    c"\x1B[?997;1n".as_ptr() as *const ::core::ffi::c_void,
-                    9 as size_t,
-                )
-            });
+            let _ = (*wp)
+                .event
+                .with_ptr(|event| unsafe { bufferevent_write(event, b"\x1B[?997;1n") });
         }
         0 => {
             log_debug(format_args!(

@@ -4,6 +4,7 @@ use crate::src::cmd::queue::{
     cmdq_get_target_client, cmdq_insert_after,
 };
 use crate::src::cmd::{cmd_get_args_mut, cmd_list_first};
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::server_client::Client as _;
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::*;
@@ -127,9 +128,9 @@ unsafe fn cmd_confirm_before_exec(
     let inputcb = cdata.into_callback();
     status_prompt_set(
         &tc.clone().expect("live client"),
-        target,
-        new_prompt.as_ptr(),
-        ::core::ptr::null::<::core::ffi::c_char>(),
+        target.as_ref(),
+        &*new_prompt,
+        nullable_cstr(::core::ptr::null::<::core::ffi::c_char>()),
         inputcb,
         None,
         PROMPT_SINGLE,

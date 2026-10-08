@@ -178,10 +178,7 @@ unsafe fn cmd_swap_pane_exec(
             }
             // Across two windows each rearrange announced its own change.
             if Rc::ptr_eq(&src_window_owner, &dst_window_owner) {
-                events_fire_window(
-                    c"window-layout-changed".as_ptr(),
-                    Rc::clone(&src_window_owner),
-                );
+                events_fire_window(c"window-layout-changed", Rc::clone(&src_window_owner));
             }
         }
         CMD_RETURN_NORMAL

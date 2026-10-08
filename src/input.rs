@@ -28,10 +28,9 @@ pub unsafe fn input_parse_pane(pane: &std::rc::Rc<std::cell::UnsafeCell<window_p
 }
 pub unsafe fn input_parse_buffer(
     pane: &std::rc::Rc<std::cell::UnsafeCell<window_pane>>,
-    bytes: *const u8,
-    count: usize,
+    bytes: &[u8],
 ) {
-    if count != 0 {
-        pane.parse_output(std::slice::from_raw_parts(bytes, count));
+    if !bytes.is_empty() {
+        pane.parse_output(bytes);
     }
 }

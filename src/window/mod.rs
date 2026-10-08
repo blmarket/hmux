@@ -1,3 +1,4 @@
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::session::Session;
 use crate::src::shared::window::WindowRef;
 use std::time::SystemTime;
@@ -191,7 +192,7 @@ unsafe fn window_winlinks_remove(w_value: &mut window, wl: refbox::Weak<winlink>
     links.remove(position);
 }
 
-unsafe fn window_fire_renamed(w_owner: &WindowRef, mut old_name: *const ::core::ffi::c_char) {
+unsafe fn window_fire_renamed(w_owner: &WindowRef, old_name: &CStr) {
     let mut w = w_owner.get();
     let mut fs: cmd_find_state = cmd_find_state {
         flags: 0,
@@ -204,14 +205,12 @@ unsafe fn window_fire_renamed(w_owner: &WindowRef, mut old_name: *const ::core::
     let mut ep = event_payload_create();
     cmd_find_from_window(&raw mut fs, w_owner, 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
-    event_payload_set_window(&mut ep, c"window".as_ptr(), std::rc::Rc::clone(w_owner));
-    event_payload_set_string(&mut ep, c"old_name".as_ptr(), |out| {
-        write_cstr(out, old_name)
+    event_payload_set_window(&mut ep, c"window", std::rc::Rc::clone(w_owner));
+    event_payload_set_string(&mut ep, c"old_name", |out| {
+        write_cstr(out, nullable_cstr(old_name.as_ptr()))
     });
-    event_payload_set_string(&mut ep, c"new_name".as_ptr(), |out| {
-        write_cstr(out, (*w).name.as_ptr().cast_mut())
-    });
-    events_fire(c"window-renamed".as_ptr(), ep);
+    event_payload_set_string(&mut ep, c"new_name", |out| write_cstr(out, &*((*w).name)));
+    events_fire(c"window-renamed", ep);
 }
 unsafe fn window_fire_pane_changed(
     window: &WindowRef,
@@ -222,28 +221,28 @@ unsafe fn window_fire_pane_changed(
     let mut payload = event_payload_create();
     cmd_find_from_pane(&mut find, pane, 0);
     event_payload_set_target(&mut payload, &find);
-    event_payload_set_window(&mut payload, c"window".as_ptr(), window.clone());
-    event_payload_set_pane(&mut payload, c"pane".as_ptr(), pane.clone());
-    event_payload_set_pane(&mut payload, c"new_pane".as_ptr(), pane.clone());
+    event_payload_set_window(&mut payload, c"window", window.clone());
+    event_payload_set_pane(&mut payload, c"pane", pane.clone());
+    event_payload_set_pane(&mut payload, c"new_pane", pane.clone());
     if let Some(previous) = previous {
-        event_payload_set_pane(&mut payload, c"old_pane".as_ptr(), previous.clone());
+        event_payload_set_pane(&mut payload, c"old_pane", previous.clone());
     }
-    events_fire(c"window-pane-changed".as_ptr(), payload);
+    events_fire(c"window-pane-changed", payload);
 }
 
-unsafe fn window_find_by_id_str(mut s: *const ::core::ffi::c_char) -> Option<WindowRef> {
-    let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
+unsafe fn window_find_by_id_str(s: &CStr) -> Option<WindowRef> {
+    let s: *const ::core::ffi::c_char = s.as_ptr();
     let mut id: u_int = 0;
     if *s as ::core::ffi::c_int != '@' as i32 {
         return None;
     }
-    id = strtonum(
-        s.offset(1 as ::core::ffi::c_int as isize),
+    let parsed = strtonum(
+        CStr::from_ptr(s.offset(1 as ::core::ffi::c_int as isize)),
         0 as ::core::ffi::c_longlong,
         UINT_MAX as ::core::ffi::c_longlong,
-        &raw mut errstr,
-    ) as u_int;
-    if !errstr.is_null() {
+    );
+    id = parsed.unwrap_or(0) as u_int;
+    if parsed.is_err() {
         return None;
     }
     window_find_by_id(id)
@@ -337,30 +336,30 @@ unsafe fn window_destroy(w_owner: &WindowRef) {
     (*w).lifecycle = WindowLifecycle::Destroyed;
 }
 
-unsafe fn window_add_ref(w_owner: &WindowRef, from: *const ::core::ffi::c_char) -> WindowRef {
+unsafe fn window_add_ref(w_owner: &WindowRef, from: &CStr) -> WindowRef {
     let mut w = w_owner.get();
     let owner = Rc::clone(w_owner);
     log_debug(format_args!(
         "retain window @{} ({})",
         { (*w).id },
-        log_cstr(CStr::from_ptr(from))
+        log_cstr(from)
     ));
     owner
 }
 /// Consume a window reference, performing final cleanup while it is still held.
 /// Brief upgraded borrows may drop normally only while another owner is guaranteed
 /// to remain. Any owner that may be the final live reference must use this path.
-unsafe fn window_remove_ref(owner: WindowRef, from: *const ::core::ffi::c_char) {
+unsafe fn window_remove_ref(owner: WindowRef, from: &CStr) {
     window_prepare_release(&owner, from);
     drop(owner);
 }
 
 // Both ordinary owners and winlinks keep their reference alive through this call.
 // Winlinks keep the field published so close callbacks can still inspect it.
-unsafe fn window_prepare_release(w_owner: &WindowRef, from: *const ::core::ffi::c_char) {
+unsafe fn window_prepare_release(w_owner: &WindowRef, from: &CStr) {
     let mut w = w_owner.get();
     if (*w).lifecycle == WindowLifecycle::Live && Rc::strong_count(w_owner) == 1 {
-        events_fire_window(c"window-closed".as_ptr(), Rc::clone(w_owner));
+        events_fire_window(c"window-closed", Rc::clone(w_owner));
         // Close callbacks can retain the window. Defer cleanup until their release.
         if (*w).lifecycle == WindowLifecycle::Live && Rc::strong_count(w_owner) == 1 {
             window_destroy(w_owner);
@@ -369,20 +368,16 @@ unsafe fn window_prepare_release(w_owner: &WindowRef, from: *const ::core::ffi::
     log_debug(format_args!(
         "release window @{} ({})",
         { (*w).id },
-        log_cstr(CStr::from_ptr(from))
+        log_cstr(from)
     ));
 }
 
-unsafe fn window_set_name(
-    w_owner: &WindowRef,
-    mut new_name: *const ::core::ffi::c_char,
-    mut untrusted: ::core::ffi::c_int,
-) {
+unsafe fn window_set_name(w_owner: &WindowRef, new_name: &CStr, mut untrusted: ::core::ffi::c_int) {
     let _w = w_owner.get();
-    if let Some(name) = clean_name_cstring(CStr::from_ptr(new_name), untrusted) {
+    if let Some(name) = clean_name_cstring(new_name, untrusted) {
         // Keep the previous owner alive across synchronous rename callbacks.
         let last = window_replace_name(w_owner, name);
-        window_fire_renamed(w_owner, last.as_ptr());
+        window_fire_renamed(w_owner, &*last);
     }
 }
 unsafe fn window_resize(
@@ -684,7 +679,7 @@ unsafe fn window_rearrange_panes(
     // As in tmux, the layout change is announced before the pane that
     // replaces an active one.
     if !left.is_empty() {
-        events_fire_window(c"window-layout-changed".as_ptr(), window.clone());
+        events_fire_window(c"window-layout-changed", window.clone());
     }
     if let Some(replacement) = replacement {
         window_fire_pane_changed(window, &replacement, previous_active.as_ref());

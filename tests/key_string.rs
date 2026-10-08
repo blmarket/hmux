@@ -1,6 +1,6 @@
 use hmux::src::key_string::{
-    key_string_format, key_string_format_into, key_string_lookup_key, key_string_lookup_string,
-    key_string_parse, key_string_parse_cstr,
+    key_string_format, key_string_format_into, key_string_lookup_string, key_string_parse,
+    key_string_parse_cstr,
 };
 use hmux::src::shared::key::*;
 use std::ffi::{CStr, CString};
@@ -116,14 +116,14 @@ fn safe_cstr_parser_keeps_invalid_bytes_and_sentinels_at_the_boundary() {
         let cstr = CStr::from_bytes_with_nul(input).unwrap();
         assert_eq!(key_string_parse_cstr(cstr), None, "{input:?}");
         unsafe {
-            assert_eq!(key_string_lookup_string(cstr.as_ptr()), KEYC_UNKNOWN);
+            assert_eq!(key_string_lookup_string(&*cstr), KEYC_UNKNOWN);
         }
     }
 
     let unknown = CStr::from_bytes_with_nul(b"Unknown\0").unwrap();
     assert_eq!(key_string_parse_cstr(unknown), None);
     unsafe {
-        assert_eq!(key_string_lookup_string(unknown.as_ptr()), KEYC_UNKNOWN);
+        assert_eq!(key_string_lookup_string(&*unknown), KEYC_UNKNOWN);
     }
 }
 
@@ -213,14 +213,10 @@ fn c_exports_remain_narrow_compatibility_adapters() {
     unsafe {
         let input = CString::new("C-a").unwrap();
         assert_eq!(
-            key_string_lookup_string(input.as_ptr()),
+            key_string_lookup_string(&*input),
             key_string_parse_cstr(&input).unwrap()
         );
 
-        let pointer = key_string_lookup_key(KEYC_F1, 0);
-        assert_eq!(CStr::from_ptr(pointer).to_bytes(), b"F1");
-        let owned = key_string_format(KEYC_F1, false);
-        let _ = key_string_lookup_key(KEYC_F2, 0);
-        assert_eq!(owned.as_bytes(), b"F1");
+        assert_eq!(key_string_format(KEYC_F1, false).as_bytes(), b"F1");
     }
 }

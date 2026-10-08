@@ -1,4 +1,3 @@
-use crate::src::ffi::libc::memcpy;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_create_defaults, format_free};
 use crate::src::log::{fatalx, log_cstr, log_debug, log_get_level};
@@ -671,7 +670,7 @@ unsafe fn redraw_build_cells<'a>(
             > SIZE_MAX.wrapping_div((*bctx).sx as ::core::ffi::c_ulong)
     {
         fatalx(|out| {
-            write_cstr(out, c"redraw_build_cells".as_ptr())?;
+            write_cstr(out, c"redraw_build_cells")?;
             out.write_all(b": too many cells")
         });
     }
@@ -679,7 +678,7 @@ unsafe fn redraw_build_cells<'a>(
     if ncells > cells.len() {
         if cells.try_reserve_exact(ncells - cells.len()).is_err() {
             fatalx(|out| {
-                write_cstr(out, c"redraw_build_cells".as_ptr())?;
+                write_cstr(out, c"redraw_build_cells")?;
                 out.write_all(b": too many cells")
             });
         }
@@ -933,11 +932,7 @@ unsafe fn redraw_get_default_border_style(
         dctx.pane_lines = window_owner.pane_border_lines();
         dctx.flags |= REDRAW_DEFAULT_SET;
     }
-    memcpy(
-        gc as *mut ::core::ffi::c_void,
-        dgc as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
+    *gc = *dgc;
     *pane_lines = dctx.pane_lines;
     window_owner.release(c"default border style");
 }
@@ -1313,7 +1308,7 @@ unsafe fn redraw_set_draw_context(scene: &redraw_scene) -> Option<redraw_draw_ct
     if c.as_ref().expect("live client").flags() & CLIENT_UTF8 as uint64_t != 0 && {
         let terminal = client_owner.borrow_terminal();
         tty_term_has(
-            tty_term_owner_ptr(&terminal.term).map_or(std::ptr::null(), |term| term),
+            tty_term_owner_ptr(&terminal.term).expect("client has a terminal"),
             TTYC_BIDI,
         ) != 0
     } {

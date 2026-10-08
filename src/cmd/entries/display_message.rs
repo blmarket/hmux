@@ -83,7 +83,7 @@ unsafe fn cmd_display_message_exec(
         }
         match wp.as_ref().expect("target pane").start_input(item_handle) {
             Err(error) => {
-                cmdq_error(item_handle, |out| write_cstr(out, error.as_ptr()));
+                cmdq_error(item_handle, |out| write_cstr(out, &*error));
                 return CMD_RETURN_ERROR;
             }
             Ok(1) => return CMD_RETURN_NORMAL,
@@ -108,7 +108,7 @@ unsafe fn cmd_display_message_exec(
             Err(error) => {
                 cmdq_error(item_handle, |out| {
                     out.write_all(b"delay ")?;
-                    write_cstr(out, error.message().as_ptr())
+                    write_cstr(out, &*(error.message()))
                 });
                 return CMD_RETURN_ERROR;
             }
@@ -156,9 +156,9 @@ unsafe fn cmd_display_message_exec(
     if args_has(args, 'a' as i32 as u_char) != 0 && args_has(args, 'j' as i32 as u_char) == 0 {
         format_each(ft, |key, value| unsafe {
             cmdq_print(item_handle, |out| {
-                write_cstr(out, key.as_ptr())?;
+                write_cstr(out, &*key)?;
                 out.write_all(b"=")?;
-                write_cstr(out, value.as_ptr())
+                write_cstr(out, &*value)
             });
         });
         format_free(ft_owner);
@@ -171,14 +171,7 @@ unsafe fn cmd_display_message_exec(
     };
     if args_has(args, 'j' as i32 as u_char) != 0 {
         let Some(jn) = json_parse(&msg, Some(&mut cause)) else {
-            cmdq_error(item_handle, |out| {
-                write_cstr(
-                    out,
-                    cause
-                        .as_ref()
-                        .map_or(::core::ptr::null(), |message| message.as_ptr()),
-                )
-            });
+            cmdq_error(item_handle, |out| write_cstr(out, cause.as_deref()));
             drop(msg);
             format_free(ft_owner);
             return CMD_RETURN_ERROR;
@@ -186,16 +179,16 @@ unsafe fn cmd_display_message_exec(
         msg = json_to_string(&jn);
     }
     if cmdq_get_client((item).as_ref()).is_none() {
-        cmdq_error(item_handle, |out| write_cstr(out, msg.as_ptr()));
+        cmdq_error(item_handle, |out| write_cstr(out, &*msg));
     } else if args_has(args, 'p' as i32 as u_char) != 0 {
-        cmdq_print(item_handle, |out| write_cstr(out, msg.as_ptr()));
+        cmdq_print(item_handle, |out| write_cstr(out, &*msg));
     } else if !tc.is_none()
         && tc.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0
     {
         let mut evb = evbuffer_new();
         evbuffer_add_formatted(&mut evb, |out| {
             out.write_all(b"%message ")?;
-            write_cstr(out, msg.as_ptr())
+            write_cstr(out, &*msg)
         });
         ClientRef::print_to(tc_owner.as_ref(), (0 as ::core::ffi::c_int) != 0, &mut evb);
     } else if !tc.is_none() {
@@ -205,7 +198,7 @@ unsafe fn cmd_display_message_exec(
             0 as ::core::ffi::c_int,
             Nflag,
             Cflag,
-            |out| write_cstr(out, msg.as_ptr()),
+            |out| write_cstr(out, &*msg),
         );
     }
     drop(msg);

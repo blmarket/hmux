@@ -8,6 +8,7 @@ use crate::src::server_fn::{server_destroy_session, server_redraw_session};
 use crate::src::session::sessions;
 use crate::src::session::Session;
 use crate::src::session::SessionIndex as _;
+use std::ffi::CStr;
 
 use crate::src::shared::abi::*;
 use crate::src::shared::arguments::{args, args_parse};
@@ -78,7 +79,7 @@ unsafe fn cmd_kill_session_exec(
         }
         server_redraw_session(&source);
     } else if args_has(args, 'a' as i32 as u_char) != 0 {
-        return cmd_kill_session_all(item_handle, filter);
+        return cmd_kill_session_all(item_handle, CStr::from_ptr(filter));
     } else if args_has(args, 'g' as i32 as u_char) != 0 && {
         sg = crate::src::session::session_group_for(&std::rc::Rc::downgrade(&source));
         !sg.is_null()
@@ -101,7 +102,7 @@ unsafe fn cmd_kill_session_exec(
 }
 unsafe fn cmd_kill_session_all(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    mut filter: *const ::core::ffi::c_char,
+    filter: &CStr,
 ) -> cmd_retval {
     let item = item_handle.get();
     let mut s: Option<SessionRef> =
@@ -115,7 +116,7 @@ unsafe fn cmd_kill_session_all(
             && !(cmd_kill_session_filter(
                 item_handle,
                 sloop.as_ref().expect("live session"),
-                filter,
+                Some(filter),
             ) == 0)
         {
             server_destroy_session(sloop_owner.as_ref().expect("registered session"));
@@ -132,8 +133,9 @@ unsafe fn cmd_kill_session_all(
 unsafe fn cmd_kill_session_filter(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     s_owner: &SessionRef,
-    mut filter: *const ::core::ffi::c_char,
+    filter: Option<&CStr>,
 ) -> ::core::ffi::c_int {
+    let filter: *const ::core::ffi::c_char = filter.map_or(std::ptr::null(), CStr::as_ptr);
     let item = item_handle.get();
 
     let queue_client = cmdq_get_client((item).as_ref());

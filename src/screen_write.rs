@@ -1,4 +1,3 @@
-use crate::src::ffi::libc::memcpy;
 use crate::src::format::bytes::format_message_with;
 use crate::src::format_draw::format_draw;
 use crate::src::grid::view::{
@@ -786,7 +785,7 @@ pub unsafe fn screen_write_box(
         );
         format_draw(
             ctx,
-            &raw mut gc,
+            &gc,
             nx.wrapping_sub(4 as u_int),
             title.as_ptr(),
             ::core::ptr::null_mut::<style_ranges>(),
@@ -1118,11 +1117,7 @@ pub unsafe fn screen_write_alignmenttest(ctx: &mut screen_write_ctx) {
     };
     let mut xx: u_int = 0;
     let mut yy: u_int = 0;
-    memcpy(
-        &raw mut gc as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
+    gc = grid_default_cell;
     utf8_set(&mut gc.data, 'E' as i32 as u_char);
     yy = 0 as u_int;
     while yy < (*s).grid().sy {

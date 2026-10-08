@@ -210,33 +210,25 @@ static tty_features: [&tty_feature; 22] = {
         &tty_feature_utf8,
     ]
 };
-pub unsafe fn tty_parse_client_features(
-    owner: &ClientRef,
-    features: *const ::core::ffi::c_char,
-    separators: *const ::core::ffi::c_char,
-) {
-    owner.parse_terminal_features(CStr::from_ptr(features), CStr::from_ptr(separators));
+pub unsafe fn tty_parse_client_features(owner: &ClientRef, features: &CStr, separators: &CStr) {
+    owner.parse_terminal_features(features, separators);
 }
 pub unsafe fn tty_parse_features(
-    mut s: *const ::core::ffi::c_char,
-    mut sep: *const ::core::ffi::c_char,
+    s: &CStr,
+    sep: &CStr,
     mut enabled: *mut ::core::ffi::c_int,
     mut disabled: *mut ::core::ffi::c_int,
 ) {
-    let mut tf: *const tty_feature = ::core::ptr::null::<tty_feature>();
     let mut next: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut loop_0: *mut ::core::ffi::c_char = ::core::ptr::null_mut::<::core::ffi::c_char>();
     let mut i: u_int = 0;
     let mut remove: ::core::ffi::c_int = 0;
-    log_debug(format_args!(
-        "adding terminal features {}",
-        log_cstr(CStr::from_ptr(s))
-    ));
+    log_debug(format_args!("adding terminal features {}", log_cstr(s)));
     // strsep and the trailing-@ removal both write into this local copy.
-    let mut copy = CStr::from_ptr(s).to_bytes_with_nul().to_vec();
+    let mut copy = s.to_bytes_with_nul().to_vec();
     loop_0 = copy.as_mut_ptr().cast();
     loop {
-        next = strsep(&raw mut loop_0, sep);
+        next = strsep(&raw mut loop_0, sep.as_ptr());
         if next.is_null() {
             break;
         }
@@ -248,8 +240,7 @@ pub unsafe fn tty_parse_features(
         }
         i = 0 as u_int;
         while (i as usize) < tty_features.len() {
-            tf = tty_features[i as usize];
-            if strcasecmp((*tf).name.as_ptr(), next) == 0 as ::core::ffi::c_int {
+            if strcasecmp(tty_features[i as usize].name.as_ptr(), next) == 0 as ::core::ffi::c_int {
                 break;
             }
             i = i.wrapping_add(1);
@@ -263,7 +254,7 @@ pub unsafe fn tty_parse_features(
         } else if remove != 0 {
             log_debug(format_args!(
                 "removing terminal feature: {}",
-                crate::src::log::log_bytes((*tf).name.to_bytes())
+                crate::src::log::log_bytes(tty_features[i as usize].name.to_bytes())
             ));
             *enabled &= !((1 as ::core::ffi::c_int) << i);
             if !disabled.is_null() {
@@ -276,7 +267,7 @@ pub unsafe fn tty_parse_features(
             if !*enabled & (1 as ::core::ffi::c_int) << i != 0 {
                 log_debug(format_args!(
                     "adding terminal feature: {}",
-                    crate::src::log::log_bytes((*tf).name.to_bytes())
+                    crate::src::log::log_bytes(tty_features[i as usize].name.to_bytes())
                 ));
                 *enabled |= (1 as ::core::ffi::c_int) << i;
             }
@@ -295,21 +286,18 @@ pub unsafe fn tty_get_features(feat: ::core::ffi::c_int) -> CString {
     }
     CString::new(names).expect("feature names contain no NUL")
 }
-pub unsafe fn tty_feature_present(
-    mut term: *const tty_term,
-    mut name: *const ::core::ffi::c_char,
-    utf8: bool,
-) -> ::core::ffi::c_int {
-    let mut tf: *const tty_feature = ::core::ptr::null::<tty_feature>();
+pub unsafe fn tty_feature_present(term: &tty_term, name: &CStr, utf8: bool) -> ::core::ffi::c_int {
+    let mut tf: Option<&tty_feature> = None;
     let mut i: u_int = 0;
-    if strcmp(name, c"utf8".as_ptr()) == 0 as ::core::ffi::c_int {
+    if strcmp(name.as_ptr(), c"utf8".as_ptr()) == 0 as ::core::ffi::c_int {
         return utf8 as ::core::ffi::c_int;
     }
     i = 0 as u_int;
     while (i as usize) < tty_features.len() {
-        tf = tty_features[i as usize];
-        if strcmp((*tf).name.as_ptr(), name) == 0 as ::core::ffi::c_int {
-            if (*term).applied_features & (1 as ::core::ffi::c_int) << i != 0 {
+        let feature = tty_features[i as usize];
+        tf = Some(feature);
+        if strcmp(feature.name.as_ptr(), name.as_ptr()) == 0 as ::core::ffi::c_int {
+            if term.applied_features & (1 as ::core::ffi::c_int) << i != 0 {
                 return 1 as ::core::ffi::c_int;
             }
             break;
@@ -317,13 +305,16 @@ pub unsafe fn tty_feature_present(
             i = i.wrapping_add(1);
         }
     }
-    if tf.is_null() || strcmp(name, c"ignorefkeys".as_ptr()) == 0 as ::core::ffi::c_int {
+    let Some(tf) = tf else {
+        return 0 as ::core::ffi::c_int;
+    };
+    if strcmp(name.as_ptr(), c"ignorefkeys".as_ptr()) == 0 as ::core::ffi::c_int {
         return 0 as ::core::ffi::c_int;
     }
-    if (*tf).flags != 0 as ::core::ffi::c_int && (*term).flags & (*tf).flags != (*tf).flags {
+    if tf.flags != 0 as ::core::ffi::c_int && term.flags & tf.flags != tf.flags {
         return 0 as ::core::ffi::c_int;
     }
-    let Some(capabilities) = (*tf).capabilities else {
+    let Some(capabilities) = tf.capabilities else {
         return 0;
     };
     for capability in capabilities {
@@ -331,7 +322,7 @@ pub unsafe fn tty_feature_present(
         if let Some(equal) = copy.iter().position(|&byte| byte == b'=') {
             copy[equal] = 0;
         }
-        if tty_term_has_name(term, copy.as_ptr().cast()) == 0 {
+        if tty_term_has_name(term, CStr::from_ptr(copy.as_ptr().cast())) == 0 {
             return 0 as ::core::ffi::c_int;
         }
     }
@@ -347,7 +338,6 @@ pub struct AppliedFeatures {
 
 pub unsafe fn tty_apply_features(mut term: *mut tty_term, feat: i32) -> AppliedFeatures {
     let mut result = AppliedFeatures::default();
-    let mut tf: *const tty_feature = ::core::ptr::null::<tty_feature>();
     let mut i: u_int = 0;
     if feat == 0 as ::core::ffi::c_int {
         return result;
@@ -361,12 +351,12 @@ pub unsafe fn tty_apply_features(mut term: *mut tty_term, feat: i32) -> AppliedF
         if !((*term).applied_features & (1 as ::core::ffi::c_int) << i != 0
             || !feat & (1 as ::core::ffi::c_int) << i != 0)
         {
-            tf = tty_features[i as usize];
+            let tf = tty_features[i as usize];
             log_debug(format_args!(
                 "applying terminal feature: {}",
-                crate::src::log::log_bytes((*tf).name.to_bytes())
+                crate::src::log::log_bytes(tty_features[i as usize].name.to_bytes())
             ));
-            if let Some(capabilities) = (*tf).capabilities {
+            if let Some(capabilities) = tf.capabilities {
                 for capability in capabilities {
                     log_debug(format_args!(
                         "adding capability: {}",
@@ -375,8 +365,8 @@ pub unsafe fn tty_apply_features(mut term: *mut tty_term, feat: i32) -> AppliedF
                     tty_term_apply(term, capability.as_ptr(), 1 as ::core::ffi::c_int);
                 }
             }
-            (*term).flags |= (*tf).flags;
-            if tf == &raw const tty_feature_utf8 {
+            (*term).flags |= tf.flags;
+            if std::ptr::eq(tf, &tty_feature_utf8) {
                 result.enable_utf8 = true;
             }
         }
@@ -403,7 +393,7 @@ mod tests {
         unsafe {
             let mut enabled = 0;
             let mut disabled = 0;
-            tty_parse_features(c"utf8".as_ptr(), c",".as_ptr(), &mut enabled, &mut disabled);
+            tty_parse_features(c"utf8", c",", &mut enabled, &mut disabled);
             let mut terminal = tty_term::empty();
             assert!(terminal.client.upgrade().is_none());
             let first = tty_apply_features(&mut terminal, enabled & !disabled);
@@ -425,28 +415,22 @@ mod tests {
             term.codes = vec![tty_code::default(); tty_term_ncodes() as usize].into_boxed_slice();
 
             term.codes[TTYC_MS as usize] = tty_code::String(Default::default());
-            assert_eq!(
-                tty_feature_present(&mut term, c"clipboard".as_ptr(), false),
-                1
-            );
+            assert_eq!(tty_feature_present(&mut term, c"clipboard", false), 1);
             term.codes[TTYC_MS as usize] = tty_code::None;
-            assert_eq!(
-                tty_feature_present(&mut term, c"clipboard".as_ptr(), false),
-                0
-            );
+            assert_eq!(tty_feature_present(&mut term, c"clipboard", false), 0);
 
             term.flags = TERM_256COLOURS | TERM_RGBCOLOURS;
             term.codes[TTYC_AX as usize] = tty_code::Flag(1);
             for code in [TTYC_SETRGBF, TTYC_SETRGBB, TTYC_SETAB, TTYC_SETAF] {
                 term.codes[code as usize] = tty_code::String(Default::default());
             }
-            assert_eq!(tty_feature_present(&mut term, c"RGB".as_ptr(), false), 1);
+            assert_eq!(tty_feature_present(&mut term, c"RGB", false), 1);
             term.codes[TTYC_SETAF as usize] = tty_code::None;
-            assert_eq!(tty_feature_present(&mut term, c"RGB".as_ptr(), false), 0);
+            assert_eq!(tty_feature_present(&mut term, c"RGB", false), 0);
         }
     }
 }
-pub unsafe fn tty_default_features(owner: &ClientRef, mut name: *const ::core::ffi::c_char) {
+pub unsafe fn tty_default_features(owner: &ClientRef, name: &CStr) {
     static table: [C2RustUnnamed_35; 9] = [
         C2RustUnnamed_35 {
             name: c"mintty",
@@ -500,8 +484,12 @@ pub unsafe fn tty_default_features(owner: &ClientRef, mut name: *const ::core::f
         < (::core::mem::size_of::<[C2RustUnnamed_35; 9]>() as usize)
             .wrapping_div(::core::mem::size_of::<C2RustUnnamed_35>() as usize)
     {
-        if !(strcmp(table[i as usize].name.as_ptr(), name) != 0 as ::core::ffi::c_int) {
-            tty_parse_client_features(owner, table[i as usize].features.as_ptr(), c",".as_ptr());
+        if !(strcmp(table[i as usize].name.as_ptr(), name.as_ptr()) != 0 as ::core::ffi::c_int) {
+            tty_parse_client_features(
+                owner,
+                CStr::from_ptr(table[i as usize].features.as_ptr()),
+                c",",
+            );
         }
         i = i.wrapping_add(1);
     }

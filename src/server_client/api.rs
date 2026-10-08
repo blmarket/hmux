@@ -159,8 +159,7 @@ pub trait Client {
         &self,
         kind: crate::src::compat::imsg::msgtype,
         fd: Option<OwnedFd>,
-        data: *const std::ffi::c_void,
-        size: usize,
+        data: &[u8],
     ) -> i32;
     unsafe fn register_file(&self, file: &Rc<UnsafeCell<crate::src::file::client_file>>);
     unsafe fn unregister_file(&self, stream: i32, identity: *const crate::src::file::client_file);
@@ -335,7 +334,7 @@ impl Client for ClientRef {
     }
 
     unsafe fn parse_flags(&self, flags: &CStr) {
-        server_client_set_flags(self, flags.as_ptr());
+        server_client_set_flags(self, &*flags);
     }
 
     unsafe fn update_theme_colours(&self) {
@@ -450,8 +449,8 @@ impl Client for ClientRef {
     unsafe fn parse_terminal_features(&self, features: &CStr, separators: &CStr) {
         let state = &mut *self.get();
         crate::src::tty_features::tty_parse_features(
-            features.as_ptr(),
-            separators.as_ptr(),
+            &*features,
+            &*separators,
             &mut state.term_features,
             &mut state.term_nofeatures,
         );
@@ -617,7 +616,7 @@ impl Client for ClientRef {
         let _ = output.with_ptr(|stream| bufferevent_setwatermark(stream));
         if control_control {
             let _ = output.with_ptr(|stream| {
-                bufferevent_write(stream, c"\x1bP1000p".as_ptr().cast(), 7);
+                bufferevent_write(stream, b"\x1bP1000p");
                 bufferevent_enable(stream, EV_WRITE as i16)
             });
         }
@@ -756,17 +755,16 @@ impl Client for ClientRef {
     }
     unsafe fn send_ready(&self) {
         let peer = (*self.get()).peer;
-        proc_send(peer, MSG_READY, None, std::ptr::null(), 0);
+        proc_send(peer, MSG_READY, None, &[]);
     }
     unsafe fn send_message(
         &self,
         kind: crate::src::compat::imsg::msgtype,
         fd: Option<OwnedFd>,
-        data: *const std::ffi::c_void,
-        size: usize,
+        data: &[u8],
     ) -> i32 {
         let peer = (*self.get()).peer;
-        proc_send(peer, kind, fd, data, size)
+        proc_send(peer, kind, fd, data)
     }
     unsafe fn register_file(&self, file: &Rc<UnsafeCell<crate::src::file::client_file>>) {
         crate::src::file::client_files_insert(&mut (*self.get()).files, file.clone());
@@ -875,7 +873,7 @@ impl Client for ClientRef {
         (*self.get()).flags & CLIENT_READONLY as u64 != 0
     }
     unsafe fn exec(&self, command: &CStr) {
-        server_client_exec(self, command.as_ptr());
+        server_client_exec(self, &*command);
     }
     unsafe fn is_control(&self) -> bool {
         (*self.get()).flags & CLIENT_CONTROL as u64 != 0
@@ -1069,7 +1067,7 @@ impl Client for ClientRef {
     }
 
     unsafe fn set_key_table(&self, name: Option<&CStr>) {
-        server_client_set_key_table(self, name.map_or(std::ptr::null(), CStr::as_ptr));
+        server_client_set_key_table(self, name);
     }
     unsafe fn select_key_table(&self, table: Rc<std::cell::RefCell<key_table>>) {
         (*self.get()).keytable = Some(table);
@@ -1153,10 +1151,7 @@ impl Client for ClientRef {
         (*self.get()).message_string = Some(message.clone());
         let name = self.name();
         crate::src::server::server_add_message(|out| {
-            write_cstr(
-                out,
-                name.as_ref().map_or(std::ptr::null(), |name| name.as_ptr()),
-            )?;
+            write_cstr(out, name.as_deref())?;
             out.write_all(b" message: ")?;
             out.write_all(message.as_bytes())
         });
@@ -1204,16 +1199,7 @@ impl Client for ClientRef {
         kind: prompt_type,
     ) {
         crate::src::status::status_prompt_set(
-            self,
-            find.map_or(std::ptr::null_mut(), |find| {
-                (find as *const cmd_find_state).cast_mut()
-            }),
-            message.as_ptr(),
-            input.map_or(std::ptr::null(), CStr::as_ptr),
-            inputcb,
-            freecb,
-            flags,
-            kind,
+            self, find, &*message, input, inputcb, freecb, flags, kind,
         );
     }
 
@@ -1356,18 +1342,12 @@ impl Client for ClientRef {
             .to_owned();
             crate::src::tty::tty_raw(
                 (*self.get()).fd.as_ref().map_or(-1, AsRawFd::as_raw_fd),
-                output.as_ptr(),
+                &*output,
             );
         }
         self.update_flags(CLIENT_SUSPENDED as u64, 0);
         let peer = (*self.get()).peer;
-        proc_send(
-            peer,
-            MSG_LOCK,
-            None,
-            command.as_ptr().cast(),
-            command.to_bytes_with_nul().len(),
-        );
+        proc_send(peer, MSG_LOCK, None, command.to_bytes_with_nul());
     }
 
     unsafe fn lost(&self) {
@@ -1503,7 +1483,7 @@ mod tests {
                 active.title = c"active".to_owned();
                 status.active = Some(active);
             }
-            let active_screen = owner.borrow_status().active.as_deref().unwrap() as *const screen;
+            let active_screen = owner.borrow_status().active.as_deref().unwrap() as *const _;
             let active_grid = owner.borrow_status().active.as_deref().unwrap().grid() as *const _;
             owner.draw_status_line(0, 0, 4, 0);
             let status = owner.borrow_status();

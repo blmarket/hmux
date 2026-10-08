@@ -3,6 +3,7 @@ use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::cmdq_error;
 use crate::src::environ::{environ_clear, environ_set, environ_unset};
 use crate::src::ffi::libc::strchr;
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::session::Session;
@@ -14,6 +15,7 @@ use crate::src::shared::command::{CMD_AFTERHOOK, CMD_FIND_CANFAIL};
 use crate::src::shared::environment::environ;
 use crate::src::shared::environment::ENVIRON_HIDDEN;
 use crate::src::tmux::global_environ;
+use std::ffi::CStr;
 pub static cmd_set_environment_entry: cmd_entry = {
     cmd_entry {
         name: c"set-environment",
@@ -108,11 +110,13 @@ unsafe fn cmd_set_environment_exec(
     };
     let edit = |env: &mut environ| {
         if unset {
-            environ_unset(env, name);
+            environ_unset(env, CStr::from_ptr(name));
         } else if remove {
-            environ_clear(env, name);
+            environ_clear(env, CStr::from_ptr(name));
         } else {
-            environ_set(env, name, hidden, |out| write_cstr(out, value));
+            environ_set(env, CStr::from_ptr(name), hidden, |out| {
+                write_cstr(out, nullable_cstr(value))
+            });
         }
     };
     if global {

@@ -76,7 +76,7 @@ pub(crate) unsafe fn window_render_fill_cell(
     screen_write_start(&mut ctx, &raw mut s);
     format_draw(
         &raw mut ctx,
-        &raw const grid_default_cell,
+        &grid_default_cell,
         1 as u_int,
         expanded.as_ptr(),
         ::core::ptr::null_mut::<style_ranges>(),
@@ -91,19 +91,18 @@ pub unsafe fn window_set_fill_cells(w_owner: &WindowRef) {
     w_owner.refresh_fill_cells();
 }
 
-unsafe fn window_copy_fill_cell(mut gc: *mut grid_cell, mut fill: *const grid_cell) {
-    (*gc).data = utf8_copy(&(*fill).data);
-    (*gc).attr = ((*gc).attr as ::core::ffi::c_int | (*fill).attr as ::core::ffi::c_int) as u_short;
-    (*gc).flags =
-        ((*gc).flags as ::core::ffi::c_int | (*fill).flags as ::core::ffi::c_int) as u_char;
-    if (*fill).fg != 8 as ::core::ffi::c_int {
-        (*gc).fg = (*fill).fg;
+unsafe fn window_copy_fill_cell(mut gc: *mut grid_cell, fill: &grid_cell) {
+    (*gc).data = utf8_copy(&fill.data);
+    (*gc).attr = ((*gc).attr as ::core::ffi::c_int | fill.attr as ::core::ffi::c_int) as u_short;
+    (*gc).flags = ((*gc).flags as ::core::ffi::c_int | fill.flags as ::core::ffi::c_int) as u_char;
+    if fill.fg != 8 as ::core::ffi::c_int {
+        (*gc).fg = fill.fg;
     }
-    if (*fill).bg != 8 as ::core::ffi::c_int {
-        (*gc).bg = (*fill).bg;
+    if fill.bg != 8 as ::core::ffi::c_int {
+        (*gc).bg = fill.bg;
     }
-    if (*fill).us != 8 as ::core::ffi::c_int {
-        (*gc).us = (*fill).us;
+    if fill.us != 8 as ::core::ffi::c_int {
+        (*gc).us = fill.us;
     }
 }
 pub unsafe fn window_get_fill_cell(

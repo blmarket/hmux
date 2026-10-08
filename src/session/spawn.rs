@@ -21,7 +21,7 @@ pub(super) unsafe fn spawn_window(
     let s = session.get();
     let mut index = sc.idx;
     let mut created_window = std::rc::Weak::new();
-    spawn_log(c"spawn_window".as_ptr(), sc);
+    spawn_log(c"spawn_window", sc);
 
     if sc.flags & SPAWN_RESPAWN != 0 && !prepare_respawn_window(sc, cause) {
         return refbox::Weak::new();
@@ -37,7 +37,7 @@ pub(super) unsafe fn spawn_window(
         }
         if link.is_alive() {
             link.get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
-            events_fire_winlink(c"window-unlinked".as_ptr(), link.clone());
+            events_fire_winlink(c"window-unlinked", link.clone());
             winlink_stack_remove(&mut (*s).lastw, link.clone());
             winlink_remove(&mut (*s).windows, link.clone());
             if (*s).curw == link {
@@ -112,8 +112,8 @@ pub(super) unsafe fn spawn_window(
         let window = created_window
             .upgrade()
             .expect("spawned window remains live");
-        events_fire_window(c"window-created".as_ptr(), window);
-        events_fire_winlink(c"window-linked".as_ptr(), sc.winlink_handle());
+        events_fire_window(c"window-created", window);
+        events_fire_winlink(c"window-linked", sc.winlink_handle());
     }
     session_group_synchronize_from(&session);
     sc.winlink_handle()

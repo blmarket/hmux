@@ -57,7 +57,6 @@ unsafe fn cmd_resize_window_exec(
         .expect("resize target window");
     let result = (|| {
         let mut s: Option<SessionRef> = (*target).session_handle();
-        let mut errstr: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
         let mut adjust: u_int = 0;
         let mut sx: u_int = 0;
         let mut sy: u_int = 0;
@@ -66,14 +65,13 @@ unsafe fn cmd_resize_window_exec(
         if args_count(args) == 0 as u_int {
             adjust = 1 as u_int;
         } else {
-            adjust = strtonum(
-                args_string(&mut *(args), 0 as u_int)
-                    .map_or(std::ptr::null(), |value| value.as_ptr()),
+            let parsed = strtonum(
+                args_string(&mut *(args), 0 as u_int).expect("numeric argument"),
                 1 as ::core::ffi::c_longlong,
                 INT_MAX as ::core::ffi::c_longlong,
-                &raw mut errstr,
-            ) as u_int;
-            if !errstr.is_null() {
+            );
+            adjust = parsed.unwrap_or(0) as u_int;
+            if let Err(errstr) = parsed {
                 cmdq_error(item_handle, |out| {
                     out.write_all(b"adjustment ")?;
                     write_cstr(out, errstr)
@@ -94,7 +92,7 @@ unsafe fn cmd_resize_window_exec(
                 Err(error) => {
                     cmdq_error(item_handle, |out| {
                         out.write_all(b"width ")?;
-                        write_cstr(out, error.message().as_ptr())
+                        write_cstr(out, &*(error.message()))
                     });
                     return CMD_RETURN_ERROR;
                 }
@@ -111,7 +109,7 @@ unsafe fn cmd_resize_window_exec(
                 Err(error) => {
                     cmdq_error(item_handle, |out| {
                         out.write_all(b"height ")?;
-                        write_cstr(out, error.message().as_ptr())
+                        write_cstr(out, &*(error.message()))
                     });
                     return CMD_RETURN_ERROR;
                 }

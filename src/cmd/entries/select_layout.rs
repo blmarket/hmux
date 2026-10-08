@@ -61,7 +61,7 @@ unsafe fn cmd_select_layout_exec(
             let name = args_string(&mut *args, 0 as u_int).expect("named layout");
             cmdq_error(item_handle, |out| {
                 out.write_all(b"unknown layout: ")?;
-                write_cstr(out, name.as_ptr())
+                write_cstr(out, &*name)
             });
             CMD_RETURN_ERROR
         }

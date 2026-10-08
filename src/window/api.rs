@@ -250,10 +250,10 @@ impl Window for WindowRef {
         window_find_by_id(id)
     }
     unsafe fn find_by_id_str(id: &CStr) -> Option<Self> {
-        window_find_by_id_str(id.as_ptr())
+        window_find_by_id_str(&*id)
     }
     unsafe fn retain(&self, from: &CStr) -> Self {
-        window_add_ref(self, from.as_ptr())
+        window_add_ref(self, &*from)
     }
     unsafe fn update_focus(&self) {
         window_update_focus(Some(self));
@@ -310,7 +310,7 @@ impl Window for WindowRef {
         (*self.get()).invalidate_scene();
         window_arrange(self);
         server_redraw_window(self);
-        events_fire_window(c"window-layout-changed".as_ptr(), self.clone());
+        events_fire_window(c"window-layout-changed", self.clone());
         Ok(())
     }
     unsafe fn layout(&self) -> LayoutKind {
@@ -327,7 +327,7 @@ impl Window for WindowRef {
         state.invalidate_scene();
         window_arrange(self);
         server_redraw_window(self);
-        events_fire_window(c"window-layout-changed".as_ptr(), self.clone());
+        events_fire_window(c"window-layout-changed", self.clone());
     }
     unsafe fn pane_in_direction(
         &self,
@@ -478,7 +478,7 @@ impl Window for WindowRef {
         (*self.get()).name.clone()
     }
     unsafe fn rename(&self, name: &CStr, untrusted: bool) {
-        window_set_name(self, name.as_ptr(), untrusted as i32);
+        window_set_name(self, &*name, untrusted as i32);
     }
     unsafe fn begin_name_check(&self, now: Instant) -> bool {
         let state = &mut *self.get();
@@ -742,10 +742,10 @@ impl Window for WindowRef {
         crate::src::format::window_format_value(self, key, context)
     }
     unsafe fn release(self, from: &CStr) {
-        window_remove_ref(self, from.as_ptr());
+        window_remove_ref(self, &*from);
     }
     unsafe fn prepare_release(&self, from: &CStr) {
-        window_prepare_release(self, from.as_ptr());
+        window_prepare_release(self, &*from);
     }
 }
 
@@ -762,12 +762,12 @@ unsafe fn resize_fire_window_resized(w_owner: &WindowRef, mut old_sx: u_int, mut
     let mut ep = event_payload_create();
     cmd_find_from_window(&raw mut fs, w_owner, 0 as ::core::ffi::c_int);
     event_payload_set_target(&mut ep, &fs);
-    event_payload_set_window(&mut ep, c"window".as_ptr(), std::rc::Rc::clone(w_owner));
-    event_payload_set_uint(&mut ep, c"width".as_ptr(), (*w).sx);
-    event_payload_set_uint(&mut ep, c"height".as_ptr(), (*w).sy);
-    event_payload_set_uint(&mut ep, c"old_width".as_ptr(), old_sx);
-    event_payload_set_uint(&mut ep, c"old_height".as_ptr(), old_sy);
-    events_fire(c"window-resized".as_ptr(), ep);
+    event_payload_set_window(&mut ep, c"window", std::rc::Rc::clone(w_owner));
+    event_payload_set_uint(&mut ep, c"width", (*w).sx);
+    event_payload_set_uint(&mut ep, c"height", (*w).sy);
+    event_payload_set_uint(&mut ep, c"old_width", old_sx);
+    event_payload_set_uint(&mut ep, c"old_height", old_sy);
+    events_fire(c"window-resized", ep);
 }
 unsafe fn resize_window(
     w_owner: &WindowRef,
@@ -800,10 +800,7 @@ unsafe fn resize_window(
         { sy }
     ));
     server_redraw_window(w_owner);
-    events_fire_window(
-        c"window-layout-changed".as_ptr(),
-        std::rc::Rc::clone(w_owner),
-    );
+    events_fire_window(c"window-layout-changed", std::rc::Rc::clone(w_owner));
     resize_fire_window_resized(w_owner, old_sx, old_sy);
     (*w).flags &= !WINDOW_RESIZE;
 }

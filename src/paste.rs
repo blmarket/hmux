@@ -212,8 +212,8 @@ unsafe fn paste_fire_event(
     let mut ep = event_payload_create();
     // Finish reading the buffer before dispatch: listeners may look up,
     // replace, or rename buffers synchronously.
-    event_payload_set_string(&mut ep, c"paste_buffer".as_ptr(), write);
-    events_fire(name.as_ptr(), ep);
+    event_payload_set_string(&mut ep, c"paste_buffer", write);
+    events_fire(&*name, ep);
 }
 
 pub fn paste_buffer_name(pb: &paste_buffer) -> &CStr {

@@ -524,8 +524,8 @@ unsafe fn control_write_line(c_owner: &ClientRef, line: CString) {
     };
     let _ = stream.with_ptr(|stream| {
         if let Some(line) = immediate {
-            bufferevent_write(stream, line.as_ptr().cast(), size - 1);
-            bufferevent_write(stream, b"\n".as_ptr().cast(), 1);
+            bufferevent_write(stream, &line.to_bytes()[..size - 1]);
+            bufferevent_write(stream, b"\n");
         }
         bufferevent_enable(stream, EV_WRITE as i16)
     });
@@ -551,12 +551,12 @@ pub unsafe fn control_write(
 }
 pub unsafe fn control_write_guard(
     c_owner: &ClientRef,
-    guard: *const ::core::ffi::c_char,
+    guard: &CStr,
     t: ::core::ffi::c_long,
     number: u_int,
     flags: ::core::ffi::c_int,
 ) {
-    let begin = CStr::from_ptr(guard) == c"begin";
+    let begin = guard == c"begin";
     {
         let Some(mut cs) = c_owner.borrow_control_mut() else {
             return;
@@ -567,7 +567,7 @@ pub unsafe fn control_write_guard(
     }
     control_write(c_owner, |out| {
         out.write_all(b"%")?;
-        write_cstr(out, guard)?;
+        write_cstr(out, &*guard)?;
         write!(out, " {} {} {}", t, number, flags)
     });
     let flush = {
@@ -752,17 +752,12 @@ unsafe fn control_error(
     let item = item_handle.get();
     let c_owner = cmdq_get_client((item).as_ref());
     let mut c: Option<ClientRef> = c_owner.clone();
-    cmdq_guard(item_handle, c"begin".as_ptr(), 1 as ::core::ffi::c_int);
+    cmdq_guard(item_handle, c"begin", 1 as ::core::ffi::c_int);
     control_write(&c.clone().expect("live client"), |out| {
         out.write_all(b"parse error: ")?;
-        write_cstr(
-            out,
-            error
-                .as_ref()
-                .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
-        )
+        write_cstr(out, error.as_deref())
     });
-    cmdq_guard(item_handle, c"error".as_ptr(), 1 as ::core::ffi::c_int);
+    cmdq_guard(item_handle, c"error", 1 as ::core::ffi::c_int);
     CMD_RETURN_NORMAL
 }
 unsafe fn control_error_callback(owner: &ClientRef) {
@@ -889,8 +884,8 @@ unsafe fn control_flush_all_blocks(client: &ClientRef) {
             log_cstr(&line)
         ));
         let Some(()) = stream.with_ptr(|stream| {
-            bufferevent_write(stream, line.as_ptr().cast(), line.as_bytes().len());
-            bufferevent_write(stream, c"\n".as_ptr().cast(), 1);
+            bufferevent_write(stream, line.as_bytes());
+            bufferevent_write(stream, b"\n");
         }) else {
             break;
         };
@@ -964,8 +959,10 @@ unsafe fn control_append_data(
             }
             evbuffer_add(
                 &mut message,
-                new_data.add(start) as *const ::core::ffi::c_void,
-                (i as size_t).wrapping_sub(start).wrapping_add(1 as size_t),
+                std::slice::from_raw_parts(
+                    new_data.add(start).cast(),
+                    (i as size_t).wrapping_sub(start).wrapping_add(1 as size_t),
+                ),
             );
         }
         i = i.wrapping_add(1);
@@ -984,17 +981,9 @@ unsafe fn control_write_data(c_owner: &ClientRef, mut message: Box<SegmentedBuf>
                 .as_deref()
                 .unwrap_or(c"(null)")
         ),
-        log_cstr_n(
-            (evbuffer_pullup(&mut message, -1)
-                .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())) as *const _,
-            evbuffer_get_length(&message) as ::core::ffi::c_int
-        )
+        log_cstr_n(evbuffer_pullup(&mut message, -1).map_or(&[][..], |bytes| bytes))
     ));
-    evbuffer_add(
-        &mut message,
-        c"\n".as_ptr() as *const ::core::ffi::c_void,
-        1 as size_t,
-    );
+    evbuffer_add(&mut message, b"\n");
     let stream = {
         c_owner
             .borrow_control_mut()
@@ -1355,10 +1344,10 @@ pub(crate) unsafe fn control_clear_remaining(cs: &mut control_state) {
 
 pub unsafe fn control_add_sub(
     c_owner: &ClientRef,
-    mut name: *const ::core::ffi::c_char,
+    name: &CStr,
     mut type_0: monitor_type,
     mut id: ::core::ffi::c_int,
-    mut format: *const ::core::ffi::c_char,
+    format: &CStr,
 ) {
     let subscriptions = {
         let state = c_owner.borrow_control_mut().expect("control client state");
@@ -1378,7 +1367,7 @@ pub unsafe fn control_add_sub(
         MONITOR_NOTIFY_INITIAL,
     );
 }
-pub unsafe fn control_remove_sub(c_owner: &ClientRef, mut name: *const ::core::ffi::c_char) {
+pub unsafe fn control_remove_sub(c_owner: &ClientRef, name: &CStr) {
     let subscriptions = {
         let state = c_owner.borrow_control_mut().expect("control client state");
         state

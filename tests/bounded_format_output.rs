@@ -8,13 +8,13 @@ use hmux::src::{
     },
     style::{style_set, style_tostring},
 };
-use std::ffi::{c_char, CStr};
+use std::ffi::c_char;
 
 #[test]
 fn style_appends_preserve_raw_range_bytes_and_numeric_fields() {
     unsafe {
         let mut value = style::default();
-        style_set(&mut value, &raw const grid_default_cell);
+        style_set(&mut value, &grid_default_cell);
         value.list = STYLE_LIST_ON;
         value.range_type = STYLE_RANGE_USER;
         value.range_string[0] = 0xffu8 as c_char;
@@ -24,13 +24,13 @@ fn style_appends_preserve_raw_range_bytes_and_numeric_fields() {
         value.width_percentage = 1;
         value.pad = 2;
         assert_eq!(
-            CStr::from_ptr(style_tostring(&mut value)).to_bytes(),
+            style_tostring(&mut value).to_bytes(),
             b"list=on,range=user|\xff,align=right,dim=25%,width=75%,pad=2",
         );
         // Reusing the static buffer must terminate the new, shorter result.
-        style_set(&mut value, &raw const grid_default_cell);
+        style_set(&mut value, &grid_default_cell);
         value.width = 3;
-        assert_eq!(CStr::from_ptr(style_tostring(&mut value)), c"width=3");
+        assert_eq!(style_tostring(&mut value).as_c_str(), c"width=3");
     }
 }
 

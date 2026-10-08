@@ -1,7 +1,7 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::find::{cmd_find_clear_state, cmd_find_from_winlink_pane};
 use crate::src::cmd::queue::{cmdq_append, cmdq_get_callback_owned};
-use crate::src::ffi::libc::{__ctype_tolower_loc, memcpy, strcasestr, strstr};
+use crate::src::ffi::libc::{__ctype_tolower_loc, strcasestr, strstr};
 use crate::src::format::{
     format_add, format_create, format_defaults, format_expand_cstring, format_free,
     format_single_cstring, format_true,
@@ -324,8 +324,9 @@ unsafe fn window_tree_filter_pane(
     session_owner: &SessionRef,
     mut wl: refbox::Weak<winlink>,
     pane_owner: &Rc<UnsafeCell<window_pane>>,
-    mut filter: *const ::core::ffi::c_char,
+    filter: Option<&CStr>,
 ) -> ::core::ffi::c_int {
+    let filter: *const ::core::ffi::c_char = filter.map_or(std::ptr::null(), CStr::as_ptr);
     let mut result: ::core::ffi::c_int = 0;
     if filter.is_null() {
         return 1 as ::core::ffi::c_int;
@@ -347,7 +348,7 @@ unsafe fn window_tree_build_window(
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
     mut sort_crit: *mut sort_criteria,
     parent: &ModeTreeItemRef,
-    mut filter: *const ::core::ffi::c_char,
+    filter: Option<&CStr>,
 ) -> ::core::ffi::c_int {
     let s = Some(session_owner.clone());
     let data = mode_owner.get();
@@ -446,7 +447,7 @@ unsafe fn window_tree_build_session(
     session_owner: &SessionRef,
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
     mut sort_crit: *mut sort_criteria,
-    mut filter: *const ::core::ffi::c_char,
+    filter: Option<&CStr>,
 ) {
     let s = Some(session_owner.clone());
     let data = mode_owner.get();
@@ -547,7 +548,7 @@ unsafe fn window_tree_build(
     mode_owner: &Rc<UnsafeCell<window_tree_modedata>>,
     mut sort_crit: *mut sort_criteria,
     tag: *mut uint64_t,
-    mut filter: *const ::core::ffi::c_char,
+    filter: Option<&CStr>,
 ) {
     let data = mode_owner.get();
     let mut squash_groups: ::core::ffi::c_int = (*data).squash_groups;
@@ -633,10 +634,11 @@ unsafe fn window_tree_draw_label(
     mut py: u_int,
     mut sx: u_int,
     mut sy: u_int,
-    mut border_gc: *const grid_cell,
-    mut label_gc: *const grid_cell,
-    mut label: *const ::core::ffi::c_char,
+    border_gc: &grid_cell,
+    label_gc: &grid_cell,
+    label: &CStr,
 ) {
+    let mut label: *const ::core::ffi::c_char = label.as_ptr();
     let mut width: u_int = 0;
     let mut ox: u_int = 0;
     let mut oy: u_int = 0;
@@ -678,7 +680,7 @@ unsafe fn window_tree_draw_label(
         width.wrapping_add(4 as u_int),
         3 as u_int,
         BOX_LINES_DEFAULT,
-        border_gc.as_ref(),
+        Some(border_gc),
         None,
     );
     screen_write_cursormove(
@@ -690,7 +692,7 @@ unsafe fn window_tree_draw_label(
     screen_write_clearcharacter(
         &mut *ctx,
         width.wrapping_add(2 as u_int),
-        (*border_gc).bg as u_int,
+        border_gc.bg as u_int,
     );
     screen_write_cursormove(
         &mut *ctx,
@@ -916,11 +918,7 @@ unsafe fn window_tree_draw_session(
             ft = &raw mut *ft_owner;
             format_defaults(ft, None, s.as_ref(), wl.clone(), None);
             window_tree_border_cell(&raw mut gc, |visit| window.with_options_mut(visit), ft);
-            memcpy(
-                &raw mut label_gc as *mut ::core::ffi::c_void,
-                &raw const grid_default_cell as *const ::core::ffi::c_void,
-                ::core::mem::size_of::<grid_cell>() as size_t,
-            );
+            label_gc = grid_default_cell;
             style_apply_with_options(
                 &mut label_gc,
                 c"tree-mode-preview-style",
@@ -959,9 +957,9 @@ unsafe fn window_tree_draw_session(
                         cy,
                         width,
                         sy,
-                        &raw mut gc,
-                        &raw mut label_gc,
-                        label.as_ptr(),
+                        &gc,
+                        &label_gc,
+                        &*label,
                     );
                 }
             }
@@ -1204,11 +1202,7 @@ unsafe fn window_tree_draw_window(
                         },
                         ft,
                     );
-                    memcpy(
-                        &raw mut label_gc as *mut ::core::ffi::c_void,
-                        &raw const grid_default_cell as *const ::core::ffi::c_void,
-                        ::core::mem::size_of::<grid_cell>() as size_t,
-                    );
+                    label_gc = grid_default_cell;
                     style_apply_with_options(
                         &mut label_gc,
                         c"tree-mode-preview-style",
@@ -1253,9 +1247,9 @@ unsafe fn window_tree_draw_window(
                                 cy,
                                 width,
                                 sy,
-                                &raw mut gc,
-                                &raw mut label_gc,
-                                label.as_ptr(),
+                                &gc,
+                                &label_gc,
+                                &*label,
                             );
                         }
                     }
@@ -1403,7 +1397,7 @@ unsafe fn window_tree_draw_info(
             );
             format_draw(
                 ctx,
-                &raw const grid_default_cell,
+                &grid_default_cell,
                 sx,
                 expanded.as_ptr(),
                 ::core::ptr::null_mut::<style_ranges>(),
@@ -1814,12 +1808,7 @@ unsafe fn window_tree_init(
                 return tag;
             };
             let mut selected = tag.unwrap_or(::core::primitive::u64::MAX as uint64_t);
-            window_tree_build(
-                &mode,
-                sort as *mut sort_criteria,
-                &mut selected,
-                filter.map_or(::core::ptr::null(), |value| value.as_ptr()),
-            );
+            window_tree_build(&mode, sort as *mut sort_criteria, &mut selected, filter);
             (selected != ::core::primitive::u64::MAX as uint64_t).then_some(selected)
         })),
         Some(Box::new(move |itemdata, ctx, sx, sy| {

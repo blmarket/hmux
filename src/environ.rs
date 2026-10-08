@@ -5,7 +5,7 @@ use crate::src::log::{log_cstr, log_debug};
 use crate::src::options::options_get_string;
 use crate::src::session::Session;
 use crate::src::shared::session::SessionRef;
-use crate::src::tmux::{getversion, global_environ, global_options, socket_path};
+use crate::src::tmux::{getversion, global_environ, global_options, socket_path_cstr};
 use crate::src::xmalloc::xcalloc;
 use std::ffi::{CStr, CString, NulError};
 
@@ -127,33 +127,26 @@ pub fn environ_copy(src: &environ, dst: &mut environ) {
     dst.copy_from(src);
 }
 
-pub unsafe fn environ_find(
-    env: &environ,
-    name: *const ::core::ffi::c_char,
-) -> Option<&environ_entry> {
-    env.find(CStr::from_ptr(name))
+pub fn environ_find<'a>(env: &'a environ, name: &CStr) -> Option<&'a environ_entry> {
+    env.find(name)
 }
 
 pub unsafe fn environ_set(
     env: &mut environ,
-    name: *const ::core::ffi::c_char,
+    name: &CStr,
     flags: ::core::ffi::c_int,
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
 ) {
     let value = format_message_with(write);
-    env.set_cstr(CStr::from_ptr(name), flags, &value);
+    env.set_cstr(name, flags, &value);
 }
 
-pub unsafe fn environ_clear(env: &mut environ, name: *const ::core::ffi::c_char) {
-    env.clear_cstr(CStr::from_ptr(name));
+pub unsafe fn environ_clear(env: &mut environ, name: &CStr) {
+    env.clear_cstr(name);
 }
 
-pub unsafe fn environ_put(
-    env: &mut environ,
-    var: *const ::core::ffi::c_char,
-    flags: ::core::ffi::c_int,
-) {
-    let var = CStr::from_ptr(var).to_bytes_with_nul();
+pub unsafe fn environ_put(env: &mut environ, var: &CStr, flags: ::core::ffi::c_int) {
+    let var = var.to_bytes_with_nul();
     let Some(equals) = var[..var.len() - 1].iter().position(|&byte| byte == b'=') else {
         return;
     };
@@ -163,8 +156,8 @@ pub unsafe fn environ_put(
     env.set_cstr(&name, flags, value);
 }
 
-pub unsafe fn environ_unset(env: &mut environ, name: *const ::core::ffi::c_char) {
-    env.unset_cstr(CStr::from_ptr(name));
+pub unsafe fn environ_unset(env: &mut environ, name: &CStr) {
+    env.unset_cstr(name);
 }
 
 pub unsafe fn environ_update(oo: *mut options, src: &environ, dst: &mut environ) {
@@ -186,20 +179,14 @@ pub unsafe fn environ_update(oo: *mut options, src: &environ, dst: &mut environ)
         let mut found = false;
         for entry in environ_iter(src) {
             if fnmatch(pattern.as_ptr(), entry.name.as_ptr(), 0) == 0 {
-                environ_set(dst, entry.name.as_ptr(), 0, |out| {
-                    write_cstr(
-                        out,
-                        entry
-                            .value
-                            .as_ref()
-                            .map_or(std::ptr::null(), |value| value.as_ptr()),
-                    )
+                environ_set(dst, &*entry.name, 0, |out| {
+                    write_cstr(out, entry.value.as_deref())
                 });
                 found = true;
             }
         }
         if !found {
-            environ_clear(dst, pattern.as_ptr());
+            environ_clear(dst, &*pattern);
         }
     }
 }
@@ -256,34 +243,28 @@ pub unsafe fn environ_for_session(
     }
     if no_TERM == 0 {
         let terminal = options_get_string(global_options, c"default-terminal");
-        environ_set(&mut env, c"TERM".as_ptr(), 0 as ::core::ffi::c_int, |out| {
-            write_cstr(out, terminal.as_ptr())
+        environ_set(&mut env, c"TERM", 0 as ::core::ffi::c_int, |out| {
+            write_cstr(out, &*terminal)
+        });
+        environ_set(&mut env, c"TERM_PROGRAM", 0 as ::core::ffi::c_int, |out| {
+            write_cstr(out, c"tmux")
         });
         environ_set(
             &mut env,
-            c"TERM_PROGRAM".as_ptr(),
-            0 as ::core::ffi::c_int,
-            |out| write_cstr(out, c"tmux".as_ptr()),
-        );
-        environ_set(
-            &mut env,
-            c"TERM_PROGRAM_VERSION".as_ptr(),
+            c"TERM_PROGRAM_VERSION",
             0 as ::core::ffi::c_int,
             |out| out.write_all(getversion().to_bytes()),
         );
-        environ_set(
-            &mut env,
-            c"COLORTERM".as_ptr(),
-            0 as ::core::ffi::c_int,
-            |out| out.write_all(b"truecolor"),
-        );
+        environ_set(&mut env, c"COLORTERM", 0 as ::core::ffi::c_int, |out| {
+            out.write_all(b"truecolor")
+        });
     }
-    environ_clear(&mut env, c"LISTEN_PID".as_ptr());
-    environ_clear(&mut env, c"LISTEN_FDS".as_ptr());
-    environ_clear(&mut env, c"LISTEN_FDNAMES".as_ptr());
+    environ_clear(&mut env, c"LISTEN_PID");
+    environ_clear(&mut env, c"LISTEN_FDS");
+    environ_clear(&mut env, c"LISTEN_FDNAMES");
     idx = s_owner.map_or(-1, |session| session.id() as i32);
-    environ_set(&mut env, c"TMUX".as_ptr(), 0 as ::core::ffi::c_int, |out| {
-        write_cstr(out, socket_path)?;
+    environ_set(&mut env, c"TMUX", 0 as ::core::ffi::c_int, |out| {
+        out.write_all(socket_path_cstr().to_bytes())?;
         write!(
             out,
             ",{},{}",

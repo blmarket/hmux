@@ -313,11 +313,7 @@ pub(super) unsafe fn draw_scrollbar(
     (*wp).sb_slider_y = slider_y;
     (*wp).sb_slider_h = slider_h;
     gc = sb_style.gc;
-    memcpy(
-        &raw mut slgc as *mut ::core::ffi::c_void,
-        &raw mut gc as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
+    slgc = gc;
     slgc.fg = gc.bg;
     slgc.bg = gc.fg;
     pad_gc = pane_owner.default_colours().0;

@@ -1,6 +1,5 @@
 use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::compat::imsg::*;
-use crate::src::ffi::libc::memcpy;
 use crate::src::format::{
     format_add, format_create, format_create_defaults, format_defaults, format_expand_cstring,
     format_free, format_single_cstring, format_true,
@@ -195,8 +194,9 @@ unsafe fn window_client_add_item(
 unsafe fn window_client_build(
     data: *mut window_client_modedata,
     mut sort_crit: *mut sort_criteria,
-    mut filter: *const ::core::ffi::c_char,
+    filter: Option<&CStr>,
 ) {
+    let filter: *const ::core::ffi::c_char = filter.map_or(std::ptr::null(), CStr::as_ptr);
     let mut i: u_int = 0;
     let mut c: Option<ClientRef> = None;
     (*data).items.clear();
@@ -337,7 +337,7 @@ unsafe fn window_client_draw_info(
         );
         format_draw(
             ctx,
-            &raw const grid_default_cell,
+            &grid_default_cell,
             sx,
             expanded.as_ptr(),
             ::core::ptr::null_mut::<style_ranges>(),
@@ -346,11 +346,7 @@ unsafe fn window_client_draw_info(
         i = i.wrapping_add(1);
     }
     if sx > 14 as u_int && i < sy {
-        memcpy(
-            &raw mut gc as *mut ::core::ffi::c_void,
-            &raw const grid_default_cell as *const ::core::ffi::c_void,
-            ::core::mem::size_of::<grid_cell>() as size_t,
-        );
+        gc = grid_default_cell;
         style_apply_with_options(&mut gc, c"tree-mode-border-style", None, |visit| {
             options_window
                 .upgrade()
@@ -472,11 +468,7 @@ unsafe fn window_client_draw(
             0 as ::core::ffi::c_int,
         );
     }
-    memcpy(
-        &raw mut gc as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
+    gc = grid_default_cell;
     style_apply_with_options(&mut gc, c"tree-mode-border-style", None, |visit| {
         options_window
             .upgrade()
@@ -631,11 +623,7 @@ unsafe fn window_client_init(
         args,
         Some(Box::new(move |sort, tag, filter| {
             let mut selected = tag.unwrap_or(::core::primitive::u64::MAX as uint64_t);
-            window_client_build(
-                data_handle.as_ptr(),
-                sort as *mut sort_criteria,
-                filter.map_or(::core::ptr::null(), |value| value.as_ptr()),
-            );
+            window_client_build(data_handle.as_ptr(), sort as *mut sort_criteria, filter);
             (selected != ::core::primitive::u64::MAX as uint64_t).then_some(selected)
         })),
         Some(Box::new(move |itemdata, ctx, sx, sy| {

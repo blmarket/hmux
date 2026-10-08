@@ -5,7 +5,6 @@ use crate::src::cmd::{
     cmd_list_print_cstring, cmd_parse,
 };
 use crate::src::environ::environ_put;
-use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_create_with_client, format_defaults, format_expand_cstring, format_free, format_true,
 };
@@ -104,7 +103,7 @@ unsafe fn cmd_parse_print_commands(mut pi: *mut cmd_parse_input, cmdlist: &cmd_l
     let s = cmd_list_print_cstring(cmdlist, 0);
     if (*pi).file.is_some() {
         cmdq_print(&item_owner, |out| {
-            write_cstr(out, (*pi).file_ptr())?;
+            out.write_all((*pi).file.as_ref().expect("parse file").to_bytes())?;
             write!(out, ":{}: ", { (*pi).line })?;
             out.write_all(s.as_bytes())
         });
@@ -184,7 +183,7 @@ impl hmux_cmdparse::Context for ParserContext<'_, '_> {
             if self.0.borrow().input.flags & CMD_PARSE_PARSEONLY == 0 && active {
                 environ_put(
                     global_environ.as_deref_mut().expect("environment"),
-                    token.as_c_str().as_ptr(),
+                    &*(token.as_c_str()),
                     if hidden { ENVIRON_HIDDEN } else { 0 },
                 );
             }
@@ -482,11 +481,7 @@ pub unsafe fn cmd_parse_from_string(s: &CStr, mut pi: *mut cmd_parse_input) -> c
         pi = &raw mut input;
     }
     (*pi).flags |= CMD_PARSE_ONEGROUP;
-    cmd_parse_from_buffer(
-        s.as_ptr() as *const ::core::ffi::c_void,
-        s.to_bytes().len() as size_t,
-        pi,
-    )
+    cmd_parse_from_buffer(s.to_bytes(), pi)
 }
 pub unsafe fn cmd_parse_and_append(
     s: &CStr,
@@ -507,11 +502,7 @@ pub unsafe fn cmd_parse_and_append(
     drop(pr.cmdlist.take());
     Ok(pr.status)
 }
-pub unsafe fn cmd_parse_from_buffer(
-    mut buf: *const ::core::ffi::c_void,
-    mut len: size_t,
-    mut pi: *mut cmd_parse_input,
-) -> cmd_parse_result {
+pub unsafe fn cmd_parse_from_buffer(buf: &[u8], mut pi: *mut cmd_parse_input) -> cmd_parse_result {
     let mut input: cmd_parse_input = cmd_parse_input {
         flags: 0,
         file: None,
@@ -531,13 +522,12 @@ pub unsafe fn cmd_parse_from_buffer(
     if pi.is_null() {
         pi = &raw mut input;
     }
-    if len == 0 as size_t {
+    if buf.is_empty() {
         pr.status = CMD_PARSE_SUCCESS;
         pr.cmdlist = Some(cmd_list_new());
         return pr;
     }
-    let mut cmds = match cmd_parse_do_buffer(std::slice::from_raw_parts(buf.cast(), len), &mut *pi)
-    {
+    let mut cmds = match cmd_parse_do_buffer(buf, &mut *pi) {
         Ok(cmds) => cmds,
         Err(cause) => {
             pr.status = CMD_PARSE_ERROR;
@@ -794,7 +784,7 @@ mod parser_collection_tests {
             global_environ = Some(crate::src::environ::environ_create());
             environ_put(
                 global_environ.as_deref_mut().expect("environment"),
-                c"HOME=/test/home".as_ptr(),
+                c"HOME=/test/home",
                 0,
             );
             let commands = parse_commands(
@@ -815,7 +805,7 @@ mod parser_collection_tests {
             );
             let value = crate::src::environ::environ_find(
                 global_environ.as_deref().expect("environment"),
-                c"LEX_VALUE".as_ptr(),
+                c"LEX_VALUE",
             );
             assert_ne!(value.unwrap().flags & ENVIRON_HIDDEN, 0);
 

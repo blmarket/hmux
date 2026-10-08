@@ -8,6 +8,7 @@ use crate::src::cmd::queue::{
     cmdq_append, cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_command,
     cmdq_get_target_client, cmdq_insert_after,
 };
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::job::job_run;
@@ -165,7 +166,7 @@ unsafe fn cmd_if_shell_exec(
     if job.is_empty() {
         cmdq_error(item_handle, |out| {
             out.write_all(b"failed to run command: ")?;
-            write_cstr(out, shellcmd.as_ptr())
+            write_cstr(out, &*shellcmd)
         });
         return CMD_RETURN_ERROR;
     }
@@ -212,12 +213,12 @@ unsafe fn cmd_if_shell_callback(completion: JobCompletion, cdata: &mut cmd_if_sh
                         1 as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
                         0 as ::core::ffi::c_int,
-                        |out| write_cstr(out, error_ptr),
+                        |out| write_cstr(out, nullable_cstr(error_ptr)),
                     );
                 } else {
                     cmdq_error(
                         item_owner.as_ref().expect("live command queue item"),
-                        |out| write_cstr(out, error_ptr),
+                        |out| write_cstr(out, nullable_cstr(error_ptr)),
                     );
                 }
             }

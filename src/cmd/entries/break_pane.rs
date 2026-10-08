@@ -5,6 +5,7 @@ use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_state_owned, cmdq_get_target_client, cmdq_print,
 };
 use crate::src::events::events_fire_window;
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
 use crate::src::names::default_window_name_cstring;
@@ -90,7 +91,7 @@ unsafe fn cmd_break_pane_exec(
         if !name.is_null() && !check_name(CStr::from_ptr(name)) {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"invalid window name: ")?;
-                write_cstr(out, name)
+                write_cstr(out, nullable_cstr(name))
             });
             return CMD_RETURN_ERROR;
         }
@@ -122,7 +123,7 @@ unsafe fn cmd_break_pane_exec(
                 0 as ::core::ffi::c_int,
                 (args_has(args, 'd' as i32 as u_char) == 0) as ::core::ffi::c_int,
             ) {
-                cmdq_error(item_handle, |out| write_cstr(out, link_error.as_ptr()));
+                cmdq_error(item_handle, |out| write_cstr(out, &*link_error));
                 return CMD_RETURN_ERROR;
             }
             if !name.is_null() {
@@ -202,7 +203,7 @@ unsafe fn cmd_break_pane_exec(
             ) {
                 Ok(wl) => wl,
                 Err(error) => {
-                    cmdq_error(item_handle, |out| write_cstr(out, error.as_ptr()));
+                    cmdq_error(item_handle, |out| write_cstr(out, &*error));
                     window.release(c"cmd_break_pane_exec");
                     return CMD_RETURN_ERROR;
                 }
@@ -211,7 +212,7 @@ unsafe fn cmd_break_pane_exec(
             pane_owner.refresh_palette();
             window.release(c"cmd_break_pane_exec");
             events_fire_window(
-                c"window-created".as_ptr(),
+                c"window-created",
                 destination.upgrade().expect("live destination window"),
             );
             pane_owner.notify_moved(
@@ -251,7 +252,7 @@ unsafe fn cmd_break_pane_exec(
                 wl.clone(),
                 Some(&pane_owner),
             );
-            cmdq_print(item_handle, |out| write_cstr(out, cp.as_ptr()));
+            cmdq_print(item_handle, |out| write_cstr(out, &*cp));
         }
         CMD_RETURN_NORMAL
     })();

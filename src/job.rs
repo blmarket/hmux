@@ -6,6 +6,7 @@ use crate::src::environ::{environ_copy, environ_for_session, environ_push, envir
 use crate::src::ffi::libc::{
     _exit, chdir, execl, execvp, fork, kill, killpg, memset, setenv, sigfillset, sigprocmask,
 };
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::log_bytes;
 use crate::src::log::{fatalx, log_cstr, log_debug};
@@ -142,7 +143,7 @@ pub unsafe fn job_run(
             options_get_string(global_s_options, c"default-shell")
         });
         shell = shell_value.as_ref().expect("shell snapshot").as_ptr();
-        if checkshell(shell) == 0 {
+        if checkshell(nullable_cstr(shell)) == 0 {
             shell = _PATH_BSHELL.as_ptr();
         }
     }
@@ -208,17 +209,17 @@ pub unsafe fn job_run(
                 );
                 if let Some(cwd) = cwd {
                     if chdir(cwd.as_ptr()) == 0 as ::core::ffi::c_int {
-                        environ_set(env, c"PWD".as_ptr(), 0 as ::core::ffi::c_int, |out| {
-                            write_cstr(out, cwd.as_ptr())
+                        environ_set(env, c"PWD", 0 as ::core::ffi::c_int, |out| {
+                            write_cstr(out, &*cwd)
                         });
                     } else {
                         home = find_home_cstr().map_or(::core::ptr::null(), CStr::as_ptr);
                         if !home.is_null() && chdir(home) == 0 as ::core::ffi::c_int {
-                            environ_set(env, c"PWD".as_ptr(), 0 as ::core::ffi::c_int, |out| {
-                                write_cstr(out, home)
+                            environ_set(env, c"PWD", 0 as ::core::ffi::c_int, |out| {
+                                write_cstr(out, nullable_cstr(home))
                             });
                         } else if chdir(c"/".as_ptr()) == 0 as ::core::ffi::c_int {
-                            environ_set(env, c"PWD".as_ptr(), 0 as ::core::ffi::c_int, |out| {
+                            environ_set(env, c"PWD", 0 as ::core::ffi::c_int, |out| {
                                 out.write_all(b"/")
                             });
                         } else {
@@ -685,11 +686,7 @@ mod job_stream_tests {
 
             for eof_first in [false, true] {
                 let stream = bufferevent_new(-1, None, None, None);
-                crate::src::reactor::evbuffer_add(
-                    &mut *(*stream).input,
-                    b"remaining".as_ptr().cast(),
-                    9,
-                );
+                crate::src::reactor::evbuffer_add(&mut *(*stream).input, b"remaining");
                 let handle = job_insert(RefBox::new(job {
                     pid: 1234567,
                     event: crate::src::reactor::StreamHandle::from_ptr(stream),
@@ -734,7 +731,7 @@ mod job_stream_tests {
             });
             let handle = owner.downgrade();
             assert_eq!(job_get_event(&handle), stream);
-            crate::src::reactor::evbuffer_add(&mut *(*stream).input, b"output".as_ptr().cast(), 6);
+            crate::src::reactor::evbuffer_add(&mut *(*stream).input, b"output");
             assert_eq!(
                 job_completion(&owner.try_borrow_mut().unwrap()).output,
                 b"output"

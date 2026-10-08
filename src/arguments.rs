@@ -702,14 +702,7 @@ pub unsafe fn args_make_commands_now(
     match args_make_commands(&mut state, &Vec::new()) {
         Ok(commands) => Some(commands),
         Err(error) => {
-            cmdq_error(item_handle, |out| {
-                write_cstr(
-                    out,
-                    error
-                        .as_ref()
-                        .map_or(std::ptr::null(), |value| value.as_ptr()),
-                )
-            });
+            cmdq_error(item_handle, |out| write_cstr(out, error.as_deref()));
             None
         }
     }
@@ -765,7 +758,7 @@ pub unsafe fn args_make_commands_prepare(
         .as_ref()
         .map_or_else(std::rc::Weak::new, Rc::downgrade);
     state.client = tc_owner;
-    cmd_find_copy_state(&raw mut state.pi.fs, target);
+    cmd_find_copy_state(&raw mut state.pi.fs, &*target);
     state
 }
 pub unsafe fn args_make_commands(
@@ -864,20 +857,7 @@ fn strtonum_error(errstr: &CStr) -> ArgumentValueError {
 }
 
 pub fn parse_number(value: &CStr, minval: i64, maxval: i64) -> Result<i64, ArgumentValueError> {
-    let mut errstr = ::core::ptr::null::<::core::ffi::c_char>();
-    let number = unsafe {
-        strtonum(
-            value.as_ptr(),
-            minval as ::core::ffi::c_longlong,
-            maxval as ::core::ffi::c_longlong,
-            &raw mut errstr,
-        )
-    };
-    if errstr.is_null() {
-        Ok(number as i64)
-    } else {
-        Err(strtonum_error(unsafe { CStr::from_ptr(errstr) }))
-    }
+    unsafe { strtonum(value, minval, maxval) }.map_err(strtonum_error)
 }
 
 fn percentage_share(
@@ -995,7 +975,7 @@ pub unsafe fn args_percentage_result(
     let value = args_last_value(&*args, flag).ok_or(ArgumentValueError::Empty)?;
     if value.type_0() as ::core::ffi::c_uint
         != ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-        || value.string_ptr().is_null()
+        || value.as_string().is_none()
     {
         return Err(ArgumentValueError::Missing);
     }
@@ -1026,7 +1006,7 @@ pub unsafe fn args_percentage_and_expand_result(
     let value = args_last_value(&*args, flag).ok_or(ArgumentValueError::Empty)?;
     if value.type_0() as ::core::ffi::c_uint
         != ARGS_STRING as ::core::ffi::c_int as ::core::ffi::c_uint
-        || value.string_ptr().is_null()
+        || value.as_string().is_none()
     {
         return Err(ArgumentValueError::Missing);
     }

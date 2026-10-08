@@ -9,6 +9,7 @@ use crate::src::cmd::queue::{
 };
 use crate::src::environ::{environ_create, environ_put};
 use crate::src::ffi::libc::strcmp;
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
 use crate::src::resize::recalculate_sizes;
@@ -183,7 +184,7 @@ unsafe fn cmd_new_window_exec(
                     } else {
                         cmdq_error(item_handle, |out| {
                             out.write_all(b"multiple windows named ")?;
-                            write_cstr(out, wname)
+                            write_cstr(out, nullable_cstr(wname))
                         });
                         return CMD_RETURN_ERROR;
                     }
@@ -239,7 +240,7 @@ unsafe fn cmd_new_window_exec(
     for av in args_flag_values(&*args, 'e' as i32 as u_char) {
         environ_put(
             sc.environ.as_deref_mut().expect("environment"),
-            av.string_ptr(),
+            av.as_string().expect("string argument"),
             0 as ::core::ffi::c_int,
         );
     }
@@ -265,12 +266,7 @@ unsafe fn cmd_new_window_exec(
     if !new_wl.is_alive() {
         cmdq_error(item_handle, |out| {
             out.write_all(b"create window failed: ")?;
-            write_cstr(
-                out,
-                cause
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
-            )
+            write_cstr(out, cause.as_deref())
         });
         drop(sc.environ.take());
         CMD_RETURN_ERROR

@@ -155,34 +155,34 @@ unsafe fn cmd_set_hook_event_exec(
     if !(*target).session_handle().is_none() {
         event_payload_set_session(
             &mut ep,
-            c"session".as_ptr(),
+            c"session",
             (*target).session_handle().expect("live session"),
         );
     }
     if !(*target).window_handle().is_none() {
         event_payload_set_window(
             &mut ep,
-            c"window".as_ptr(),
+            c"window",
             std::rc::Rc::clone(((*target).window_handle().as_ref()).expect("live window")),
         );
     }
     if (*target).winlink_handle().is_alive() {
         event_payload_set_int(
             &mut ep,
-            c"window_index".as_ptr(),
+            c"window_index",
             ((*target).winlink_handle()).get_unchecked().idx,
         );
     } else if (*target).idx != -(1 as ::core::ffi::c_int) {
-        event_payload_set_int(&mut ep, c"window_index".as_ptr(), (*target).idx);
+        event_payload_set_int(&mut ep, c"window_index", (*target).idx);
     }
     if !(*target).pane_handle().is_none() {
         event_payload_set_pane(
             &mut ep,
-            c"pane".as_ptr(),
+            c"pane",
             (*target).pane_handle().expect("live pane"),
         );
     }
-    events_fire(argument.as_ptr(), ep);
+    events_fire(&*argument, ep);
     CMD_RETURN_NORMAL
 }
 unsafe fn cmd_set_hook_monitor_exec(
@@ -207,7 +207,7 @@ unsafe fn cmd_set_hook_monitor_exec(
         let Some(parsed) = parsed else {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"invalid subscription: ")?;
-                write_cstr(out, argument.as_ptr())
+                write_cstr(out, &*argument)
             });
             return CMD_RETURN_ERROR;
         };
@@ -221,14 +221,8 @@ unsafe fn cmd_set_hook_monitor_exec(
     }
     let mut selected = None;
     let mut cause = None;
-    if options_scope_from_name(
-        args,
-        window,
-        name.as_ptr(),
-        target,
-        &mut selected,
-        &mut cause,
-    ) == OPTIONS_TABLE_NONE
+    if options_scope_from_name(args, window, &*name, target, &mut selected, &mut cause)
+        == OPTIONS_TABLE_NONE
     {
         return set_option_error(item_handle, cause.as_deref().expect("scope failure"));
     }
@@ -236,7 +230,7 @@ unsafe fn cmd_set_hook_monitor_exec(
     let mut fs = cmd_find_state::default();
     cmd_find_copy_state(&mut fs, target);
     if unsubscribe {
-        hooks_monitor_remove(&selected, name.as_ptr());
+        hooks_monitor_remove(&selected, &*name);
         return CMD_RETURN_NORMAL;
     }
     if args_count(args) != 0 {
@@ -253,7 +247,7 @@ unsafe fn cmd_set_hook_monitor_exec(
             selected
                 .set_from_string(None, &name, Some(&value), args_has(args, b'a') != 0)
                 .expect("monitor name is a user string option");
-            options_push_changes(name.as_ptr());
+            options_push_changes(&*name);
         }
     }
     let session = if selected.is_global() {
@@ -268,10 +262,10 @@ unsafe fn cmd_set_hook_monitor_exec(
     };
     hooks_monitor_add(
         &selected,
-        name.as_ptr(),
+        &*name,
         kind,
         id,
-        format.as_deref().expect("monitor format").as_ptr(),
+        CStr::from_ptr(format.as_deref().expect("monitor format").as_ptr()),
         flags,
         &mut fs,
         session.as_ref(),
@@ -286,7 +280,7 @@ unsafe fn set_option_error(
     item: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
     cause: &CStr,
 ) -> cmd_retval {
-    cmdq_error(item, |out| write_cstr(out, cause.as_ptr()));
+    cmdq_error(item, |out| write_cstr(out, &*cause));
     CMD_RETURN_ERROR
 }
 
@@ -344,7 +338,7 @@ unsafe fn cmd_set_option_exec(
         args_string(&mut *args, 0).map_or(std::ptr::null(), CStr::as_ptr),
     );
     if set_hook && args_has(args, b'R') != 0 {
-        hooks_run(Some(item_handle), argument.as_ptr());
+        hooks_run(Some(item_handle), &*argument);
         return CMD_RETURN_NORMAL;
     }
     let parsed = match options_match_owned(&argument) {
@@ -365,7 +359,7 @@ unsafe fn cmd_set_option_exec(
                 } else {
                     b"invalid option: "
                 })?;
-                write_cstr(out, argument.as_ptr())
+                write_cstr(out, &*argument)
             });
             return CMD_RETURN_ERROR;
         }
@@ -385,7 +379,7 @@ unsafe fn cmd_set_option_exec(
     let scope = options_scope_from_name(
         args,
         window,
-        parsed.name.as_ptr(),
+        &*parsed.name,
         target,
         &mut selected,
         &mut cause,
@@ -408,7 +402,7 @@ unsafe fn cmd_set_option_exec(
     if array_key.is_some() && (user || !array) {
         cmdq_error(item_handle, |out| {
             out.write_all(b"not an array: ")?;
-            write_cstr(out, argument.as_ptr())
+            write_cstr(out, &*argument)
         });
         return CMD_RETURN_ERROR;
     }
@@ -424,7 +418,7 @@ unsafe fn cmd_set_option_exec(
             }
             cmdq_error(item_handle, |out| {
                 out.write_all(b"already set: ")?;
-                write_cstr(out, argument.as_ptr())
+                write_cstr(out, &*argument)
             });
             return CMD_RETURN_ERROR;
         }
@@ -442,7 +436,7 @@ unsafe fn cmd_set_option_exec(
             .set_from_string(None, name, value.as_deref(), append)
             .map(|()| {
                 if set_hook {
-                    hooks_add_event(name.as_ptr());
+                    hooks_add_event(&*name);
                 }
                 true
             })
@@ -475,7 +469,7 @@ unsafe fn cmd_set_option_exec(
         Err(cause) => set_option_error(item_handle, &cause),
         Ok(false) => CMD_RETURN_NORMAL,
         Ok(true) => {
-            options_push_changes(name.as_ptr());
+            options_push_changes(&*name);
             CMD_RETURN_NORMAL
         }
     }

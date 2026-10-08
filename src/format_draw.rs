@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{memcpy, strcmp, strlcpy, strlen};
+use crate::src::ffi::libc::{strcmp, strlcpy, strlen};
 use crate::src::format::format_skip;
 use crate::src::grid::grid_default_cell;
 use crate::src::hyperlinks::hyperlinks_put;
@@ -907,7 +907,7 @@ unsafe fn format_draw_many(mut ctx: *mut screen_write_ctx, mut sy: *mut style, m
 }
 pub unsafe fn format_draw(
     mut octx: *mut screen_write_ctx,
-    mut base: *const grid_cell,
+    base: &grid_cell,
     mut available: u_int,
     mut expanded: *const ::core::ffi::c_char,
     mut srs: *mut style_ranges,
@@ -1065,18 +1065,9 @@ pub unsafe fn format_draw(
     let mut more: utf8_state = UTF8_MORE;
     let mut fr: Option<format_range> = None;
     let mut frs: format_ranges = Vec::new();
-    memcpy(
-        &raw mut base_default as *mut ::core::ffi::c_void,
-        base as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
-    memcpy(
-        &raw mut current_default as *mut ::core::ffi::c_void,
-        base as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
-    base = &raw mut base_default;
-    style_set(&raw mut sy, &raw mut current_default);
+    base_default = *base;
+    current_default = *base;
+    style_set(&raw mut sy, &current_default);
     log_debug(format_args!(
         "{}: {}",
         "format_draw",
@@ -1207,7 +1198,7 @@ pub unsafe fn format_draw(
                 ))
                 .expect("format style contains an interior NUL");
                 style_copy(&raw mut saved_sy, &raw mut sy);
-                if style_parse(&raw mut sy, &raw mut current_default, style_text.as_ptr())
+                if style_parse(&raw mut sy, &current_default, &*style_text)
                     != 0 as ::core::ffi::c_int
                 {
                     log_debug(format_args!(
@@ -1222,12 +1213,12 @@ pub unsafe fn format_draw(
                         "{}: style '{}' -> '{}'",
                         "format_draw",
                         crate::src::log::log_bytes(style_text.as_bytes()),
-                        log_cstr(CStr::from_ptr(style_tostring(&raw mut sy)))
+                        log_cstr(&style_tostring(&raw mut sy))
                     ));
                     drop(style_text);
                     if default_colours != 0 {
-                        sy.gc.bg = (*base).bg;
-                        sy.gc.fg = (*base).fg;
+                        sy.gc.bg = base_default.bg;
+                        sy.gc.fg = base_default.fg;
                     }
                     sy.gc.link = match (style_link(&sy), hl.as_ref()) {
                         (Some(link), Some(table)) => {
@@ -1241,34 +1232,18 @@ pub unsafe fn format_draw(
                     if sy.default_type as ::core::ffi::c_uint
                         == STYLE_DEFAULT_PUSH as ::core::ffi::c_int as ::core::ffi::c_uint
                     {
-                        memcpy(
-                            &raw mut current_default as *mut ::core::ffi::c_void,
-                            &raw mut saved_sy.gc as *const ::core::ffi::c_void,
-                            ::core::mem::size_of::<grid_cell>() as size_t,
-                        );
+                        current_default = saved_sy.gc;
                         sy.default_type = STYLE_DEFAULT_BASE;
                     } else if sy.default_type as ::core::ffi::c_uint
                         == STYLE_DEFAULT_POP as ::core::ffi::c_int as ::core::ffi::c_uint
                     {
-                        memcpy(
-                            &raw mut current_default as *mut ::core::ffi::c_void,
-                            base as *const ::core::ffi::c_void,
-                            ::core::mem::size_of::<grid_cell>() as size_t,
-                        );
+                        current_default = base_default;
                         sy.default_type = STYLE_DEFAULT_BASE;
                     } else if sy.default_type as ::core::ffi::c_uint
                         == STYLE_DEFAULT_SET as ::core::ffi::c_int as ::core::ffi::c_uint
                     {
-                        memcpy(
-                            &raw mut base_default as *mut ::core::ffi::c_void,
-                            &raw mut saved_sy.gc as *const ::core::ffi::c_void,
-                            ::core::mem::size_of::<grid_cell>() as size_t,
-                        );
-                        memcpy(
-                            &raw mut current_default as *mut ::core::ffi::c_void,
-                            &raw mut saved_sy.gc as *const ::core::ffi::c_void,
-                            ::core::mem::size_of::<grid_cell>() as size_t,
-                        );
+                        base_default = saved_sy.gc;
+                        current_default = saved_sy.gc;
                         sy.default_type = STYLE_DEFAULT_BASE;
                     }
                     match sy.list as ::core::ffi::c_uint {
@@ -1420,11 +1395,7 @@ pub unsafe fn format_draw(
             ));
         }
         if fill != -(1 as ::core::ffi::c_int) {
-            memcpy(
-                &raw mut gc as *mut ::core::ffi::c_void,
-                &raw const grid_default_cell as *const ::core::ffi::c_void,
-                ::core::mem::size_of::<grid_cell>() as size_t,
-            );
+            gc = grid_default_cell;
             gc.bg = fill;
             i = 0 as u_int;
             while i < available {
@@ -1889,7 +1860,7 @@ mod range_tests {
                 screen_write_start(&mut ctx, &mut output);
                 format_draw(
                     &mut ctx,
-                    &raw const grid_default_cell,
+                    &grid_default_cell,
                     width,
                     c"#[align=left,range=user|left]LL#[norange]#[align=centre,range=user|centre]CC#[norange]#[align=right,range=user|right]RR#[norange]".as_ptr(),
                     &mut ranges,

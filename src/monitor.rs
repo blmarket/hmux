@@ -471,7 +471,7 @@ unsafe fn monitor_check_all_windows_one(
 unsafe fn monitor_sweep_all_panes(item: &mut monitor_item, generation: u32) {
     let mut record = monitor_panes_minmax(&mut item.panes);
     while !record.is_null() {
-        let next = monitor_panes_next(&mut item.panes, record);
+        let next = monitor_panes_next(&mut item.panes, &*record);
         if (*record).generation != generation {
             drop(monitor_panes_remove(&mut item.panes, record));
         }
@@ -481,7 +481,7 @@ unsafe fn monitor_sweep_all_panes(item: &mut monitor_item, generation: u32) {
 unsafe fn monitor_sweep_all_windows(item: &mut monitor_item, generation: u32) {
     let mut record = monitor_windows_minmax(&mut item.windows);
     while !record.is_null() {
-        let next = monitor_windows_next(&mut item.windows, record);
+        let next = monitor_windows_next(&mut item.windows, &*record);
         if (*record).generation != generation {
             drop(monitor_windows_remove(&mut item.windows, record));
         }
@@ -692,13 +692,13 @@ pub unsafe fn monitor_create_session(
 unsafe fn monitor_free_item(state: &mut monitor_set, item: *mut monitor_item) {
     let mut pane = monitor_panes_minmax(&mut (*item).panes);
     while !pane.is_null() {
-        let next = monitor_panes_next(&mut (*item).panes, pane);
+        let next = monitor_panes_next(&mut (*item).panes, &*pane);
         drop(monitor_panes_remove(&mut (*item).panes, pane));
         pane = next;
     }
     let mut window = monitor_windows_minmax(&mut (*item).windows);
     while !window.is_null() {
-        let next = monitor_windows_next(&mut (*item).windows, window);
+        let next = monitor_windows_next(&mut (*item).windows, &*window);
         drop(monitor_windows_remove(&mut (*item).windows, window));
         window = next;
     }
@@ -712,7 +712,7 @@ pub unsafe fn monitor_destroy(owner: refbox::RefBox<monitor_set>) {
         drop(state.timer.take());
         let mut item = monitor_items_minmax(&mut state.items);
         while !item.is_null() {
-            let next = monitor_items_next(&mut state.items, item);
+            let next = monitor_items_next(&mut state.items, &*item);
             monitor_free_item(&mut state, item);
             item = next;
         }
@@ -791,14 +791,14 @@ pub fn monitor_parse_owned(value: &CStr) -> Option<ParsedMonitor> {
 
 pub unsafe fn monitor_add(
     monitor: &refbox::Weak<monitor_set>,
-    name: *const ::core::ffi::c_char,
+    name: &CStr,
     type_0: monitor_type,
     id: i32,
-    format: *const ::core::ffi::c_char,
+    format: &CStr,
     flags: i32,
 ) {
-    let name = CStr::from_ptr(name).to_owned();
-    let format = CStr::from_ptr(format).to_owned();
+    let name = name.to_owned();
+    let format = format.to_owned();
     let observer = monitor.clone();
     {
         let Some(mut state) = monitor_borrow(monitor) else {
@@ -834,11 +834,8 @@ pub unsafe fn monitor_add(
         }
     }
 }
-pub unsafe fn monitor_remove(
-    monitor: &refbox::Weak<monitor_set>,
-    name: *const ::core::ffi::c_char,
-) {
-    let name = CStr::from_ptr(name).to_owned();
+pub unsafe fn monitor_remove(monitor: &refbox::Weak<monitor_set>, name: &CStr) {
+    let name = name.to_owned();
     {
         let Some(mut state) = monitor_borrow(monitor) else {
             return;
@@ -858,20 +855,14 @@ pub unsafe fn monitor_remove(
         }
     }
 }
-pub unsafe fn monitor_get_fire_count(
-    monitor: &refbox::Weak<monitor_set>,
-    name: *const ::core::ffi::c_char,
-) -> u_int {
-    let name = CStr::from_ptr(name);
+pub unsafe fn monitor_get_fire_count(monitor: &refbox::Weak<monitor_set>, name: &CStr) -> u_int {
+    let name = name;
     monitor_borrow(monitor)
         .and_then(|state| state.items.get(name.to_bytes()).map(|item| item.fire_count))
         .unwrap_or(0)
 }
-pub unsafe fn monitor_get_fire_time(
-    monitor: &refbox::Weak<monitor_set>,
-    name: *const ::core::ffi::c_char,
-) -> time_t {
-    let name = CStr::from_ptr(name);
+pub unsafe fn monitor_get_fire_time(monitor: &refbox::Weak<monitor_set>, name: &CStr) -> time_t {
+    let name = name;
     monitor_borrow(monitor)
         .and_then(|state| state.items.get(name.to_bytes()).map(|item| item.fire_time))
         .unwrap_or(0)
@@ -916,11 +907,7 @@ unsafe fn monitor_items_minmax(head: &mut monitor_items) -> *mut monitor_item {
     head.first_entry()
         .map_or(std::ptr::null_mut(), |mut entry| &raw mut **entry.get_mut())
 }
-unsafe fn monitor_items_next(
-    head: &mut monitor_items,
-    elm: *const monitor_item,
-) -> *mut monitor_item {
-    let elm = &*elm;
+unsafe fn monitor_items_next(head: &mut monitor_items, elm: &monitor_item) -> *mut monitor_item {
     let key = elm.name.as_bytes().to_vec();
     if head
         .get(&key)
@@ -972,11 +959,7 @@ unsafe fn monitor_panes_minmax(head: &mut monitor_panes) -> *mut monitor_pane {
     head.first_entry()
         .map_or(std::ptr::null_mut(), |mut entry| &raw mut **entry.get_mut())
 }
-unsafe fn monitor_panes_next(
-    head: &mut monitor_panes,
-    elm: *const monitor_pane,
-) -> *mut monitor_pane {
-    let elm = &*elm;
+unsafe fn monitor_panes_next(head: &mut monitor_panes, elm: &monitor_pane) -> *mut monitor_pane {
     let key = (elm.pane, elm.idx);
     if head
         .get(&key)
@@ -1033,9 +1016,8 @@ unsafe fn monitor_windows_minmax(head: &mut monitor_windows) -> *mut monitor_win
 }
 unsafe fn monitor_windows_next(
     head: &mut monitor_windows,
-    elm: *const monitor_window,
+    elm: &monitor_window,
 ) -> *mut monitor_window {
-    let elm = &*elm;
     let key = (elm.window, elm.idx);
     if head
         .get(&key)
@@ -1059,14 +1041,7 @@ mod ownership_tests {
         unsafe {
             let owner = monitor_create(Rc::new(|_| {}));
             for name in [c"a", c"c", c"e"] {
-                monitor_add(
-                    &owner.downgrade(),
-                    name.as_ptr(),
-                    MONITOR_SESSION,
-                    -1,
-                    c"".as_ptr(),
-                    0,
-                );
+                monitor_add(&owner.downgrade(), &*name, MONITOR_SESSION, -1, c"", 0);
             }
             let mut visited = Vec::new();
             monitor_visit(&owner.downgrade(), |name, _| {
@@ -1074,28 +1049,14 @@ mod ownership_tests {
                 if name.as_c_str() == c"a" {
                     // b precedes the already-prefetched c; d is discovered later.
                     for name in [c"b", c"d"] {
-                        monitor_add(
-                            &owner.downgrade(),
-                            name.as_ptr(),
-                            MONITOR_SESSION,
-                            -1,
-                            c"".as_ptr(),
-                            0,
-                        );
+                        monitor_add(&owner.downgrade(), &*name, MONITOR_SESSION, -1, c"", 0);
                     }
                     // A prefetched name resolves the current entry when visited.
-                    monitor_add(
-                        &owner.downgrade(),
-                        c"c".as_ptr(),
-                        MONITOR_SESSION,
-                        -1,
-                        c"new".as_ptr(),
-                        0,
-                    );
-                    monitor_remove(&owner.downgrade(), c"a".as_ptr());
+                    monitor_add(&owner.downgrade(), c"c", MONITOR_SESSION, -1, c"new", 0);
+                    monitor_remove(&owner.downgrade(), c"a");
                 }
                 if name.as_c_str() == c"d" {
-                    monitor_remove(&owner.downgrade(), c"e".as_ptr());
+                    monitor_remove(&owner.downgrade(), c"e");
                 }
             });
             assert_eq!(visited, [b"a".to_vec(), b"c".to_vec(), b"d".to_vec()]);
@@ -1121,10 +1082,10 @@ mod ownership_tests {
             }));
             monitor_add(
                 &owner.downgrade(),
-                c"name".as_ptr(),
+                c"name",
                 MONITOR_SESSION,
                 -1,
-                c"".as_ptr(),
+                c"",
                 MONITOR_NOTIFY_INITIAL | MONITOR_NOTIFY_TRUE,
             );
             let item = monitor_first_item(&owner.downgrade()).unwrap();
@@ -1147,12 +1108,9 @@ mod ownership_tests {
                     (c"next".to_owned(), Some(c"0".to_owned()))
                 ]
             );
+            assert_eq!(monitor_get_fire_count(&owner.downgrade(), c"name"), 2);
             assert_eq!(
-                monitor_get_fire_count(&owner.downgrade(), c"name".as_ptr()),
-                2
-            );
-            assert_eq!(
-                monitor_get_fire_time(&owner.downgrade(), c"name".as_ptr()),
+                monitor_get_fire_time(&owner.downgrade(), c"name"),
                 current_time
             );
             monitor_destroy(owner);
@@ -1183,21 +1141,14 @@ mod ownership_tests {
                     let mut capture = callback_capture.borrow_mut();
                     capture.value = change.value.to_bytes().to_vec();
                     capture.last = change.last.expect("previous value").to_bytes().to_vec();
-                    monitor_remove(&capture.set, change.name.as_ptr());
+                    monitor_remove(&capture.set, &*change.name);
                     capture.name = change.name.to_bytes().to_vec();
                 }),
             );
             let set_observer = set_owner.downgrade();
             let set = &set_observer;
             capture.borrow_mut().set = set.clone();
-            monitor_add(
-                set,
-                c"reentrant-last".as_ptr(),
-                MONITOR_SESSION,
-                -1,
-                c"value".as_ptr(),
-                0,
-            );
+            monitor_add(set, c"reentrant-last", MONITOR_SESSION, -1, c"value", 0);
             let item = monitor_first_item(set).unwrap();
             let first = CString::from_vec_with_nul(b"\xffold\0".to_vec()).unwrap();
             monitor_check_value(
@@ -1276,7 +1227,7 @@ mod ownership_tests {
 
             let mut moved = head;
             assert_eq!(monitor_items_minmax(&mut moved), first);
-            assert_eq!(monitor_items_next(&mut moved, first), second);
+            assert_eq!(monitor_items_next(&mut moved, &*first), second);
             let mut first_owner = monitor_items_remove(&mut moved, first).expect("indexed record");
             assert_eq!(&raw mut *first_owner, first);
             drop(first_owner);
@@ -1308,7 +1259,7 @@ mod ownership_tests {
             assert!(monitor_panes_insert(&mut panes, pane1_owner).is_ok());
             assert!(monitor_panes_insert(&mut panes, pane2_owner).is_ok());
             assert!(monitor_panes_remove(&mut other_panes, pane1).is_none());
-            assert_eq!(monitor_panes_next(&mut panes, pane1), pane2);
+            assert_eq!(monitor_panes_next(&mut panes, &*pane1), pane2);
             let mut pane1_owner = monitor_panes_remove(&mut panes, pane1).expect("indexed record");
             assert_eq!(&raw mut *pane1_owner, pane1);
             drop(pane1_owner);
@@ -1332,7 +1283,7 @@ mod ownership_tests {
             assert!(monitor_windows_insert(&mut windows, window1_owner).is_ok());
             assert!(monitor_windows_insert(&mut windows, window2_owner).is_ok());
             assert!(monitor_windows_remove(&mut other_windows, window1).is_none());
-            assert_eq!(monitor_windows_next(&mut windows, window1), window2);
+            assert_eq!(monitor_windows_next(&mut windows, &*window1), window2);
             let mut window1_owner =
                 monitor_windows_remove(&mut windows, window1).expect("indexed record");
             assert_eq!(&raw mut *window1_owner, window1);

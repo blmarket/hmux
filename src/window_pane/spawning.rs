@@ -23,6 +23,7 @@ use crate::src::ffi::libc::{
     kill, memset, sigfillset, sigprocmask, strerror, strrchr,
 };
 use crate::src::ffi::utempter::utempter_add_record;
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
 use crate::src::input::input_free;
@@ -98,64 +99,50 @@ unsafe fn spawn_fire_pane_created(
     event_payload_set_target(&mut ep, &fs);
     event_payload_set_session(
         &mut ep,
-        c"session".as_ptr(),
+        c"session",
         session_owner.expect("spawn context session"),
     );
     event_payload_set_window(
         &mut ep,
-        c"window".as_ptr(),
+        c"window",
         std::rc::Rc::clone(((*wp).window_handle().as_ref()).expect("live window")),
     );
     event_payload_set_int(
         &mut ep,
-        c"window_index".as_ptr(),
+        c"window_index",
         ((*sc).winlink_handle()).get_unchecked().idx,
     );
-    event_payload_set_pane(&mut ep, c"pane".as_ptr(), std::rc::Rc::clone(wp_owner));
+    event_payload_set_pane(&mut ep, c"pane", std::rc::Rc::clone(wp_owner));
     let cmd = if !(*wp).argv.is_empty() {
         cmd_stringify_argv_cstring(&(*wp).argv)
     } else {
         None
     };
     if let Some(cmd) = cmd.as_ref().filter(|text| !text.as_bytes().is_empty()) {
-        event_payload_set_string(&mut ep, c"pane_command".as_ptr(), |out| {
-            write_cstr(out, cmd.as_ptr())
+        event_payload_set_string(&mut ep, c"pane_command", |out| {
+            write_cstr(out, (&*cmd).as_c_str())
         });
     } else if (*wp).shell.is_some() {
-        event_payload_set_string(&mut ep, c"pane_command".as_ptr(), |out| {
-            write_cstr(
-                out,
-                (*wp)
-                    .shell
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
-            )
+        event_payload_set_string(&mut ep, c"pane_command", |out| {
+            write_cstr(out, (*wp).shell.as_deref())
         });
     }
     if !cwd.is_null() {
-        event_payload_set_string(&mut ep, c"pane_current_path".as_ptr(), |out| {
-            write_cstr(out, cwd)
+        event_payload_set_string(&mut ep, c"pane_current_path", |out| {
+            write_cstr(out, nullable_cstr(cwd))
         });
     }
     if (*sc).flags & SPAWN_EMPTY != 0 {
-        event_payload_set_int(&mut ep, c"created_empty".as_ptr(), 1 as ::core::ffi::c_int);
+        event_payload_set_int(&mut ep, c"created_empty", 1 as ::core::ffi::c_int);
     } else {
-        event_payload_set_int(&mut ep, c"created_empty".as_ptr(), 0 as ::core::ffi::c_int);
+        event_payload_set_int(&mut ep, c"created_empty", 0 as ::core::ffi::c_int);
     }
     if (*sc).flags & SPAWN_RESPAWN != 0 {
-        event_payload_set_int(
-            &mut ep,
-            c"created_respawn".as_ptr(),
-            1 as ::core::ffi::c_int,
-        );
+        event_payload_set_int(&mut ep, c"created_respawn", 1 as ::core::ffi::c_int);
     } else {
-        event_payload_set_int(
-            &mut ep,
-            c"created_respawn".as_ptr(),
-            0 as ::core::ffi::c_int,
-        );
+        event_payload_set_int(&mut ep, c"created_respawn", 0 as ::core::ffi::c_int);
     }
-    events_fire(c"pane-created".as_ptr(), ep);
+    events_fire(c"pane-created", ep);
 }
 /// Create a pane beside the context's source pane (before it with
 /// SPAWN_BEFORE), or as the first pane of an empty window, and place it. When
@@ -271,7 +258,7 @@ pub(super) unsafe fn spawn_pane(
             c_owner = (*sc).tc.upgrade();
             c = c_owner.clone();
         }
-        spawn_log(c"spawn_pane".as_ptr(), sc);
+        spawn_log(c"spawn_pane", sc);
         if let Some(requested_cwd) = (*sc).cwd.as_ref() {
             if !item.is_null() {
                 cwd = Some(format_single_cstring(
@@ -387,12 +374,9 @@ pub(super) unsafe fn spawn_pane(
         if let Some(overrides) = (*sc).environ.as_deref() {
             environ_copy(overrides, child);
         }
-        environ_set(
-            child,
-            c"TMUX_PANE".as_ptr(),
-            0 as ::core::ffi::c_int,
-            |out| write!(out, "%{}", ((*new_wp).id) as u32),
-        );
+        environ_set(child, c"TMUX_PANE", 0 as ::core::ffi::c_int, |out| {
+            write!(out, "%{}", ((*new_wp).id) as u32)
+        });
         if !c.is_none()
             && c.as_ref()
                 .expect("live client")
@@ -405,38 +389,25 @@ pub(super) unsafe fn spawn_pane(
                     .map(|entry| entry.value.clone())
             });
             if let Some(value) = path {
-                environ_set(child, c"PATH".as_ptr(), 0, |out| {
-                    write_cstr(
-                        out,
-                        value
-                            .as_ref()
-                            .map_or(std::ptr::null(), |value| value.as_ptr()),
-                    )
-                });
+                environ_set(child, c"PATH", 0, |out| write_cstr(out, value.as_deref()));
             }
         }
         if child.find(c"PATH").is_none() {
-            environ_set(child, c"PATH".as_ptr(), 0 as ::core::ffi::c_int, |out| {
-                write_cstr(out, _PATH_DEFPATH.as_ptr())
+            environ_set(child, c"PATH", 0 as ::core::ffi::c_int, |out| {
+                write_cstr(out, &*_PATH_DEFPATH)
             });
         }
         if !(*sc).flags & SPAWN_RESPAWN != 0 {
             let shell = session_owner
                 .with_options_mut(|options| options_get_string(options, c"default-shell"));
             tmp = shell.as_ptr();
-            if checkshell(tmp) == 0 {
+            if checkshell(nullable_cstr(tmp)) == 0 {
                 tmp = _PATH_BSHELL.as_ptr();
             }
             window_pane_set_shell(&mut *new_wp, Some(CStr::from_ptr(tmp).to_owned()));
         }
-        environ_set(child, c"SHELL".as_ptr(), 0 as ::core::ffi::c_int, |out| {
-            write_cstr(
-                out,
-                (*new_wp)
-                    .shell
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
-            )
+        environ_set(child, c"SHELL", 0 as ::core::ffi::c_int, |out| {
+            write_cstr(out, (*new_wp).shell.as_deref())
         });
         log_debug(format_args!(
             "{}: shell={}",
@@ -458,7 +429,7 @@ pub(super) unsafe fn spawn_pane(
         ));
         cmd_log_argv(&(*new_wp).argv, c"spawn_pane");
         environ_log(child, |out| {
-            write_cstr(out, c"spawn_pane".as_ptr())?;
+            write_cstr(out, c"spawn_pane")?;
             out.write_all(b": environment ")
         });
         memset(
@@ -569,8 +540,8 @@ pub(super) unsafe fn spawn_pane(
                 }
                 drop(systemd_error);
                 if !actual_cwd.is_null() {
-                    environ_set(child, c"PWD".as_ptr(), 0 as ::core::ffi::c_int, |out| {
-                        write_cstr(out, actual_cwd)
+                    environ_set(child, c"PWD", 0 as ::core::ffi::c_int, |out| {
+                        write_cstr(out, nullable_cstr(actual_cwd))
                     });
                 }
                 if crate::src::shared::terminal::read_attributes(STDIN_FILENO, &mut now)
@@ -713,7 +684,7 @@ pub(super) unsafe fn spawn_pane(
         }
         if !(*sc).flags & SPAWN_NONOTIFY != 0 {
             events_fire_window(
-                c"window-layout-changed".as_ptr(),
+                c"window-layout-changed",
                 std::rc::Rc::clone(
                     (((*sc).winlink_handle())
                         .get_unchecked()

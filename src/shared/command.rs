@@ -291,12 +291,6 @@ impl cmd_parse_input {
     pub fn set_item(&mut self, item: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>) {
         self.item = item.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
     }
-
-    pub fn file_ptr(&self) -> *const ::core::ffi::c_char {
-        self.file
-            .as_ref()
-            .map_or(::core::ptr::null(), |file| file.as_ptr())
-    }
 }
 
 pub struct cmd_parse_result {

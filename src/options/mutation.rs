@@ -48,9 +48,7 @@ impl OptionsScope {
             self.with_local(|table| {
                 // Formatting this already-owned value cannot reenter the model;
                 // user string replacement retains its existing monitor.
-                options_set_string(table, name, append as i32, |out| {
-                    write_cstr(out, value.as_ptr())
-                });
+                options_set_string(table, name, append as i32, |out| write_cstr(out, &*value));
             });
             return Ok(());
         }
@@ -60,14 +58,7 @@ impl OptionsScope {
             // defaults have the same non-command type, and validation is pure.
             let mut cause = None;
             let result = self.with_local(|table| {
-                options_from_string(
-                    table,
-                    definition,
-                    name,
-                    value.map_or(std::ptr::null(), CStr::as_ptr),
-                    append as i32,
-                    &mut cause,
-                )
+                options_from_string(table, definition, name, value, append as i32, &mut cause)
             });
             return if result == 0 {
                 Ok(())
@@ -133,15 +124,15 @@ impl OptionsScope {
             return Err(c"not an array".to_owned());
         };
         let Some(key) = options_array_correct_key(key) else {
-            return Err(options_string_cause(c"bad array key: %s", &[key.as_ptr()]));
+            return Err(options_string_cause(c"bad array key: %s", &[key]));
         };
         if definition.type_0 == OPTIONS_TABLE_COMMAND && value.is_some() {
             let commands = parse_commands(value.unwrap(), parse)?;
             self.with_entry(name, |entry| {
                 assert_eq!(entry.id(), identity, "array option replaced while parsing");
-                let item = options_array_item(entry, key.as_ptr());
+                let item = options_array_item(entry, &*key);
                 let item = if item.is_null() {
-                    options_array_new(entry, key.as_ptr())
+                    options_array_new(entry, &*key)
                 } else {
                     options_value_free(&raw mut (*item).value);
                     item
@@ -155,13 +146,7 @@ impl OptionsScope {
         let result = self
             .with_entry(name, |entry| {
                 assert_eq!(entry.id(), identity, "array option identity");
-                options_array_set(
-                    entry,
-                    key.as_ptr(),
-                    value.map_or(std::ptr::null(), CStr::as_ptr),
-                    append as i32,
-                    &mut cause,
-                )
+                options_array_set(entry, &*key, value, append as i32, &mut cause)
             })
             .expect("local array option");
         if result == 0 {
@@ -303,17 +288,20 @@ impl OptionsScope {
                     let _ = self.set_array_item_with_parser(name, &key, Some(value), false, parse);
                 }
             } else {
-                let value = CStr::from_ptr(definition.default_str_ptr());
+                let value = definition.default_str.expect("string option default");
                 let _ = self.assign_array_with_parser(name, value, parse);
             }
             return;
         }
         let value = match definition.type_0 {
-            OPTIONS_TABLE_STRING => {
-                options_value::String(CStr::from_ptr(definition.default_str_ptr()).to_owned())
-            }
+            OPTIONS_TABLE_STRING => options_value::String(
+                definition
+                    .default_str
+                    .expect("string option default")
+                    .to_owned(),
+            ),
             OPTIONS_TABLE_COMMAND => {
-                let mut parsed = parse(CStr::from_ptr(definition.default_str_ptr()));
+                let mut parsed = parse(definition.default_str.expect("string option default"));
                 if parsed.status != crate::src::shared::command::CMD_PARSE_SUCCESS {
                     return;
                 }

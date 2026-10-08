@@ -4,7 +4,8 @@ use crate::src::cmd::queue::{
     cmdq_append, cmdq_get_callback_owned, cmdq_get_client, cmdq_new_state,
 };
 use crate::src::cmd::{cmd_mouse_at, cmd_template_replace_cstring};
-use crate::src::ffi::libc::{__ctype_tolower_loc, memcpy, strcasestr, strstr};
+use crate::src::ffi::libc::{__ctype_tolower_loc, strcasestr, strstr};
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_add, format_create_defaults, format_expand_cstring, format_free};
 use crate::src::format_draw::{format_draw, format_width};
@@ -523,9 +524,9 @@ pub unsafe fn mode_tree_start(
     } else {
         mtd.preview = MODE_TREE_PREVIEW_NORMAL as ::core::ffi::c_int;
     }
-    mtd.sort_crit.order = sort_order_from_string(
+    mtd.sort_crit.order = sort_order_from_string(nullable_cstr(
         args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
-    );
+    ));
     mtd.sort_crit.reversed = args_has(args, 'r' as i32 as u_char);
     if args_has(args, 'f' as i32 as u_char) != 0 {
         mtd.filter = Some(
@@ -879,27 +880,15 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
     if w == 0 as u_int || h == 0 as u_int {
         return;
     }
-    memcpy(
-        &raw mut gc0 as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
-    memcpy(
-        &raw mut gc as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
+    gc0 = grid_default_cell;
+    gc = grid_default_cell;
     style_apply_with_options(&mut gc, c"tree-mode-selection-style", None, |visit| {
         options_window
             .upgrade()
             .expect("live tree-mode window")
             .with_options_mut(visit)
     });
-    memcpy(
-        &raw mut box_gc as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
+    box_gc = grid_default_cell;
     style_apply_with_options(&mut box_gc, c"tree-mode-border-style", None, |visit| {
         options_window
             .upgrade()
@@ -963,15 +952,10 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
             );
             if mti.key != KEYC_NONE as ::core::ffi::c_ulong as key_code {
                 format_add(ft, c"mode_tree_key", |out| {
-                    write_cstr(
-                        out,
-                        (mti.keystr)
-                            .as_ref()
-                            .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                    )
+                    write_cstr(out, (mti.keystr).as_deref())
                 });
             } else {
-                format_add(ft, c"mode_tree_key", |out| write_cstr(out, c"".as_ptr()));
+                format_add(ft, c"mode_tree_key", |out| write_cstr(out, c""));
             }
             format_add(ft, c"mode_tree_key_width", |out| {
                 write!(out, "{}", (keylen) as i32)
@@ -1072,7 +1056,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
                 screen_write_clearendofline(&mut ctx, 8 as u_int);
                 format_draw(
                     &raw mut ctx,
-                    &raw const grid_default_cell,
+                    &grid_default_cell,
                     prefix_width,
                     prefix.as_ptr(),
                     ::core::ptr::null_mut::<style_ranges>(),
@@ -1087,7 +1071,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
                     );
                     format_draw(
                         &raw mut ctx,
-                        &raw mut gc0,
+                        &gc0,
                         left,
                         text.as_ptr(),
                         ::core::ptr::null_mut::<style_ranges>(),
@@ -1102,7 +1086,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
                         );
                         format_draw(
                             &raw mut ctx,
-                            &raw mut gc0,
+                            &gc0,
                             w.wrapping_sub(width),
                             (mti.text)
                                 .as_ref()
@@ -1116,7 +1100,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
                 screen_write_clearendofline(&mut ctx, gc.bg as u_int);
                 format_draw(
                     &raw mut ctx,
-                    &raw mut gc,
+                    &gc,
                     prefix_width,
                     prefix.as_ptr(),
                     ::core::ptr::null_mut::<style_ranges>(),
@@ -1131,7 +1115,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
                     );
                     format_draw(
                         &raw mut ctx,
-                        &raw mut gc,
+                        &gc,
                         left,
                         text.as_ptr(),
                         ::core::ptr::null_mut::<style_ranges>(),
@@ -1146,7 +1130,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
                         );
                         format_draw(
                             &raw mut ctx,
-                            &raw mut gc,
+                            &gc,
                             w.wrapping_sub(width),
                             (mti.text)
                                 .as_ref()
@@ -1201,11 +1185,6 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
             if !order_seq.is_empty() {
                 label_bytes.extend_from_slice(b" (sort: ");
                 let order = sort_order_to_string((*mtd).sort_crit.order);
-                let order = if order.is_null() {
-                    None
-                } else {
-                    Some(CStr::from_ptr(order))
-                };
                 mode_tree_append_printf_string(&mut label_bytes, order);
                 if (*mtd).sort_crit.reversed != 0 {
                     label_bytes.extend_from_slice(b", reversed");
@@ -1226,7 +1205,7 @@ pub unsafe fn mode_tree_draw(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
                     h as ::core::ffi::c_int,
                     0 as ::core::ffi::c_int,
                 );
-                screen_write_puts(&mut ctx, &box_gc, |out| write_cstr(out, label.as_ptr()));
+                screen_write_puts(&mut ctx, &box_gc, |out| write_cstr(out, &*label));
                 if (*mtd).no_matches != 0 {
                     n = (::core::mem::size_of::<[::core::ffi::c_char; 11]>() as usize)
                         .wrapping_sub(1_usize) as size_t;
@@ -1670,7 +1649,7 @@ unsafe fn mode_tree_clear_filter(tree_owner: &Rc<UnsafeCell<mode_tree_data>>) {
 }
 unsafe fn mode_tree_draw_help_line(
     mut ctx: *mut screen_write_ctx,
-    mut gc: *const grid_cell,
+    gc: &grid_cell,
     mut ft: *mut format_tree,
     line: &CStr,
     item: &CStr,
@@ -1687,7 +1666,7 @@ unsafe fn mode_tree_draw_help_line(
         y as ::core::ffi::c_int,
         0 as ::core::ffi::c_int,
     );
-    screen_write_clearcharacter(&mut *ctx, w, (*gc).bg as u_int);
+    screen_write_clearcharacter(&mut *ctx, w, gc.bg as u_int);
     screen_write_cursormove(
         &mut *ctx,
         x as ::core::ffi::c_int,
@@ -1764,22 +1743,14 @@ unsafe fn mode_tree_draw_help(
     }
     x = sx.wrapping_sub(box_w).wrapping_div(2 as u_int);
     y = sy.wrapping_sub(box_h).wrapping_div(2 as u_int);
-    memcpy(
-        &raw mut box_gc as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
+    box_gc = grid_default_cell;
     style_apply_with_options(&mut box_gc, c"tree-mode-border-style", None, |visit| {
         options_window
             .upgrade()
             .expect("live tree-mode window")
             .with_options_mut(visit)
     });
-    memcpy(
-        &raw mut gc as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
+    gc = grid_default_cell;
     let mut ft_owner = format_create_defaults(
         None,
         None,
@@ -2244,12 +2215,7 @@ pub unsafe fn mode_tree_run_command(
         if let Some(owner) = client_owner {
             cmd_parse_error_uppercase_first(&mut error);
             status_message_set(Some(owner), -1, 1, 0, 0, |out| {
-                write_cstr(
-                    out,
-                    error
-                        .as_ref()
-                        .map_or(std::ptr::null(), |cause| cause.as_ptr()),
-                )
+                write_cstr(out, error.as_deref())
             });
         }
     }

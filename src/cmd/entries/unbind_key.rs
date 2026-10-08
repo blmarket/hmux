@@ -1,6 +1,7 @@
 use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::cmdq_error;
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::key_bindings::{
     key_bindings_get_table, key_bindings_remove, key_bindings_remove_table,
@@ -70,7 +71,7 @@ unsafe fn cmd_unbind_key_exec(
             if quiet == 0 {
                 cmdq_error(item_handle, |out| {
                     out.write_all(b"table ")?;
-                    write_cstr(out, tablename)?;
+                    write_cstr(out, nullable_cstr(tablename))?;
                     out.write_all(b" doesn't exist")
                 });
             }
@@ -92,7 +93,7 @@ unsafe fn cmd_unbind_key_exec(
         if quiet == 0 {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"unknown key: ")?;
-                write_cstr(out, keystr)
+                write_cstr(out, nullable_cstr(keystr))
             });
         }
         return CMD_RETURN_ERROR;
@@ -106,7 +107,7 @@ unsafe fn cmd_unbind_key_exec(
             if quiet == 0 {
                 cmdq_error(item_handle, |out| {
                     out.write_all(b"table ")?;
-                    write_cstr(out, tablename)?;
+                    write_cstr(out, nullable_cstr(tablename))?;
                     out.write_all(b" doesn't exist")
                 });
             }

@@ -7,10 +7,11 @@ use crate::src::cmd::{cmd_get_args_mut, cmd_get_parse_flags};
 use crate::src::compat::glob::GlobResult;
 use crate::src::ffi::libc::{__ctype_b_loc, strcmp, strerror};
 use crate::src::file::file_read_with_cmdq_wait;
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::log::{log_cstr, log_debug};
-use crate::src::reactor::{evbuffer_get_length, evbuffer_pullup};
+use crate::src::reactor::evbuffer_pullup;
 use crate::src::server_client::Client as _;
 
 use crate::src::shared::abi::__size_t;
@@ -174,7 +175,7 @@ unsafe fn cmd_source_file_read(cdata: Box<cmd_source_file_data>) {
     let path = cdata.files[cdata.current as usize].as_ptr();
     file_read_with_cmdq_wait(
         client_owner.as_ref(),
-        path,
+        CStr::from_ptr(path),
         cdata.into_read_callback(),
         &item_owner,
         None,
@@ -191,17 +192,15 @@ unsafe fn cmd_source_file_done(
     let item = item_owner.get();
     let path = path.map_or(::core::ptr::null(), CStr::as_ptr);
     // Progress does not coalesce the buffer; only complete files are parsed.
-    let bdata = evbuffer_pullup(buffer, -1)
-        .map_or(std::ptr::null_mut(), |bytes| bytes.as_mut_ptr())
-        .cast();
-    let bsize = evbuffer_get_length(buffer);
+    let bdata: &[u8] = evbuffer_pullup(buffer, -1).map_or(&[], |bytes| bytes);
+    let bsize = bdata.len();
     let mut new_item = Weak::new();
     let target = crate::src::cmd::queue::cmdq_get_target_mut(&mut *item);
     if error != 0 {
         cmdq_error(&item_owner, |out| {
-            write_cstr(out, strerror(error))?;
+            write_cstr(out, nullable_cstr(strerror(error)))?;
             out.write_all(b": ")?;
-            write_cstr(out, path)
+            write_cstr(out, nullable_cstr(path))
         });
     } else if bsize != 0 {
         let after_owner = cdata
@@ -210,8 +209,7 @@ unsafe fn cmd_source_file_done(
             .unwrap_or_else(|| Rc::clone(&item_owner));
         if load_cfg_from_buffer(
             bdata,
-            bsize,
-            path,
+            CStr::from_ptr(path),
             cdata.client.as_ref(),
             Some(&after_owner),
             target,
@@ -360,9 +358,9 @@ unsafe fn cmd_source_file_exec(
                         error = strerror(EINVAL);
                     }
                     cmdq_error(item_handle, |out| {
-                        write_cstr(out, error)?;
+                        write_cstr(out, nullable_cstr(error))?;
                         out.write_all(b": ")?;
-                        write_cstr(out, path)
+                        write_cstr(out, nullable_cstr(path))
                     });
                     retval = CMD_RETURN_ERROR;
                 }
@@ -371,7 +369,7 @@ unsafe fn cmd_source_file_exec(
                 drop(pattern);
                 j = 0 as u_int;
                 while (j as __size_t) < matches.len() {
-                    cmd_source_file_add(&mut cdata, CStr::from_ptr(matches.path(j as usize)));
+                    cmd_source_file_add(&mut cdata, matches.path(j as usize));
                     j = j.wrapping_add(1);
                 }
             }

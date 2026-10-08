@@ -8,6 +8,7 @@ use crate::src::compat::stdio::CFile;
 use crate::src::control::control_notify_write;
 use crate::src::ffi::libc::{__errno_location, fopen, strerror};
 use crate::src::format::bytes::format_message_with;
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::log::{log_cstr, log_debug};
 use crate::src::prompt_history::prompt_load_history;
@@ -93,7 +94,7 @@ pub unsafe fn start_cfg() {
         flags = CMD_PARSE_QUIET;
     }
     for path in cfg_files() {
-        load_cfg(path.as_ptr(), registry_c_owner.as_ref(), flags);
+        load_cfg(&*path, registry_c_owner.as_ref(), flags);
     }
     cmdq_append(
         None,
@@ -101,7 +102,7 @@ pub unsafe fn start_cfg() {
     );
 }
 pub unsafe fn load_cfg(
-    mut path: *const ::core::ffi::c_char,
+    path: &CStr,
     c: Option<&ClientRef>,
     mut flags: ::core::ffi::c_int,
 ) -> ::core::ffi::c_int {
@@ -124,22 +125,22 @@ pub unsafe fn load_cfg(
     let mut pr: cmd_parse_result = cmd_parse_result::empty();
     let state;
 
-    log_debug(format_args!("loading {}", log_cstr(CStr::from_ptr(path))));
-    f = fopen(path, c"rb".as_ptr()) as *mut FILE;
+    log_debug(format_args!("loading {}", log_cstr(path)));
+    f = fopen(path.as_ptr(), c"rb".as_ptr()) as *mut FILE;
     if f.is_null() {
         if *__errno_location() == ENOENT && flags & CMD_PARSE_QUIET != 0 {
             return 0 as ::core::ffi::c_int;
         }
         cfg_add_cause(|out| {
-            write_cstr(out, path)?;
+            write_cstr(out, nullable_cstr(path.as_ptr()))?;
             out.write_all(b": ")?;
-            write_cstr(out, strerror(*__errno_location()))
+            write_cstr(out, nullable_cstr(strerror(*__errno_location())))
         });
         return -(1 as ::core::ffi::c_int);
     }
     let stream = CFile::from_raw(f).expect("fopen returned a non-null stream");
     pi.flags = flags;
-    pi.file = Some(CStr::from_ptr(path).to_owned());
+    pi.file = Some(path.to_owned());
     pi.line = 1 as u_int;
     pi.set_item(None);
     pi.c = c.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
@@ -148,14 +149,7 @@ pub unsafe fn load_cfg(
     if pr.status as ::core::ffi::c_uint
         == CMD_PARSE_ERROR as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        cfg_add_cause(|out| {
-            write_cstr(
-                out,
-                pr.error
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
-            )
-        });
+        cfg_add_cause(|out| write_cstr(out, pr.error.as_deref()));
         return -(1 as ::core::ffi::c_int);
     }
     if flags & CMD_PARSE_PARSEONLY != 0 {
@@ -187,9 +181,8 @@ pub unsafe fn load_cfg(
     0 as ::core::ffi::c_int
 }
 pub unsafe fn load_cfg_from_buffer(
-    mut buf: *const ::core::ffi::c_void,
-    mut len: size_t,
-    mut path: *const ::core::ffi::c_char,
+    buf: &[u8],
+    path: &CStr,
     c: Option<&ClientRef>,
     item_handle: Option<&std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>>,
     mut current: *mut cmd_find_state,
@@ -217,24 +210,17 @@ pub unsafe fn load_cfg_from_buffer(
     if let Some(new_item) = new_item.as_deref_mut() {
         *new_item = std::rc::Weak::new();
     }
-    log_debug(format_args!("loading {}", log_cstr(CStr::from_ptr(path))));
+    log_debug(format_args!("loading {}", log_cstr(path)));
     pi.flags = flags;
-    pi.file = Some(CStr::from_ptr(path).to_owned());
+    pi.file = Some(path.to_owned());
     pi.line = 1 as u_int;
     pi.set_item(item_handle);
     pi.c = c.map_or_else(std::rc::Weak::new, std::rc::Rc::downgrade);
-    pr = cmd_parse_from_buffer(buf, len, &raw mut pi);
+    pr = cmd_parse_from_buffer(buf, &raw mut pi);
     if pr.status as ::core::ffi::c_uint
         == CMD_PARSE_ERROR as ::core::ffi::c_int as ::core::ffi::c_uint
     {
-        cfg_add_cause(|out| {
-            write_cstr(
-                out,
-                pr.error
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
-            )
-        });
+        cfg_add_cause(|out| write_cstr(out, pr.error.as_deref()));
         return -(1 as ::core::ffi::c_int);
     }
     if flags & CMD_PARSE_PARSEONLY != 0 {
@@ -306,10 +292,10 @@ pub unsafe fn cfg_print_causes(item_handle: &std::rc::Rc<std::cell::UnsafeCell<c
         {
             control_notify_write(&c.clone().expect("live client"), |out| {
                 out.write_all(b"%config-error ")?;
-                write_cstr(out, cause.as_ptr())
+                write_cstr(out, &*cause)
             });
         } else {
-            cmdq_print(item_handle, |out| write_cstr(out, cause.as_ptr()));
+            cmdq_print(item_handle, |out| write_cstr(out, &*cause));
         }
     });
 }
@@ -324,7 +310,7 @@ pub unsafe fn cfg_show_causes(s_owner: Option<&SessionRef>) {
         cfg_drain_causes(|cause| {
             control_notify_write(&c.clone().expect("live client"), |out| {
                 out.write_all(b"%config-error ")?;
-                write_cstr(out, cause.as_ptr())
+                write_cstr(out, &*cause)
             });
         });
     } else {
@@ -364,7 +350,7 @@ pub unsafe fn cfg_show_causes(s_owner: Option<&SessionRef>) {
         }
         cfg_drain_causes(|cause| {
             window_copy_add(&pane_owner, 0 as ::core::ffi::c_int, |out| {
-                write_cstr(out, cause.as_ptr())
+                write_cstr(out, &*cause)
             });
         });
     }
@@ -381,17 +367,17 @@ mod tests {
         unsafe {
             let _ = cfg_test_take_causes();
             cfg_add_cause(|out| {
-                write_cstr(out, c"first".as_ptr())?;
+                write_cstr(out, c"first")?;
                 write!(out, ":{}", (7u32) as u32)
             });
-            cfg_add_cause(|out| write_cstr(out, c"second\xff".as_ptr()));
+            cfg_add_cause(|out| write_cstr(out, c"second\xff"));
         }
 
         let mut actual = Vec::new();
         cfg_drain_causes(|cause| {
             actual.push(cause.to_bytes().to_vec());
             if actual.len() == 1 {
-                unsafe { cfg_add_cause(|out| write_cstr(out, c"third".as_ptr())) };
+                unsafe { cfg_add_cause(|out| write_cstr(out, c"third")) };
             }
         });
         assert_eq!(actual, [b"first:7".as_slice(), b"second\xff", b"third"]);

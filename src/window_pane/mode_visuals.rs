@@ -84,7 +84,7 @@ pub(super) unsafe fn draw_editor_waiting(owner: &Rc<UnsafeCell<window_pane>>, pi
         &mut ctx,
         box_w.wrapping_sub(2 as u_int) as ssize_t,
         &gc,
-        |out| write_cstr(out, &raw mut text as *mut ::core::ffi::c_char),
+        |out| write_cstr(out, std::ffi::CStr::from_ptr(text.as_ptr().cast())),
     );
     screen_write_stop(&mut ctx);
 }

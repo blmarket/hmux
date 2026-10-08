@@ -31,14 +31,14 @@ pub unsafe fn log_add_level() {
 pub unsafe fn log_get_level() -> ::core::ffi::c_int {
     log_level
 }
-pub unsafe fn log_open(mut name: *const ::core::ffi::c_char) {
+pub unsafe fn log_open(name: &CStr) {
     if log_level == 0 as ::core::ffi::c_int {
         return;
     }
     log_close();
     let pid = (getpid() as ::core::ffi::c_long).to_string();
     let mut path = b"tmux-".to_vec();
-    path.extend_from_slice(CStr::from_ptr(name).to_bytes());
+    path.extend_from_slice(name.to_bytes());
     path.push(b'-');
     path.extend_from_slice(pid.as_bytes());
     path.extend_from_slice(b".log");
@@ -55,7 +55,7 @@ pub unsafe fn log_open(mut name: *const ::core::ffi::c_char) {
         0 as size_t,
     );
 }
-pub unsafe fn log_toggle(mut name: *const ::core::ffi::c_char) {
+pub unsafe fn log_toggle(name: &CStr) {
     if log_level == 0 as ::core::ffi::c_int {
         log_level = 1 as ::core::ffi::c_int;
         log_open(name);
@@ -71,7 +71,7 @@ pub unsafe fn log_close() {
 }
 unsafe fn log_message(
     write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,
-    mut prefix: *const ::core::ffi::c_char,
+    prefix: &CStr,
 ) {
     let file = log_file_ptr();
     if file.is_null() {
@@ -100,7 +100,7 @@ unsafe fn log_message(
         VIS_OCTAL | VIS_CSTYLE | VIS_TAB | VIS_NL,
     );
     drop(s);
-    log_write_escaped(CStr::from_ptr(out.as_ptr().cast()), CStr::from_ptr(prefix));
+    log_write_escaped(CStr::from_ptr(out.as_ptr().cast()), prefix);
 }
 
 unsafe fn log_write_escaped(message: &CStr, prefix: &CStr) {
@@ -148,11 +148,14 @@ pub unsafe fn fatal(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Resu
     {
         exit(1 as ::core::ffi::c_int);
     }
-    log_message(write, &raw mut tmp as *mut ::core::ffi::c_char);
+    log_message(
+        write,
+        CStr::from_ptr(&raw mut tmp as *mut ::core::ffi::c_char),
+    );
     exit(1 as ::core::ffi::c_int);
 }
 pub unsafe fn fatalx(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) -> ! {
-    log_message(write, c"fatal: ".as_ptr());
+    log_message(write, c"fatal: ");
     exit(1 as ::core::ffi::c_int);
 }
 
@@ -215,41 +218,34 @@ mod tests {
     #[test]
     fn bounded_strings_and_padding_match_printf_before_escaping() {
         unsafe {
-            // No NUL terminator: precision must bound the actual memory read.
+            // No NUL terminator: the slice bounds the read like a precision.
             let bytes = [0xffu8, b'\\', b'\n', 0xc3];
             for precision in 0..=bytes.len() as i32 {
                 assert_eq!(
                     message(format_args!(
                         "[{}]",
-                        log_cstr_n(bytes.as_ptr().cast(), precision)
+                        log_cstr_n(&bytes[..precision as usize])
                     )),
                     legacy_message!(c"[%.*s]".as_ptr(), precision, bytes.as_ptr())
                 );
             }
             let bytes = c"\xff\\\n";
+            let with_nul = bytes.to_bytes_with_nul();
             for precision in [-1, 0, 1, 2, 3, 20] {
+                let limit = if precision < 0 {
+                    with_nul.len()
+                } else {
+                    (precision as usize).min(with_nul.len())
+                };
                 assert_eq!(
-                    message(format_args!("[{}]", log_cstr_n(bytes.as_ptr(), precision))),
+                    message(format_args!("[{}]", log_cstr_n(&with_nul[..limit]))),
                     legacy_message!(c"[%.*s]".as_ptr(), precision, bytes.as_ptr())
                 );
             }
             for width in [-8, -1, 0, 1, 8] {
                 assert_eq!(
-                    message(format_args!("[{}]", log_cstr_width(bytes.as_ptr(), width))),
+                    message(format_args!("[{}]", log_cstr_width(bytes, width))),
                     legacy_message!(c"[%*s]".as_ptr(), width, bytes.as_ptr())
-                );
-            }
-            for precision in [-1, 0, 1, 5, 6, 8] {
-                assert_eq!(
-                    message(format_args!(
-                        "[{}]",
-                        log_cstr_n(std::ptr::null(), precision)
-                    )),
-                    legacy_message!(
-                        c"[%.*s]".as_ptr(),
-                        precision,
-                        std::ptr::null::<::core::ffi::c_char>()
-                    )
                 );
             }
         }
@@ -299,7 +295,7 @@ mod tests {
             log_debug(format_args!("{}", MustNotFormat));
             log_message(
                 |_| panic!("disabled logger invoked the message writer"),
-                c"fatal: ".as_ptr(),
+                c"fatal: ",
             );
         }
     }

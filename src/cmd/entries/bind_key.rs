@@ -2,6 +2,7 @@ use crate::src::arguments::{args_count, args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::parse::{cmd_parse_from_arguments, cmd_parse_from_string};
 use crate::src::cmd::queue::cmdq_error;
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::key_bindings::key_bindings_add;
 use crate::src::key_string::key_string_parse_cstr;
@@ -68,8 +69,10 @@ unsafe fn cmd_bind_key_exec(
             out.write_all(b"unknown key: ")?;
             write_cstr(
                 out,
-                args_string(&mut *(args), 0 as u_int)
-                    .map_or(std::ptr::null(), |value| value.as_ptr()),
+                nullable_cstr(
+                    args_string(&mut *(args), 0 as u_int)
+                        .map_or(std::ptr::null(), |value| value.as_ptr()),
+                ),
             )
         });
         return CMD_RETURN_ERROR;
@@ -123,14 +126,7 @@ unsafe fn cmd_bind_key_exec(
         );
     }
     if pr.status as ::core::ffi::c_uint == 0 {
-        cmdq_error(item_handle, |out| {
-            write_cstr(
-                out,
-                pr.error
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
-            )
-        });
+        cmdq_error(item_handle, |out| write_cstr(out, pr.error.as_deref()));
         return CMD_RETURN_ERROR;
     }
     key_bindings_add(

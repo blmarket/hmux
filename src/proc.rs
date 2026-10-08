@@ -23,7 +23,7 @@ pub use crate::src::shared::signal::{
     SIGCONT, SIGHUP, SIGINT, SIGTERM, SIGTSTP, SIGTTIN, SIGTTOU, SIGUSR1, SIGUSR2, SIGWINCH,
     SIG_DFL,
 };
-use crate::src::tmux::{getversion, socket_path};
+use crate::src::tmux::{getversion, socket_path_cstr};
 use hmux_rt::{AsyncRead as _, AsyncWrite as _, Runtime as _, Signals as _};
 use std::ffi::CStr;
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
@@ -70,7 +70,7 @@ unsafe fn proc_receive(peer: *mut tmuxpeer, bytes: &[u8], received: hmux_rt::Rec
     while let Some(mut message) = imsgbuf_get(&mut (*peer).ibuf) {
         log_debug(format_args!(
             "peer {} message {}",
-            log_pointer(peer.cast()),
+            log_pointer(peer),
             message.hdr.type_0
         ));
         if peer_check_version(peer, &message) != 0 {
@@ -94,16 +94,10 @@ unsafe fn peer_check_version(peer: *mut tmuxpeer, imsg: &imsg) -> ::core::ffi::c
     if imsg.hdr.type_0 != MSG_VERSION && version != PROTOCOL_VERSION {
         log_debug(format_args!(
             "peer {} bad version {}",
-            log_pointer((peer) as *const ::core::ffi::c_void),
+            log_pointer(peer),
             (version) as i32
         ));
-        proc_send(
-            peer,
-            MSG_VERSION,
-            None,
-            ::core::ptr::null::<::core::ffi::c_void>(),
-            0 as size_t,
-        );
+        proc_send(peer, MSG_VERSION, None, &[]);
         (*peer).flags |= PEER_BAD;
         return -(1 as ::core::ffi::c_int);
     }
@@ -201,12 +195,15 @@ unsafe fn proc_update_io(peer: *mut tmuxpeer) {
     })
     .expect("start peer I/O");
 }
+/// The bytes of a plain message struct, as sent on the wire.
+pub fn bytes_of<T: Copy>(value: &T) -> &[u8] {
+    unsafe { std::slice::from_raw_parts((value as *const T).cast::<u8>(), size_of::<T>()) }
+}
 pub unsafe fn proc_send(
     mut peer: *mut tmuxpeer,
     mut type_0: msgtype,
     fd: Option<OwnedFd>,
-    mut buf: *const ::core::ffi::c_void,
-    mut len: size_t,
+    data: &[u8],
 ) -> ::core::ffi::c_int {
     let imsgbuf = &mut (*peer).ibuf;
     if (*peer).flags & PEER_BAD != 0 {
@@ -215,14 +212,9 @@ pub unsafe fn proc_send(
     log_debug(format_args!(
         "sending message {} to peer {} ({} bytes)",
         (type_0 as ::core::ffi::c_uint) as i32,
-        log_pointer((peer) as *const ::core::ffi::c_void),
-        { len }
+        log_pointer(peer),
+        data.len()
     ));
-    let Some(data) = (len == 0).then_some(&[][..]).or_else(|| {
-        (!buf.is_null()).then(|| unsafe { std::slice::from_raw_parts(buf.cast::<u8>(), len) })
-    }) else {
-        return -1;
-    };
     if imsg_compose(
         imsgbuf,
         type_0,
@@ -238,7 +230,7 @@ pub unsafe fn proc_send(
     proc_update_io(peer);
     0 as ::core::ffi::c_int
 }
-pub unsafe fn proc_start(mut name: *const ::core::ffi::c_char) -> Box<tmuxproc> {
+pub unsafe fn proc_start(name: &CStr) -> Box<tmuxproc> {
     let mut u: utsname = utsname {
         sysname: [0; 65],
         nodename: [0; 65],
@@ -249,9 +241,9 @@ pub unsafe fn proc_start(mut name: *const ::core::ffi::c_char) -> Box<tmuxproc> 
     };
     log_open(name);
     setproctitle(|out| {
-        write_cstr(out, name)?;
+        write_cstr(out, &*name)?;
         out.write_all(b" (")?;
-        write_cstr(out, socket_path)?;
+        out.write_all(socket_path_cstr().to_bytes())?;
         out.write_all(b")")
     });
     if uname(&raw mut u) < 0 as ::core::ffi::c_int {
@@ -263,10 +255,10 @@ pub unsafe fn proc_start(mut name: *const ::core::ffi::c_char) -> Box<tmuxproc> 
     }
     log_debug(format_args!(
         "{} started ({}): version {}, socket {}, protocol {}",
-        log_cstr(CStr::from_ptr(name)),
+        log_cstr(name),
         getpid() as ::core::ffi::c_long,
         log_cstr(getversion()),
-        log_cstr(CStr::from_ptr(socket_path)),
+        log_cstr(socket_path_cstr()),
         { PROTOCOL_VERSION }
     ));
     log_debug(format_args!(
@@ -292,7 +284,7 @@ pub unsafe fn proc_start(mut name: *const ::core::ffi::c_char) -> Box<tmuxproc> 
         (NCURSES_VERSION_PATCH) as u32
     ));
     Box::new(tmuxproc {
-        name: CStr::from_ptr(name).to_owned(),
+        name: name.to_owned(),
         exit: 0,
         signalcb: None,
         signal_task: Default::default(),
@@ -430,11 +422,7 @@ pub unsafe fn proc_add_peer(
         (*peer).uid = -(1 as ::core::ffi::c_int) as uid_t;
         (*peer).gid = -(1 as ::core::ffi::c_int) as gid_t;
     }
-    log_debug(format_args!(
-        "add peer {}: {}",
-        log_pointer((peer) as *const ::core::ffi::c_void),
-        { fd }
-    ));
+    log_debug(format_args!("add peer {}: {}", log_pointer(peer), { fd }));
     (*tp).peers.push(owned_peer);
     proc_update_io(peer);
     peer
@@ -451,10 +439,7 @@ pub unsafe fn proc_remove_peer(peer: *mut tmuxpeer) {
 
 unsafe fn proc_free_peer(mut owned_peer: Box<tmuxpeer>) {
     let peer = &raw mut *owned_peer;
-    log_debug(format_args!(
-        "remove peer {}",
-        log_pointer((peer) as *const ::core::ffi::c_void)
-    ));
+    log_debug(format_args!("remove peer {}", log_pointer(peer)));
     drop((*peer).io_task.take());
     imsgbuf_clear(&mut (*peer).ibuf);
     drop(owned_peer);
@@ -463,7 +448,7 @@ pub unsafe fn proc_kill_peer(mut peer: *mut tmuxpeer) {
     (*peer).flags |= PEER_BAD;
 }
 pub unsafe fn proc_toggle_log(mut tp: *mut tmuxproc) {
-    log_toggle((*tp).name.as_ptr());
+    log_toggle(&*((*tp).name));
 }
 pub unsafe fn proc_fork_and_daemon() -> (pid_t, OwnedFd) {
     assert!(
@@ -559,7 +544,8 @@ mod ownership_tests {
     #[test]
     fn rejected_messages_close_the_transferred_descriptor() {
         use std::io::Read;
-        for (flags, len) in [(PEER_BAD, 0), (0, 1)] {
+        // A bad peer, and a message too large to compose.
+        for (flags, len) in [(PEER_BAD, 0), (0, MAX_IMSGSIZE as usize)] {
             let mut peer = tmuxpeer::default();
             peer.flags = flags;
             let (socket, mut remote) = UnixStream::pair().unwrap();
@@ -570,8 +556,7 @@ mod ownership_tests {
                         &raw mut peer,
                         MSG_COMMAND,
                         Some(socket.into()),
-                        std::ptr::null(),
-                        len,
+                        &vec![0; len],
                     )
                 },
                 -1

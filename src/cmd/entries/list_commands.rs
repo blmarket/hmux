@@ -44,21 +44,21 @@ pub static cmd_list_commands_entry: cmd_entry = {
 unsafe fn cmd_list_single_command(
     entry: &cmd_entry,
     mut ft: *mut format_tree,
-    mut template: *const ::core::ffi::c_char,
+    template: &CStr,
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
 ) {
     format_add(ft, c"command_list_name", |out| {
-        write_cstr(out, entry.name.as_ptr())
+        write_cstr(out, &*entry.name)
     });
     format_add(ft, c"command_list_alias", |out| {
-        write_cstr(out, entry.alias.unwrap_or(c"").as_ptr())
+        write_cstr(out, &*entry.alias.unwrap_or(c""))
     });
     format_add(ft, c"command_list_usage", |out| {
-        write_cstr(out, entry.usage.as_ptr())
+        write_cstr(out, &*entry.usage)
     });
-    let line = format_expand_cstring(ft, template);
+    let line = format_expand_cstring(ft, template.as_ptr());
     if !line.is_empty() {
-        cmdq_print(item_handle, |out| write_cstr(out, line.as_ptr()));
+        cmdq_print(item_handle, |out| write_cstr(out, &*line));
     }
 }
 unsafe fn cmd_list_commands(
@@ -89,15 +89,15 @@ unsafe fn cmd_list_commands(
         args_string(&mut *(args), 0 as u_int).map_or(std::ptr::null(), |value| value.as_ptr());
     if command.is_null() {
         for &entry in &cmd_table {
-            cmd_list_single_command(entry, ft, template, item_handle);
+            cmd_list_single_command(entry, ft, CStr::from_ptr(template), item_handle);
         }
     } else {
         match cmd_find(CStr::from_ptr(command)) {
             Ok(found) => {
-                cmd_list_single_command(found, ft, template, item_handle);
+                cmd_list_single_command(found, ft, CStr::from_ptr(template), item_handle);
             }
             Err(cause) => {
-                cmdq_error(item_handle, |out| write_cstr(out, cause.as_ptr()));
+                cmdq_error(item_handle, |out| write_cstr(out, &*cause));
                 format_free(ft_owner);
                 return CMD_RETURN_ERROR;
             }

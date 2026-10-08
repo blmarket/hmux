@@ -1070,7 +1070,6 @@ unsafe fn format_cb_pane_dead_signal(mut ft: *mut format_tree) -> Option<CString
         .as_ref()
         .map_or(std::ptr::null_mut(), |owner| owner.get());
     let mut wp: *mut window_pane = format_pane;
-    let mut name: *const ::core::ffi::c_char = ::core::ptr::null::<::core::ffi::c_char>();
     if !wp.is_null() {
         if (*wp).flags & PANE_STATUSREADY != 0
             && (((*wp).status & 0x7f as ::core::ffi::c_int) + 1 as ::core::ffi::c_int)
@@ -1078,8 +1077,7 @@ unsafe fn format_cb_pane_dead_signal(mut ft: *mut format_tree) -> Option<CString
                 >> 1 as ::core::ffi::c_int
                 > 0 as ::core::ffi::c_int
         {
-            name = sig2name((*wp).status & 0x7f as ::core::ffi::c_int);
-            return Some(CStr::from_ptr(name).to_owned());
+            return Some(sig2name((*wp).status & 0x7f as ::core::ffi::c_int));
         }
         return None;
     }

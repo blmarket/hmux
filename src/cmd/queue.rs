@@ -18,6 +18,7 @@ use crate::src::events_payload::{
 use crate::src::ffi::libc::{__ctype_toupper_loc, getpwuid, getuid, time};
 use crate::src::file::{file_cancel_cmdq_wait, file_error};
 use crate::src::format::bytes::format_message_with;
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::bytes::{xformat, xformat_with};
 use crate::src::format::{
@@ -417,7 +418,7 @@ pub unsafe fn cmdq_new_state(
     };
     let mut target = cmd_find_state::default();
     if !current.is_null() && cmd_find_valid_state(&*current) != 0 {
-        cmd_find_copy_state(&mut target, current);
+        cmd_find_copy_state(&mut target, &*current);
     } else {
         cmd_find_clear_state(&mut target, 0);
     }
@@ -471,7 +472,7 @@ pub unsafe fn cmdq_merge_formats(
     let item = item_handle.get();
     if (*item).command_handle().is_alive() {
         let entry = cmd_get_entry(((*item).command_handle()).get_unchecked());
-        format_add(ft, c"command", |out| write_cstr(out, entry.name.as_ptr()));
+        format_add(ft, c"command", |out| write_cstr(out, &*entry.name));
     }
     let state = cmdq_get_state(&*item).expect("command queue state").clone();
     let mut formats = state.formats.borrow_mut();
@@ -578,24 +579,29 @@ pub unsafe fn cmdq_insert_hook(
     }
     event_payload_set_identity(
         &mut ep,
-        c"_cmdq_item".as_ptr(),
+        c"_cmdq_item",
         crate::src::shared::events::EventPayloadIdentity::QueueItem(std::rc::Rc::downgrade(
             item_handle,
         )),
     );
     let arguments = args_print_cstring(&*args_0);
-    event_payload_set_string(&mut ep, c"arguments".as_ptr(), |out| {
-        write_cstr(out, arguments.as_ptr())
-    });
+    event_payload_set_string(&mut ep, c"arguments", |out| write_cstr(out, &*arguments));
     i = 0 as u_int;
     while i < args_count(args_0) {
         xformat(&mut tmp, format_args!("argument_{}", i as u32));
-        event_payload_set_string(&mut ep, &raw mut tmp as *mut ::core::ffi::c_char, |out| {
-            write_cstr(
-                out,
-                args_string(&mut *(args_0), i).map_or(std::ptr::null(), |value| value.as_ptr()),
-            )
-        });
+        event_payload_set_string(
+            &mut ep,
+            CStr::from_ptr(&raw mut tmp as *mut ::core::ffi::c_char),
+            |out| {
+                write_cstr(
+                    out,
+                    nullable_cstr(
+                        args_string(&mut *(args_0), i)
+                            .map_or(std::ptr::null(), |value| value.as_ptr()),
+                    ),
+                )
+            },
+        );
         i = i.wrapping_add(1);
     }
     for flag in args_flags(&*args_0) {
@@ -606,13 +612,17 @@ pub unsafe fn cmdq_insert_hook(
             out.write_all(&[flag])
         });
         if value.is_null() {
-            event_payload_set_string(&mut ep, &raw mut tmp as *mut ::core::ffi::c_char, |out| {
-                out.write_all(b"1")
-            });
+            event_payload_set_string(
+                &mut ep,
+                CStr::from_ptr(&raw mut tmp as *mut ::core::ffi::c_char),
+                |out| out.write_all(b"1"),
+            );
         } else {
-            event_payload_set_string(&mut ep, &raw mut tmp as *mut ::core::ffi::c_char, |out| {
-                write_cstr(out, value)
-            });
+            event_payload_set_string(
+                &mut ep,
+                CStr::from_ptr(&raw mut tmp as *mut ::core::ffi::c_char),
+                |out| write_cstr(out, nullable_cstr(value)),
+            );
         }
         i = 0 as u_int;
         for av in args_flag_values(&*args_0, flag as u_char) {
@@ -621,13 +631,15 @@ pub unsafe fn cmdq_insert_hook(
                 out.write_all(&[flag])?;
                 write!(out, "_{}", i)
             });
-            event_payload_set_string(&mut ep, &raw mut tmp as *mut ::core::ffi::c_char, |out| {
-                write_cstr(out, av.string_ptr())
-            });
+            event_payload_set_string(
+                &mut ep,
+                CStr::from_ptr(&raw mut tmp as *mut ::core::ffi::c_char),
+                |out| write_cstr(out, av.as_string()),
+            );
             i = i.wrapping_add(1);
         }
     }
-    events_fire(name.as_ptr(), ep);
+    events_fire(&*name, ep);
 }
 pub unsafe fn cmdq_continue(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>) {
     let item = item_handle.get();
@@ -738,8 +750,13 @@ unsafe fn cmdq_find_flag(
         flag.flag as u_char,
     )
     .map_or(std::ptr::null(), |value| value.as_ptr());
-    if cmd_find_target(fs, Some(item_handle), value, flag.type_0, flag.flags)
-        != 0 as ::core::ffi::c_int
+    if cmd_find_target(
+        fs,
+        Some(item_handle),
+        nullable_cstr(value),
+        flag.type_0,
+        flag.flags,
+    ) != 0 as ::core::ffi::c_int
     {
         cmd_find_clear_state(fs, 0 as ::core::ffi::c_int);
         return CMD_RETURN_ERROR;
@@ -776,35 +793,25 @@ unsafe fn cmdq_add_message(item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_
         {
             let key = key_string_format(state.event.key, false);
             server_add_message(|out| {
-                write_cstr(
-                    out,
-                    (c_value.name())
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                )?;
-                write_cstr(out, user.as_ptr())?;
+                write_cstr(out, (c_value.name()).as_deref())?;
+                write_cstr(out, &*user)?;
                 out.write_all(b" key ")?;
-                write_cstr(out, key.as_ptr())?;
+                write_cstr(out, &*key)?;
                 out.write_all(b": ")?;
-                write_cstr(out, tmp.as_ptr())
+                write_cstr(out, &*tmp)
             });
         } else {
             server_add_message(|out| {
-                write_cstr(
-                    out,
-                    (c_value.name())
-                        .as_ref()
-                        .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-                )?;
-                write_cstr(out, user.as_ptr())?;
+                write_cstr(out, (c_value.name()).as_deref())?;
+                write_cstr(out, &*user)?;
                 out.write_all(b" command: ")?;
-                write_cstr(out, tmp.as_ptr())
+                write_cstr(out, &*tmp)
             });
         }
     } else {
         server_add_message(|out| {
             out.write_all(b"command: ")?;
-            write_cstr(out, tmp.as_ptr())
+            write_cstr(out, &*tmp)
         });
     }
 }
@@ -848,11 +855,11 @@ unsafe fn cmdq_fire_command(
         ));
     }
     flags = (state.flags & CMDQ_STATE_CONTROL != 0) as ::core::ffi::c_int;
-    cmdq_guard(item_handle, c"begin".as_ptr(), flags);
+    cmdq_guard(item_handle, c"begin", flags);
     if (*item).client.upgrade().is_none() {
         let context = cmd_find_client(
             Some(item_handle),
-            ::core::ptr::null::<::core::ffi::c_char>(),
+            nullable_cstr(::core::ptr::null::<::core::ffi::c_char>()),
             1 as ::core::ffi::c_int,
         );
         (*item).client = context
@@ -866,8 +873,10 @@ unsafe fn cmdq_fire_command(
     if entry.flags & CMD_CLIENT_CFLAG != 0 {
         tc = cmd_find_client(
             Some(item_handle),
-            args_get(&*(args), 'c' as i32 as u_char)
-                .map_or(std::ptr::null(), |value| value.as_ptr()),
+            nullable_cstr(
+                args_get(&*(args), 'c' as i32 as u_char)
+                    .map_or(std::ptr::null(), |value| value.as_ptr()),
+            ),
             quiet,
         );
         if tc.is_none() && quiet == 0 {
@@ -879,8 +888,10 @@ unsafe fn cmdq_fire_command(
     } else if entry.flags & CMD_CLIENT_TFLAG != 0 {
         tc = cmd_find_client(
             Some(item_handle),
-            args_get(&*(args), 't' as i32 as u_char)
-                .map_or(std::ptr::null(), |value| value.as_ptr()),
+            nullable_cstr(
+                args_get(&*(args), 't' as i32 as u_char)
+                    .map_or(std::ptr::null(), |value| value.as_ptr()),
+            ),
             quiet,
         );
         if tc.is_none() && quiet == 0 {
@@ -892,7 +903,7 @@ unsafe fn cmdq_fire_command(
     } else {
         tc = cmd_find_client(
             Some(item_handle),
-            ::core::ptr::null::<::core::ffi::c_char>(),
+            nullable_cstr(::core::ptr::null::<::core::ffi::c_char>()),
             1 as ::core::ffi::c_int,
         );
         current_block = 18317007320854588510;
@@ -941,7 +952,7 @@ unsafe fn cmdq_fire_command(
                                 fsp,
                                 |out| {
                                     out.write_all(b"after-")?;
-                                    write_cstr(out, entry.name.as_ptr())
+                                    write_cstr(out, &*entry.name)
                                 },
                             );
                         }
@@ -974,9 +985,9 @@ unsafe fn cmdq_fire_command(
             fsp,
             |out| out.write_all(b"command-error"),
         );
-        cmdq_guard(item_handle, c"error".as_ptr(), flags);
+        cmdq_guard(item_handle, c"error", flags);
     } else {
-        cmdq_guard(item_handle, c"end".as_ptr(), flags);
+        cmdq_guard(item_handle, c"end", flags);
     }
     retval
 }
@@ -999,14 +1010,12 @@ pub unsafe fn cmdq_get_callback_owned(
 }
 
 #[must_use = "enqueue the detached command chain"]
-pub unsafe fn cmdq_get_error(
-    mut error: *const ::core::ffi::c_char,
-) -> std::rc::Rc<std::cell::UnsafeCell<cmdq_item>> {
-    let error = CStr::from_ptr(error).to_owned();
+pub unsafe fn cmdq_get_error(error: &CStr) -> std::rc::Rc<std::cell::UnsafeCell<cmdq_item>> {
+    let error = error.to_owned();
     cmdq_get_callback_owned(
         c"cmdq_error_callback",
         Some(Box::new(move |item| unsafe {
-            cmdq_error(item, |out| write_cstr(out, error.as_ptr()));
+            cmdq_error(item, |out| write_cstr(out, &*error));
             CMD_RETURN_NORMAL
         })),
     )
@@ -1092,7 +1101,7 @@ pub unsafe fn cmdq_running() -> std::rc::Weak<std::cell::UnsafeCell<cmdq_item>> 
 }
 pub unsafe fn cmdq_guard(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    mut guard: *const ::core::ffi::c_char,
+    guard: &CStr,
     mut flags: ::core::ffi::c_int,
 ) {
     let item = item_handle.get();
@@ -1143,24 +1152,24 @@ pub unsafe fn cmdq_error(
         if cfg_finished == 0 {
             if !file.is_null() {
                 cfg_add_cause(|out| {
-                    write_cstr(out, file)?;
+                    write_cstr(out, nullable_cstr(file))?;
                     write!(out, ":{}: ", (line) as u32)?;
-                    write_cstr(out, msg.as_ptr())
+                    write_cstr(out, &*msg)
                 });
             } else {
-                cfg_add_cause(|out| write_cstr(out, msg.as_ptr()));
+                cfg_add_cause(|out| write_cstr(out, &*msg));
             }
         } else if !file.is_null() {
             server_add_message(|out| {
                 out.write_all(b"message: ")?;
-                write_cstr(out, file)?;
+                write_cstr(out, nullable_cstr(file))?;
                 write!(out, ":{}: ", (line) as u32)?;
-                write_cstr(out, msg.as_ptr())
+                write_cstr(out, &*msg)
             });
         } else {
             server_add_message(|out| {
                 out.write_all(b"message: ")?;
-                write_cstr(out, msg.as_ptr())
+                write_cstr(out, &*msg)
             });
         }
     } else if c
@@ -1172,25 +1181,20 @@ pub unsafe fn cmdq_error(
         || c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0
     {
         server_add_message(|out| {
-            write_cstr(
-                out,
-                (c.as_ref().expect("live client").name())
-                    .as_ref()
-                    .map_or(::core::ptr::null_mut(), |value| value.as_ptr().cast_mut()),
-            )?;
+            write_cstr(out, (c.as_ref().expect("live client").name()).as_deref())?;
             out.write_all(b" message: ")?;
-            write_cstr(out, msg.as_ptr())
+            write_cstr(out, &*msg)
         });
         if !c.as_ref().expect("live client").flags() & CLIENT_UTF8 as uint64_t != 0 {
             msg = utf8_sanitize_cstring(msg.as_c_str());
         }
         if c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0 {
             control_write(&c.clone().expect("live client"), |out| {
-                write_cstr(out, msg.as_ptr())
+                write_cstr(out, &*msg)
             });
         } else {
             file_error(c_owner.as_ref(), |out| {
-                write_cstr(out, msg.as_ptr())?;
+                write_cstr(out, &*msg)?;
                 out.write_all(b"\n")
             });
         }
@@ -1207,7 +1211,7 @@ pub unsafe fn cmdq_error(
             1 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
             0 as ::core::ffi::c_int,
-            |out| write_cstr(out, msg.as_ptr()),
+            |out| write_cstr(out, &*msg),
         );
     }
 }

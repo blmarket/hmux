@@ -143,8 +143,9 @@ fn window_buffer_clear_items(items: &mut Vec<refbox::RefBox<window_buffer_itemda
 unsafe fn window_buffer_build(
     data: *mut window_buffer_modedata,
     mut sort_crit: *mut sort_criteria,
-    mut filter: *const ::core::ffi::c_char,
+    filter: Option<&CStr>,
 ) {
+    let filter: *const ::core::ffi::c_char = filter.map_or(std::ptr::null(), CStr::as_ptr);
     let mut i: u_int = 0;
     let mut ft: *mut format_tree = ::core::ptr::null_mut::<format_tree>();
     let mut s: Option<SessionRef> = None;
@@ -387,17 +388,13 @@ unsafe fn window_buffer_init(
     data = owner.get();
     wme.get_mut_unchecked().boxed_data = Some(owner);
     let data_handle = std::ptr::NonNull::new(data).expect("live buffer mode data");
-    cmd_find_copy_state(&raw mut (*data).fs, fs);
+    cmd_find_copy_state(&raw mut (*data).fs, &*fs);
     (*data).data = Some(mode_tree_start(
         &mode_pane_owner,
         args,
         Some(Box::new(move |sort, tag, filter| {
             let mut selected = tag.unwrap_or(::core::primitive::u64::MAX as uint64_t);
-            window_buffer_build(
-                data_handle.as_ptr(),
-                sort as *mut sort_criteria,
-                filter.map_or(::core::ptr::null(), |value| value.as_ptr()),
-            );
+            window_buffer_build(data_handle.as_ptr(), sort as *mut sort_criteria, filter);
             (selected != ::core::primitive::u64::MAX as uint64_t).then_some(selected)
         })),
         Some(Box::new(move |itemdata, ctx, sx, sy| {

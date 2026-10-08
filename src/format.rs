@@ -54,7 +54,7 @@ use crate::src::style::colour::{
 use crate::src::text::utf8::{utf8_cstrhas, utf8_pad_cstring, utf8_set, utf8_tocstr_cstring};
 use crate::src::tmux::{
     get_timer, getversion, global_environ, global_options, global_s_options, global_w_options,
-    socket_path, start_time,
+    socket_path_cstr, start_time,
 };
 use crate::src::tty_features::tty_feature_present;
 use crate::src::tty_term::tty_term_has_name;
@@ -171,8 +171,8 @@ impl format_modifier {
             .expect("modifier argument count fits c_int")
     }
 
-    fn arg(&self, index: usize) -> *const ::core::ffi::c_char {
-        self.argv[index].as_ptr()
+    fn arg(&self, index: usize) -> &CStr {
+        &self.argv[index]
     }
 }
 #[derive(Copy, Clone, Default)]
@@ -297,7 +297,7 @@ unsafe fn format_log1(
         cmdq_print(&item, |out| {
             out.write_all(b"#")?;
             out.write_all(&b"          "[..((*es).loop_0 as usize).min(10)])?;
-            write_cstr(out, s.as_ptr())
+            write_cstr(out, &*s)
         });
     }
 }

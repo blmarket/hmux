@@ -6,11 +6,13 @@ use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_g
 use crate::src::compat::imsg::*;
 use crate::src::events::events_fire_client;
 use crate::src::ffi::libc::{getuid, strcspn};
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_cstring;
 use crate::src::server::clients;
 use crate::src::session::SessionIndex as _;
 use crate::src::window::Window as _;
+use std::ffi::CStr;
 
 use crate::src::session::sessions;
 use crate::src::shared::abi::uid_t;
@@ -57,14 +59,17 @@ pub static cmd_attach_session_entry: cmd_entry = {
 };
 pub unsafe fn cmd_attach_session(
     item_handle: &std::rc::Rc<std::cell::UnsafeCell<cmdq_item>>,
-    mut tflag: *const ::core::ffi::c_char,
+    tflag: Option<&CStr>,
     mut dflag: ::core::ffi::c_int,
     mut xflag: ::core::ffi::c_int,
     mut rflag: ::core::ffi::c_int,
-    mut cflag: *const ::core::ffi::c_char,
+    cflag: Option<&CStr>,
     mut Eflag: ::core::ffi::c_int,
-    mut fflag: *const ::core::ffi::c_char,
+    fflag: Option<&CStr>,
 ) -> cmd_retval {
+    let fflag: *const ::core::ffi::c_char = fflag.map_or(std::ptr::null(), CStr::as_ptr);
+    let cflag: *const ::core::ffi::c_char = cflag.map_or(std::ptr::null(), CStr::as_ptr);
+    let tflag: *const ::core::ffi::c_char = tflag.map_or(std::ptr::null(), CStr::as_ptr);
     let item = item_handle.get();
     let current = cmdq_get_state_owned(&*(item));
     let mut target: cmd_find_state = cmd_find_state {
@@ -108,8 +113,13 @@ pub unsafe fn cmd_attach_session(
         type_0 = CMD_FIND_SESSION;
         flags = CMD_FIND_PREFER_UNATTACHED;
     }
-    if cmd_find_target(&raw mut target, Some(item_handle), tflag, type_0, flags)
-        != 0 as ::core::ffi::c_int
+    if cmd_find_target(
+        &raw mut target,
+        Some(item_handle),
+        nullable_cstr(tflag),
+        type_0,
+        flags,
+    ) != 0 as ::core::ffi::c_int
     {
         return CMD_RETURN_ERROR;
     }
@@ -225,7 +235,7 @@ pub unsafe fn cmd_attach_session(
         if let Err(cause) = (c_owner.as_ref().expect("terminal client")).open_terminal() {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"open terminal failed: ")?;
-                write_cstr(out, cause.as_ptr())
+                write_cstr(out, &*cause)
             });
             return CMD_RETURN_ERROR;
         }
@@ -273,7 +283,7 @@ pub unsafe fn cmd_attach_session(
         if !c.as_ref().expect("live client").flags() & CLIENT_CONTROL as uint64_t != 0 {
             c.as_ref().expect("live client").send_ready();
         }
-        events_fire_client(c"client-attached".as_ptr(), c.clone().expect("live client"));
+        events_fire_client(c"client-attached", c.clone().expect("live client"));
         c.as_ref()
             .expect("live client")
             .update_flags(CLIENT_ATTACHED as uint64_t, 0);
@@ -291,12 +301,21 @@ unsafe fn cmd_attach_session_exec(
         cmd_get_args_mut(self_0.get_mut_unchecked()).map_or(std::ptr::null_mut(), |args| args);
     cmd_attach_session(
         item_handle,
-        args_get(&*(args), 't' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
+        nullable_cstr(
+            args_get(&*(args), 't' as i32 as u_char)
+                .map_or(std::ptr::null(), |value| value.as_ptr()),
+        ),
         args_has(args, 'd' as i32 as u_char),
         args_has(args, 'x' as i32 as u_char),
         args_has(args, 'r' as i32 as u_char),
-        args_get(&*(args), 'c' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
+        nullable_cstr(
+            args_get(&*(args), 'c' as i32 as u_char)
+                .map_or(std::ptr::null(), |value| value.as_ptr()),
+        ),
         args_has(args, 'E' as i32 as u_char),
-        args_get(&*(args), 'f' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
+        nullable_cstr(
+            args_get(&*(args), 'f' as i32 as u_char)
+                .map_or(std::ptr::null(), |value| value.as_ptr()),
+        ),
     )
 }

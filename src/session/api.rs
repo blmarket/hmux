@@ -296,18 +296,18 @@ impl Session for SessionRef {
         cmd_find_from_session(&mut find, self, 0);
         let mut payload = event_payload_create();
         event_payload_set_target(&mut payload, &find);
-        event_payload_set_session(&mut payload, c"session".as_ptr(), self.clone());
-        event_payload_set_string(&mut payload, c"old_name".as_ptr(), |out| {
+        event_payload_set_session(&mut payload, c"session", self.clone());
+        event_payload_set_string(&mut payload, c"old_name", |out| {
             out.write_all(old_name.as_bytes())
         });
-        event_payload_set_string(&mut payload, c"new_name".as_ptr(), |out| {
+        event_payload_set_string(&mut payload, c"new_name", |out| {
             out.write_all(new_name.as_bytes())
         });
         let owner = sessions_remove(&mut sessions, self).expect("registered session owner");
         drop(session_replace_name(&mut *self.get(), new_name));
         sessions_insert(&mut sessions, owner);
         crate::src::server_fn::server_status_session(self);
-        events_fire(c"session-renamed".as_ptr(), payload);
+        events_fire(c"session-renamed", payload);
         Ok(())
     }
 
@@ -357,7 +357,7 @@ impl Session for SessionRef {
     }
     unsafe fn remove_replaced_window(&self, mut link: refbox::Weak<winlink>) -> bool {
         // Notification precedes alert/history clearing and explicit window release.
-        events_fire_winlink(c"window-unlinked".as_ptr(), link.clone());
+        events_fire_winlink(c"window-unlinked", link.clone());
         link.get_mut_unchecked().flags &= !WINLINK_ALERTFLAGS;
         self.forget_winlink(link.clone());
         winlink_remove(&raw mut (*self.get()).windows, link.clone());
@@ -436,7 +436,7 @@ impl Session for SessionRef {
         ((*self.get()).statusat, (*self.get()).statuslines)
     }
     unsafe fn join_group(&self, name: &CStr) {
-        let group = session_group_new(name.as_ptr());
+        let group = session_group_new(&*name);
         session_group_add(group, self);
         session_group_synchronize_to(self);
     }
@@ -469,7 +469,7 @@ impl Session for SessionRef {
         super::format::format_value(self, key, context)
     }
     unsafe fn destroy(&self, notify: bool, from: &CStr) {
-        session_destroy(self, notify as i32, from.as_ptr());
+        session_destroy(self, notify as i32, &*from);
     }
 }
 

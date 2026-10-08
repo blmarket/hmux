@@ -6,6 +6,7 @@ use crate::src::cmd::queue::{cmdq_error, cmdq_get_client, cmdq_get_target_client
 use crate::src::ffi::libc::{
     __errno_location, _exit, execl, fork, memcpy, setpgid, sigfillset, sigprocmask, strerror,
 };
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{
     format_create_with_client, format_defaults, format_expand_time_cstring, format_free,
@@ -122,7 +123,7 @@ pub(super) unsafe fn pipe_pane(
             );
             cmdq_error(item_handle, |out| {
                 out.write_all(b"fork error: ")?;
-                write_cstr(out, strerror(*__errno_location()))
+                write_cstr(out, nullable_cstr(strerror(*__errno_location())))
             });
             CMD_RETURN_ERROR
         }
@@ -271,7 +272,7 @@ unsafe fn cmd_pipe_pane_read_callback(
     let available = data.len();
     log_debug(format_args!("%{} pipe read {}", id, { available }));
     let _ = output.with_ptr(|event| unsafe {
-        bufferevent_write(event, data.as_ptr().cast(), available);
+        bufferevent_write(event, &data[..available]);
     });
     let _ = pipe.with_ptr(|event| unsafe {
         evbuffer_drain(bufferevent_get_input(&mut *event), available);
@@ -347,7 +348,7 @@ mod pipe_stream_tests {
             (*wp).pipe_event = crate::src::reactor::StreamHandle::from_ptr(pipe);
             let stale = (*wp).pipe_event.clone();
             let bytes = b"pipe output";
-            evbuffer_add(&mut (*pipe).input, bytes.as_ptr().cast(), bytes.len());
+            evbuffer_add(&mut (*pipe).input, bytes);
 
             cmd_pipe_pane_read_callback(&pane_owner);
 

@@ -715,31 +715,13 @@ mod ownership_tests {
             let name = c"binding-owner-defaults";
             let original = cmd_list_new();
             let original_lifetime = std::rc::Rc::downgrade(&original);
-            key_bindings_add(
-                name,
-                65,
-                {
-                    let note: *const ::core::ffi::c_char = c"original".as_ptr();
-                    (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note))
-                },
-                1,
-                Some(original),
-            );
+            key_bindings_add(name, 65, Some(c"original"), 1, Some(original));
             let table_owner = key_bindings_get_table(name, 0).unwrap();
             key_bindings_init_done();
             assert_eq!(original_lifetime.strong_count(), 2);
             let replacement = cmd_list_new();
             let replacement_lifetime = std::rc::Rc::downgrade(&replacement);
-            key_bindings_add(
-                name,
-                65,
-                {
-                    let note: *const ::core::ffi::c_char = c"replacement".as_ptr();
-                    (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note))
-                },
-                0,
-                Some(replacement),
-            );
+            key_bindings_add(name, 65, Some(c"replacement"), 0, Some(replacement));
             assert_eq!(original_lifetime.strong_count(), 1);
             key_bindings_reset(name, 65);
             assert!(replacement_lifetime.upgrade().is_none());
@@ -753,16 +735,7 @@ mod ownership_tests {
             ));
             assert_eq!(original_lifetime.strong_count(), 2);
             drop(table_borrow);
-            key_bindings_add(
-                name,
-                65,
-                {
-                    let note: *const ::core::ffi::c_char = c"note only".as_ptr();
-                    (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note))
-                },
-                0,
-                None,
-            );
+            key_bindings_add(name, 65, Some(c"note only"), 0, None);
             assert!(std::rc::Weak::ptr_eq(
                 &std::rc::Rc::downgrade(
                     key_bindings_get(&table_owner.borrow(), 65)
@@ -772,16 +745,7 @@ mod ownership_tests {
                 &original_lifetime
             ));
             assert_eq!(original_lifetime.strong_count(), 2);
-            key_bindings_add(
-                name,
-                66,
-                {
-                    let note: *const ::core::ffi::c_char = std::ptr::null();
-                    (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note))
-                },
-                0,
-                Some(cmd_list_new()),
-            );
+            key_bindings_add(name, 66, None, 0, Some(cmd_list_new()));
             key_bindings_reset(name, 66);
             assert!(key_bindings_get(&table_owner.borrow(), 66).is_none());
             drop(table_owner);
@@ -796,32 +760,14 @@ mod ownership_tests {
             let name = c"binding-owner-dispatch";
             let original = cmd_list_new();
             let original_lifetime = std::rc::Rc::downgrade(&original);
-            key_bindings_add(
-                name,
-                65,
-                {
-                    let note: *const ::core::ffi::c_char = std::ptr::null();
-                    (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note))
-                },
-                1,
-                Some(original),
-            );
+            key_bindings_add(name, 65, None, 1, Some(original));
             let table_owner = key_bindings_get_table(name, 0).unwrap();
             let table_lifetime = Rc::downgrade(&table_owner);
             let retained_table = table_lifetime.upgrade().unwrap();
             let command = key_bindings_get(&table_owner.borrow(), 65)
                 .unwrap()
                 .command();
-            key_bindings_add(
-                name,
-                65,
-                {
-                    let note: *const ::core::ffi::c_char = std::ptr::null();
-                    (!note.is_null()).then(|| std::ffi::CStr::from_ptr(note))
-                },
-                0,
-                Some(cmd_list_new()),
-            );
+            key_bindings_add(name, 65, None, 0, Some(cmd_list_new()));
             assert!(std::rc::Weak::ptr_eq(
                 &std::rc::Rc::downgrade(command.cmdlist()),
                 &original_lifetime

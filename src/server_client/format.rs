@@ -76,7 +76,7 @@ pub(super) unsafe fn value(
             (*owner.get()).user = Some(name.clone());
             name
         }
-        b"client_flags" => CStr::from_ptr(server_client_get_flags(&*owner.get())).to_owned(),
+        b"client_flags" => server_client_get_flags(&*owner.get()),
         b"client_pid" => number((*owner.get()).pid),
         b"client_discarded" => number((*owner.get()).discarded),
         b"client_written" => number((*owner.get()).written),

@@ -5738,8 +5738,8 @@ pub fn key_string_parse_cstr(input: &CStr) -> Option<key_code> {
 ///
 /// # Safety
 /// `string` must point to a readable NUL-terminated string for this call.
-pub unsafe fn key_string_lookup_string(string: *const ::core::ffi::c_char) -> key_code {
-    key_string_lookup_string_impl(CStr::from_ptr(string))
+pub unsafe fn key_string_lookup_string(string: &CStr) -> key_code {
+    key_string_lookup_string_impl(string)
 }
 
 /// Format canonical key text into a caller-owned NUL-terminated buffer.
@@ -5878,26 +5878,4 @@ fn key_string_format_bytes(saved: key_code, with_flags: bool) -> Vec<u8> {
         output.push(b']');
     }
     output
-}
-
-/// C ABI compatibility shim for callers that still require the historical symbol.
-///
-/// The legacy pointer remains valid until the next call to this shim on the same
-/// thread or thread exit. Rust callers should retain key_string_format.
-///
-/// # Safety
-/// The returned pointer must only be read before the next call to this shim on
-/// the same thread, and must not be freed by the caller.
-pub unsafe fn key_string_lookup_key(
-    key: key_code,
-    with_flags: ::core::ffi::c_int,
-) -> *const ::core::ffi::c_char {
-    thread_local! {
-        static BUFFER: std::cell::RefCell<CString> = std::cell::RefCell::new(CString::default());
-    }
-    BUFFER.with(|buffer| {
-        let mut buffer = buffer.borrow_mut();
-        *buffer = key_string_format(key, with_flags != 0);
-        buffer.as_ptr()
-    })
 }

@@ -3,6 +3,7 @@ use crate::src::events_payload::{
     event_payload_get_client, event_payload_get_pane, event_payload_get_session,
     event_payload_get_string, event_payload_get_window, event_payload_print_owned,
 };
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_create, format_defaults, format_expand_cstring, format_free};
 use crate::src::server::clients;
@@ -40,7 +41,7 @@ unsafe fn control_pane_mode_changed_cb(_name: &CStr, payload: &mut event_payload
         recipients(|client| {
             client.notify(|out| {
                 out.write_all(b"%pane-mode-changed ")?;
-                write_cstr(out, value.as_ptr().cast())
+                write_cstr(out, nullable_cstr(value.as_ptr().cast()))
             })
         });
     }
@@ -147,13 +148,7 @@ unsafe fn control_client_session_changed_cb(_name: &CStr, payload: &mut event_pa
                 write!(out, "%session-changed $")?;
             } else {
                 out.write_all(b"%client-session-changed ")?;
-                write_cstr(
-                    out,
-                    changed
-                        .name()
-                        .as_ref()
-                        .map_or(std::ptr::null(), |name| name.as_ptr()),
-                )?;
+                write_cstr(out, changed.name().as_deref())?;
                 out.write_all(b" $")?;
             }
             write!(out, "{} ", session.id())?;
@@ -169,13 +164,7 @@ unsafe fn control_client_detached_cb(_name: &CStr, payload: &mut event_payload) 
     recipients(|client| {
         client.notify(|out| {
             out.write_all(b"%client-detached ")?;
-            write_cstr(
-                out,
-                changed
-                    .name()
-                    .as_ref()
-                    .map_or(std::ptr::null(), |name| name.as_ptr()),
-            )
+            write_cstr(out, changed.name().as_deref())
         })
     });
 }

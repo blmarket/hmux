@@ -171,7 +171,7 @@ unsafe fn cmd_show_options_exec(
                 } else {
                     b"invalid option: "
                 })?;
-                write_cstr(out, argument.as_ptr())
+                write_cstr(out, &*argument)
             });
             return CMD_RETURN_ERROR;
         }
@@ -179,7 +179,7 @@ unsafe fn cmd_show_options_exec(
     let scope = options_scope_from_name(
         args,
         window,
-        parsed.name.as_ptr(),
+        &*parsed.name,
         target,
         &mut selected,
         &mut cause,
@@ -193,7 +193,7 @@ unsafe fn cmd_show_options_exec(
         if parsed.name.as_bytes().first() == Some(&b'@') && !quiet {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"invalid option: ")?;
-                write_cstr(out, argument.as_ptr())
+                write_cstr(out, &*argument)
             });
             return CMD_RETURN_ERROR;
         }
@@ -223,9 +223,7 @@ unsafe fn show_options_scope_error(
     if quiet {
         return CMD_RETURN_NORMAL;
     }
-    cmdq_error(item, |out| {
-        write_cstr(out, cause.expect("scope failure").as_ptr())
-    });
+    cmdq_error(item, |out| write_cstr(out, &*cause.expect("scope failure")));
     CMD_RETURN_ERROR
 }
 
@@ -273,7 +271,7 @@ unsafe fn cmd_show_options_print(
                     let present = scope.with_entry(name, |entry| {
                         entry.id() == identity
                             && options_is_array(entry) != 0
-                            && !options_array_item(entry, key.as_ptr()).is_null()
+                            && !options_array_item(entry, &*key).is_null()
                     });
                     if present != Some(true) {
                         break;
@@ -306,15 +304,13 @@ unsafe fn cmd_show_options_print(
             return false;
         }
         let value = if has_value {
-            options_to_cstring(entry, array_key.map_or(std::ptr::null(), CStr::as_ptr), 0)
+            options_to_cstring(entry, array_key, 0)
         } else {
             CString::default()
         };
         let table = options_table_entry(entry);
-        format_add(ft, c"option_name", |out| {
-            write_cstr(out, entry.name.as_ptr())
-        });
-        format_add(ft, c"option_value", |out| write_cstr(out, value.as_ptr()));
+        format_add(ft, c"option_name", |out| write_cstr(out, &*entry.name));
+        format_add(ft, c"option_value", |out| write_cstr(out, &*value));
         for (name, value) in [
             (c"option_value_only", value_only as i32),
             (
@@ -338,7 +334,7 @@ unsafe fn cmd_show_options_print(
             format_add(ft, name, |out| write!(out, "{value}"));
         }
         format_add(ft, c"option_array_key", |out| {
-            write_cstr(out, array_key.unwrap_or(c"").as_ptr())
+            write_cstr(out, &*array_key.unwrap_or(c""))
         });
         if show_hooks {
             show_hook_add_fire_formats(
@@ -356,7 +352,7 @@ unsafe fn cmd_show_options_print(
     let template = template.as_deref().unwrap_or(SHOW_OPTIONS_TEMPLATE);
     let line = format_expand_cstring(ft, template.as_ptr());
     format_free(ft_owner);
-    cmdq_print(item_handle, |out| write_cstr(out, line.as_ptr()));
+    cmdq_print(item_handle, |out| write_cstr(out, &*line));
 }
 
 unsafe fn show_hook_add_fire_formats(ft: *mut format_tree, count: u32, time: time_t) {
@@ -400,16 +396,12 @@ unsafe fn cmd_show_hooks_print_monitor(
             MONITOR_ALL_WINDOWS => c"@*".to_owned(),
             _ => return false,
         };
-        format_add(ft, c"hook_monitor_target", |out| {
-            write_cstr(out, target.as_ptr())
-        });
+        format_add(ft, c"hook_monitor_target", |out| write_cstr(out, &*target));
         format_add(ft, c"hook_monitor_format", |out| {
-            write_cstr(out, monitor.format.as_ptr())
+            write_cstr(out, &*monitor.format)
         });
-        format_add(ft, c"option_name", |out| {
-            write_cstr(out, entry.name.as_ptr())
-        });
-        format_add(ft, c"option_value", |out| write_cstr(out, value.as_ptr()));
+        format_add(ft, c"option_name", |out| write_cstr(out, &*entry.name));
+        format_add(ft, c"option_value", |out| write_cstr(out, &*value));
         for (name, value) in [
             (c"option_value_only", 0),
             (c"option_is_parent", 0),
@@ -433,7 +425,7 @@ unsafe fn cmd_show_hooks_print_monitor(
     if print == Some(true) {
         let line = format_expand_cstring(ft, template.as_ptr());
         format_free(ft_owner);
-        cmdq_print(item_handle, |out| write_cstr(out, line.as_ptr()));
+        cmdq_print(item_handle, |out| write_cstr(out, &*line));
     } else {
         format_free(ft_owner);
     }
@@ -467,8 +459,8 @@ unsafe fn cmd_show_options_all(
         if !user {
             continue;
         }
-        let user_hook = name.as_bytes().first() == Some(&b'@')
-            && (hooks_is_event(name.as_ptr()) != 0 || monitor);
+        let user_hook =
+            name.as_bytes().first() == Some(&b'@') && (hooks_is_event(&*name) != 0 || monitor);
         if (show_hooks && user_hook) || (!show_hooks && (!user_hook || include_hooks)) {
             cmd_show_options_print(self_0.clone(), item_handle, selected, &name, None, 0, false);
         }

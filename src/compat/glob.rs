@@ -17,9 +17,9 @@ impl GlobResult {
     }
 
     /// The returned path is borrowed until this result is dropped.
-    pub(crate) unsafe fn path(&self, index: usize) -> *const c_char {
+    pub(crate) unsafe fn path(&self, index: usize) -> &std::ffi::CStr {
         debug_assert!(index < self.len());
-        *self.0.gl_pathv.add(index)
+        std::ffi::CStr::from_ptr(*self.0.gl_pathv.add(index))
     }
 }
 

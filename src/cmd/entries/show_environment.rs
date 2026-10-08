@@ -2,6 +2,7 @@ use crate::src::arguments::{args_get, args_has, args_string};
 use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_error, cmdq_print};
 use crate::src::environ::{environ_find, environ_iter};
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::session::Session;
 use crate::src::shared::abi::*;
@@ -113,7 +114,7 @@ unsafe fn cmd_show_environment_exec(
     if !tflag.is_null() && (*target).session_handle().is_none() {
         cmdq_error(item_handle, |out| {
             out.write_all(b"no such session: ")?;
-            write_cstr(out, tflag)
+            write_cstr(out, nullable_cstr(tflag))
         });
         return CMD_RETURN_ERROR;
     }
@@ -126,7 +127,7 @@ unsafe fn cmd_show_environment_exec(
             if !tflag.is_null() {
                 cmdq_error(item_handle, |out| {
                     out.write_all(b"no such session: ")?;
-                    write_cstr(out, tflag)
+                    write_cstr(out, nullable_cstr(tflag))
                 });
             } else {
                 cmdq_error(item_handle, |out| out.write_all(b"no current session"));
@@ -137,11 +138,11 @@ unsafe fn cmd_show_environment_exec(
         session.borrow_environment().expect("environment").clone()
     };
     if !name.is_null() {
-        envent = environ_find(&env, name);
+        envent = environ_find(&env, CStr::from_ptr(name));
         if envent.is_none() {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"unknown variable: ")?;
-                write_cstr(out, name)
+                write_cstr(out, nullable_cstr(name))
             });
             return CMD_RETURN_ERROR;
         }

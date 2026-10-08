@@ -75,7 +75,7 @@ fn option_reload_replaces_defaults_without_changing_overrides() {
         colour_palette_from_option(Some(&mut p), oo);
         assert!(p.default_palette.is_none());
         assert_eq!(
-            options_array_set(array, c"1".as_ptr(), c"red".as_ptr(), 0, null_mut()),
+            options_array_set(array, c"1", Some(c"red"), 0, null_mut()),
             0
         );
         colour_palette_from_option(Some(&mut p), oo);
@@ -83,7 +83,7 @@ fn option_reload_replaces_defaults_without_changing_overrides() {
         colour_palette_set(Some(&mut p), 1, 4);
         options_array_clear(array);
         assert_eq!(
-            options_array_set(array, c"255".as_ptr(), c"green".as_ptr(), 0, null_mut()),
+            options_array_set(array, c"255", Some(c"green"), 0, null_mut()),
             0
         );
         colour_palette_from_option(Some(&mut p), oo);

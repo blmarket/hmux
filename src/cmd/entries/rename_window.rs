@@ -54,7 +54,7 @@ unsafe fn cmd_rename_window_exec(
     if !check_name(&name) {
         cmdq_error(item_handle, |out| {
             out.write_all(b"invalid window name: ")?;
-            write_cstr(out, name.as_ptr())
+            write_cstr(out, &*name)
         });
         return CMD_RETURN_ERROR;
     }

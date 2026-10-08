@@ -1,4 +1,4 @@
-use crate::src::ffi::libc::{gmtime_r, localtime, memcpy, strftime, strlcat, strlen, time};
+use crate::src::ffi::libc::{gmtime_r, localtime, strftime, strlcat, strlen, time};
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::{format_create_defaults, format_free};
 use crate::src::grid::grid_default_cell;
@@ -858,15 +858,11 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
                 y as ::core::ffi::c_int,
                 0 as ::core::ffi::c_int,
             );
-            memcpy(
-                &raw mut gc as *mut ::core::ffi::c_void,
-                &raw const grid_default_cell as *const ::core::ffi::c_void,
-                ::core::mem::size_of::<grid_cell>() as size_t,
-            );
+            gc = grid_default_cell;
             gc.flags = (gc.flags as ::core::ffi::c_int | GRID_FLAG_NOPALETTE) as u_char;
             gc.fg = colour;
             screen_write_puts(&mut ctx, &gc, |out| {
-                write_cstr(out, &raw mut tim as *mut ::core::ffi::c_char)
+                write_cstr(out, std::ffi::CStr::from_ptr(tim.as_ptr().cast()))
             });
         }
         screen_write_stop(&mut ctx);
@@ -880,11 +876,7 @@ unsafe fn window_clock_draw_screen(mut wme: refbox::Weak<window_mode_entry>) {
         .sy
         .wrapping_div(2 as u_int)
         .wrapping_sub(3 as u_int);
-    memcpy(
-        &raw mut gc as *mut ::core::ffi::c_void,
-        &raw const grid_default_cell as *const ::core::ffi::c_void,
-        ::core::mem::size_of::<grid_cell>() as size_t,
-    );
+    gc = grid_default_cell;
     gc.flags = (gc.flags as ::core::ffi::c_int | GRID_FLAG_NOPALETTE) as u_char;
     gc.bg = colour;
     gc.fg = colour;

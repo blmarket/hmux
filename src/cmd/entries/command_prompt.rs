@@ -7,6 +7,7 @@ use crate::src::cmd::queue::{
     cmdq_get_target_client, cmdq_insert_after,
 };
 use crate::src::cmd::{cmd_append_argv, cmd_get_args_mut};
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::prompt::prompt_type;
 use crate::src::server_client::Client as _;
@@ -44,18 +45,6 @@ pub struct cmd_command_prompt_cdata {
 pub struct cmd_command_prompt_prompt {
     pub input: Option<CString>,
     pub prompt: CString,
-}
-
-impl cmd_command_prompt_prompt {
-    fn input_ptr(&self) -> *const ::core::ffi::c_char {
-        self.input
-            .as_ref()
-            .map_or(::core::ptr::null(), |s| s.as_ptr())
-    }
-
-    fn pointers(&self) -> (*const ::core::ffi::c_char, *const ::core::ffi::c_char) {
-        (self.prompt.as_ptr(), self.input_ptr())
-    }
 }
 
 fn cmd_command_prompt_rows(
@@ -211,7 +200,7 @@ unsafe fn cmd_command_prompt_exec(
         {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"unknown type: ")?;
-                write_cstr(out, type_0)
+                write_cstr(out, nullable_cstr(type_0))
             });
             return CMD_RETURN_ERROR;
         }
@@ -235,7 +224,10 @@ unsafe fn cmd_command_prompt_exec(
     if pane != 0 {
         cdata.flags |= PROMPT_ISPANE;
     }
-    let (prompt_ptr, input_ptr) = cdata.prompts[0].pointers();
+    let (prompt, input) = (
+        cdata.prompts[0].prompt.clone(),
+        cdata.prompts[0].input.clone(),
+    );
     let flags = cdata.flags;
     let prompt_type = cdata.prompt_type;
     let inputcb = cdata.into_callback();
@@ -243,8 +235,8 @@ unsafe fn cmd_command_prompt_exec(
         wp.as_ref().expect("prompt target pane").set_prompt(
             tc_owner.as_ref(),
             Some(&mut *target),
-            CStr::from_ptr(prompt_ptr),
-            (!input_ptr.is_null()).then(|| CStr::from_ptr(input_ptr)),
+            &prompt,
+            input.as_deref(),
             inputcb,
             None,
             flags,
@@ -253,9 +245,9 @@ unsafe fn cmd_command_prompt_exec(
     } else {
         status_prompt_set(
             &tc.clone().expect("live client"),
-            target,
-            prompt_ptr,
-            input_ptr,
+            target.as_ref(),
+            &*prompt,
+            input.as_deref(),
             inputcb,
             None,
             flags,
@@ -296,8 +288,8 @@ unsafe fn cmd_command_prompt_callback(
                 cmd_append_argv(&mut cdata.argv, s.expect("prompt text is present"));
                 cdata.current = cdata.current.wrapping_add(1);
                 if (cdata.current as usize) != cdata.prompts.len() {
-                    let (prompt_ptr, input_ptr) =
-                        (&cdata.prompts)[cdata.current as usize].pointers();
+                    let row = &cdata.prompts[cdata.current as usize];
+                    let (prompt, input) = (row.prompt.clone(), row.input.clone());
                     if !Weak::ptr_eq(&cdata.wp, &Weak::new()) {
                         let Some(pane) =
                             std::rc::Rc::<std::cell::UnsafeCell<window_pane>>::from_observer(
@@ -306,15 +298,12 @@ unsafe fn cmd_command_prompt_callback(
                         else {
                             return PROMPT_CLOSE;
                         };
-                        pane.update_prompt(
-                            CStr::from_ptr(prompt_ptr),
-                            (!input_ptr.is_null()).then(|| CStr::from_ptr(input_ptr)),
-                        );
+                        pane.update_prompt(&prompt, input.as_deref());
                     } else {
                         status_prompt_update(
                             &c.clone().expect("live client"),
-                            prompt_ptr,
-                            input_ptr,
+                            &*prompt,
+                            input.as_deref(),
                         );
                     }
                     return PROMPT_CONTINUE;
@@ -342,11 +331,7 @@ unsafe fn cmd_command_prompt_callback(
                     Err(error) => {
                         cmdq_append(
                             c_owner,
-                            cmdq_get_error(
-                                error
-                                    .as_ref()
-                                    .map_or(::core::ptr::null(), |cause| cause.as_ptr()),
-                            ),
+                            cmdq_get_error(error.as_deref().expect("command error")),
                         );
                     }
                     Ok(cmdlist) if !cdata.wait => {
@@ -435,11 +420,11 @@ mod tests {
         let rows = cmd_command_prompt_rows(b"first,second", None, true, true);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].prompt.to_bytes(), b"first,second");
-        assert!(rows[0].input_ptr().is_null());
+        assert!(rows[0].input.is_none());
 
         let rows = cmd_command_prompt_rows(b":", Some(b""), true, false);
         assert_eq!(rows[0].prompt.to_bytes(), b":");
-        assert!(!rows[0].input_ptr().is_null());
+        assert!(rows[0].input.is_some());
         assert_eq!(rows[0].input.as_ref().unwrap().to_bytes(), b"");
     }
 }

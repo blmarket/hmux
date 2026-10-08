@@ -152,10 +152,7 @@ unsafe fn cmd_join_pane_finish(source: WindowRef, destination: &WindowRef) {
     if source.pane_snapshot().is_empty() {
         server_kill_window(source, 1);
     } else {
-        events_fire_window(c"window-layout-changed".as_ptr(), source);
+        events_fire_window(c"window-layout-changed", source);
     }
-    events_fire_window(
-        c"window-layout-changed".as_ptr(),
-        std::rc::Rc::clone(destination),
-    );
+    events_fire_window(c"window-layout-changed", std::rc::Rc::clone(destination));
 }

@@ -76,7 +76,7 @@ unsafe fn cmd_respawn_pane_exec(
     for av in args_flag_values(&*args, 'e' as i32 as u_char) {
         environ_put(
             sc.environ.as_deref_mut().expect("environment"),
-            av.string_ptr(),
+            av.as_string().expect("string argument"),
             0 as ::core::ffi::c_int,
         );
     }
@@ -97,12 +97,7 @@ unsafe fn cmd_respawn_pane_exec(
     {
         cmdq_error(item_handle, |out| {
             out.write_all(b"respawn pane failed: ")?;
-            write_cstr(
-                out,
-                cause
-                    .as_ref()
-                    .map_or(::core::ptr::null(), |value| value.as_ptr()),
-            )
+            write_cstr(out, cause.as_deref())
         });
         drop(sc.environ.take());
         return CMD_RETURN_ERROR;

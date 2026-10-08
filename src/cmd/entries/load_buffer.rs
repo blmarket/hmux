@@ -3,6 +3,7 @@ use crate::src::cmd::cmd_get_args_mut;
 use crate::src::cmd::queue::{cmdq_continue, cmdq_error, cmdq_get_client, cmdq_get_target_client};
 use crate::src::ffi::libc::strerror;
 use crate::src::file::file_read_with_cmdq_wait;
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::format::format_single_from_target_cstring;
 use crate::src::paste::paste_set_owned;
@@ -93,9 +94,9 @@ unsafe fn cmd_load_buffer_done(
             cmdq_error(
                 item_owner.as_ref().expect("live command queue item"),
                 |out| {
-                    write_cstr(out, strerror(error))?;
+                    write_cstr(out, nullable_cstr(strerror(error)))?;
                     out.write_all(b": ")?;
-                    write_cstr(out, path.map_or(::core::ptr::null(), CStr::as_ptr))
+                    write_cstr(out, path)
                 },
             );
         }
@@ -107,7 +108,7 @@ unsafe fn cmd_load_buffer_done(
             if !item.is_null() {
                 cmdq_error(
                     item_owner.as_ref().expect("live command queue item"),
-                    |out| write_cstr(out, cause.as_ref().unwrap().as_ptr()),
+                    |out| write_cstr(out, (&*(cause.as_ref().unwrap())).as_c_str()),
                 );
             }
         } else if tc.is_some_and(|client| {
@@ -154,7 +155,7 @@ unsafe fn cmd_load_buffer_exec(
     );
     file_read_with_cmdq_wait(
         queue_client.as_ref(),
-        path.as_ptr(),
+        &*path,
         Some(Box::new(move |event| unsafe {
             cmd_load_buffer_done(
                 &mut cdata,

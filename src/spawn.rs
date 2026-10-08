@@ -67,7 +67,7 @@ pub const _PATH_DEFPATH: &std::ffi::CStr = c"/usr/bin:/bin";
 
 pub const _PATH_TMP: &std::ffi::CStr = c"/tmp/";
 
-pub(crate) unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mut spawn_context) {
+pub(crate) unsafe fn spawn_log(from: &CStr, mut sc: *mut spawn_context) {
     let session_owner = (*sc).s.upgrade().expect("spawn context session");
     let mut wl: refbox::Weak<winlink> = (*sc).winlink_handle();
     let wp0_owner = (*sc).wp0.upgrade();
@@ -75,7 +75,7 @@ pub(crate) unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mu
     let mut tmp: [u8; 128] = [0; 128];
     log_debug(format_args!(
         "{}: name={}, flags={}",
-        log_cstr(CStr::from_ptr(from)),
+        log_cstr(from),
         log_cstr(name),
         log_hex((((*sc).flags) as u32) as u64)
     ));
@@ -103,7 +103,7 @@ pub(crate) unsafe fn spawn_log(mut from: *const ::core::ffi::c_char, mut sc: *mu
     }
     log_debug(format_args!(
         "{}: s=${} {} idx={}",
-        log_cstr(CStr::from_ptr(from)),
+        log_cstr(from),
         session_owner.id(),
         log_cstr(CStr::from_bytes_until_nul(&tmp).expect("xformat output is terminated")),
         { (*sc).idx }

@@ -97,7 +97,7 @@ unsafe fn cmd_capture_pane_exec(
     buf = match pane_owner.capture(&mut *args, item_handle) {
         Ok(bytes) => bytes,
         Err(cause) => {
-            cmdq_error(item_handle, |out| write_cstr(out, cause.as_ptr()));
+            cmdq_error(item_handle, |out| write_cstr(out, &*cause));
             return CMD_RETURN_ERROR;
         }
     };
@@ -132,7 +132,7 @@ unsafe fn cmd_capture_pane_exec(
         ) != 0 as ::core::ffi::c_int
         {
             cmdq_error(item_handle, |out| {
-                write_cstr(out, cause.as_ref().unwrap().as_ptr())
+                write_cstr(out, (&*(cause.as_ref().unwrap())).as_c_str())
             });
             return CMD_RETURN_ERROR;
         }

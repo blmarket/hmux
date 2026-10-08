@@ -5,6 +5,7 @@ use crate::src::cmd::queue::{
     cmdq_error, cmdq_get_client, cmdq_get_flags, cmdq_get_state_owned, cmdq_get_target_client,
 };
 use crate::src::ffi::libc::{getuid, strcmp, strcspn};
+use crate::src::format::bytes::nullable_cstr;
 use crate::src::format::bytes::write_cstr;
 use crate::src::key_bindings::key_bindings_get_table;
 use crate::src::session::SessionIndex as _;
@@ -98,8 +99,13 @@ unsafe fn cmd_switch_client_exec(
         type_0 = CMD_FIND_SESSION;
         flags = CMD_FIND_PREFER_UNATTACHED;
     }
-    if cmd_find_target(&raw mut target, Some(item_handle), tflag, type_0, flags)
-        != 0 as ::core::ffi::c_int
+    if cmd_find_target(
+        &raw mut target,
+        Some(item_handle),
+        nullable_cstr(tflag),
+        type_0,
+        flags,
+    ) != 0 as ::core::ffi::c_int
     {
         return CMD_RETURN_ERROR;
     }
@@ -131,7 +137,7 @@ unsafe fn cmd_switch_client_exec(
         let Some(table) = key_bindings_get_table(std::ffi::CStr::from_ptr(tablename), 0) else {
             cmdq_error(item_handle, |out| {
                 out.write_all(b"table ")?;
-                write_cstr(out, tablename)?;
+                write_cstr(out, nullable_cstr(tablename))?;
                 out.write_all(b" doesn't exist")
             });
             return CMD_RETURN_ERROR;
@@ -139,9 +145,9 @@ unsafe fn cmd_switch_client_exec(
         tc.as_ref().expect("target client").select_key_table(table);
         return CMD_RETURN_NORMAL;
     }
-    sort_crit.order = sort_order_from_string(
+    sort_crit.order = sort_order_from_string(nullable_cstr(
         args_get(&*(args), 'O' as i32 as u_char).map_or(std::ptr::null(), |value| value.as_ptr()),
-    );
+    ));
     if sort_crit.order as ::core::ffi::c_uint
         == SORT_END as ::core::ffi::c_int as ::core::ffi::c_uint
         && args_has(args, 'O' as i32 as u_char) != 0
