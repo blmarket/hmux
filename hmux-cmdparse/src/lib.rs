@@ -188,19 +188,22 @@ impl<'a> ParseState<'a> {
         }
     }
 
-    /// `commands : commands ';' command`. An argument-less trailing command
-    /// discards the whole accumulated list, matching tmux.
+    /// `commands : commands ';' command`. Under a false `%if` the list is
+    /// discarded. Otherwise an argument-less command, such as a bare
+    /// assignment, is skipped and the commands before it are kept; tmux
+    /// discards them here.
     pub fn push_command(
         &self,
         mut commands: Vec<ParseCommand>,
         command: ParseCommand,
     ) -> Vec<ParseCommand> {
-        if !command.arguments.is_empty() && self.scope_active() {
-            commands.push(command);
-            commands
-        } else {
-            Vec::new()
+        if !self.scope_active() {
+            return Vec::new();
         }
+        if !command.arguments.is_empty() {
+            commands.push(command);
+        }
+        commands
     }
 
     /// `expanded : format`.

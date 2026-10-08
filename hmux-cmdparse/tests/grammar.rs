@@ -150,13 +150,16 @@ fn assignments_respect_all_enclosing_scopes_and_hidden_flag() {
 }
 
 #[test]
-fn trailing_assignment_discards_accumulated_commands() {
+fn trailing_assignment_keeps_accumulated_commands() {
     use Token::*;
-    assert!(run(
-        &mut Host::default(),
-        vec![word("one"), Semicolon, Equals(text("A=1")), Newline]
-    )
-    .is_empty());
+    let mut host = Host::default();
+    let commands = run(
+        &mut host,
+        vec![word("one"), Semicolon, Equals(text("A=1")), Newline],
+    );
+    assert_eq!(commands.len(), 1);
+    assert_eq!(name(&commands[0]), b"one");
+    assert_eq!(host.assignments, vec![(b"A=1".to_vec(), false, true)]);
 }
 
 #[test]
