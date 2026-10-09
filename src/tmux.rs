@@ -752,7 +752,7 @@ pub(crate) unsafe fn find_home_cstr() -> Option<&'static CStr> {
 }
 
 pub fn getversion() -> &'static CStr {
-    c"next-3.9"
+    c"3.8"
 }
 unsafe fn main_0(args: &[CString]) -> ::core::ffi::c_int {
     let mut argc = ::core::ffi::c_int::try_from(args.len()).expect("argv length exceeds c_int");
